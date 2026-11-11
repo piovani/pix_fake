@@ -9,7 +9,7 @@ import (
 
 const problemTypeBase = "https://dict.pi.rsfn.net.br/api/v2/error/"
 
-// kindServiceUnavailable não existe como dict.Kind: erros inesperados viram 503.
+// kindServiceUnavailable does not exist as a dict.Kind: unexpected errors become 503.
 const kindServiceUnavailable dict.Kind = "ServiceUnavailable"
 
 var problems = map[dict.Kind]struct {
@@ -26,7 +26,7 @@ var problems = map[dict.Kind]struct {
 	kindServiceUnavailable:        {http.StatusServiceUnavailable, "Service Unavailable"},
 }
 
-// problemXML segue o RFC 7807 em XML, como no schema Problem da spec.
+// problemXML follows RFC 7807 in XML, as in the spec's Problem schema.
 type problemXML struct {
 	XMLName       xml.Name       `xml:"urn:ietf:rfc:7807 problem"`
 	Type          string         `xml:"type"`

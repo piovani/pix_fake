@@ -86,7 +86,7 @@ func TestRepository(t *testing.T) {
 
 func TestMigrateIsIdempotent(t *testing.T) {
 	ctx := context.Background()
-	pool := pgtest.NewPool(t) // já aplica as migrations uma vez
+	pool := pgtest.NewPool(t) // already applies the migrations once
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		t.Fatalf("second Migrate failed: %v", err)
 	}

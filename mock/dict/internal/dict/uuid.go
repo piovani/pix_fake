@@ -7,14 +7,14 @@ import (
 	"fmt"
 )
 
-// NewEVP gera uma chave aleatória (EVP): um UUID v4 em minúsculas.
+// NewEVP generates a random key (EVP): a lowercase UUID v4.
 func NewEVP() string {
 	var b [16]byte
-	_, _ = rand.Read(b[:]) // crypto/rand.Read não retorna erro (Go 1.24+)
+	_, _ = rand.Read(b[:]) // crypto/rand.Read never returns an error (Go 1.24+)
 	return formatUUID(b)
 }
 
-// deterministicUUID deriva sempre o mesmo UUID v4 a partir de s.
+// deterministicUUID always derives the same UUID v4 from s.
 func deterministicUUID(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return formatUUID([16]byte(sum[:16]))

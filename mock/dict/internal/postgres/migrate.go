@@ -13,8 +13,8 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Migrate aplica, em ordem, as migrations ainda não aplicadas. Cada uma roda
-// em sua própria transação; um advisory lock evita corridas entre instâncias.
+// Migrate applies, in order, the migrations that have not been applied yet. Each one
+// runs in its own transaction; an advisory lock prevents races between instances.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
@@ -22,7 +22,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	defer conn.Release()
 
-	const lockID = 727274 // arbitrário, exclusivo deste serviço
+	const lockID = 727274 // arbitrary, exclusive to this service
 	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
 		return err
 	}

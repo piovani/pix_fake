@@ -1,4 +1,4 @@
-// Package memstore é um dict.Repository em memória, usado apenas nos testes.
+// Package memstore is an in-memory dict.Repository, used only in tests.
 package memstore
 
 import (

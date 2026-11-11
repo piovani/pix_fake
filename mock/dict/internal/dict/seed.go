@@ -8,18 +8,18 @@ import (
 	"time"
 )
 
-// SeedResult lista as chaves criadas e as que já existiam numa execução de Seed.
+// SeedResult lists the keys created and those that already existed in a Seed run.
 type SeedResult struct {
 	Created  []string
 	Existing []string
 }
 
-// Seed registra vínculos prontos, com a chave já definida (inclusive EVP, que na
-// API é gerada pelo DICT), para popular o banco com dados de teste.
+// Seed registers ready-made entries, with the key already defined (including EVP, which
+// the API generates on the DICT side), to populate the database with test data.
 //
-// É idempotente: o RequestId de cada vínculo é derivado da chave, então rodar de
-// novo não duplica nem altera nada, apenas reporta o que já existia. Todos os
-// vínculos são validados antes de qualquer gravação.
+// It is idempotent: each entry's RequestId is derived from its key, so running it
+// again neither duplicates nor changes anything, it only reports what already
+// existed. All entries are validated before anything is written.
 func (s *Service) Seed(ctx context.Context, entries []Entry) (SeedResult, error) {
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
@@ -48,7 +48,7 @@ func (s *Service) Seed(ctx context.Context, entries []Entry) (SeedResult, error)
 	return res, nil
 }
 
-// validateSeedEntry aplica as mesmas regras da criação, mas aceita chave EVP informada.
+// validateSeedEntry applies the same rules as creation, but accepts a supplied EVP key.
 func validateSeedEntry(e Entry) violations {
 	var v violations
 	if !validKeyType(e.KeyType) {

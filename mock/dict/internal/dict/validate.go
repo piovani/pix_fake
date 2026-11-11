@@ -13,7 +13,7 @@ const (
 	maxTradeNameLength = 100
 )
 
-// Expressões regulares copiadas da especificação do DICT (v2.13.0).
+// Regular expressions copied from the DICT specification (v2.13.0).
 var (
 	keyRegexps = map[KeyType]*regexp.Regexp{
 		KeyCPF:   regexp.MustCompile(`^[0-9]{11}$`),
@@ -22,7 +22,7 @@ var (
 		KeyEmail: regexp.MustCompile("^[a-z0-9.!#$'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"),
 		KeyEVP:   regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
 	}
-	// A ordem não importa: os formatos são disjuntos.
+	// The order does not matter: the formats are disjoint.
 	keyTypes = []KeyType{KeyCPF, KeyCNPJ, KeyPhone, KeyEmail, KeyEVP}
 
 	ispbRe          = regexp.MustCompile(`^[A-Z0-9]{8}$`)
@@ -35,10 +35,10 @@ var (
 	requestIDRe     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 )
 
-// ValidISPB informa se s é um identificador SPB válido (8 caracteres A-Z/0-9).
+// ValidISPB reports whether s is a valid SPB identifier (8 characters A-Z/0-9).
 func ValidISPB(s string) bool { return ispbRe.MatchString(s) }
 
-// DetectKeyType descobre o tipo de uma chave a partir do seu formato.
+// DetectKeyType works out the type of a key from its format.
 func DetectKeyType(key string) (KeyType, bool) {
 	if len(key) > maxKeyLength {
 		return "", false
@@ -127,7 +127,7 @@ func validateName(property, name string, max int, re *regexp.Regexp, v *violatio
 	}
 }
 
-// validateKeyOwner garante que chaves CPF/CNPJ pertençam ao próprio titular.
+// validateKeyOwner ensures CPF/CNPJ keys belong to the entry's own owner.
 func validateKeyOwner(kt KeyType, key string, o Owner, v *violations) {
 	switch {
 	case kt == KeyCPF && (o.Type != NaturalPerson || o.TaxID != key):

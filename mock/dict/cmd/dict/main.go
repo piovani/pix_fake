@@ -1,4 +1,4 @@
-// Comando dict sobe o mock do DICT (diretório de chaves Pix do Bacen).
+// Command dict runs the DICT mock (the Bacen Pix key directory).
 package main
 
 import (

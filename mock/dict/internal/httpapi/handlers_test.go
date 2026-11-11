@@ -14,7 +14,7 @@ import (
 	"pixfake/mock/dict/internal/memstore"
 )
 
-// Corpos copiados dos exemplos da especificação do DICT (v2.13.0).
+// Bodies copied from the DICT specification examples (v2.13.0).
 const (
 	createReq = `<?xml version="1.0" encoding="UTF-8" ?>
 <CreateEntryRequest>
@@ -130,7 +130,7 @@ var getHeaders = map[string]string{
 func TestEntryLifecycle(t *testing.T) {
 	h := newHandler()
 
-	// Criar
+	// Create
 	res := do(t, h, "POST", base+"/entries", createReq, nil)
 	res.wantStatus(t, http.StatusCreated)
 	res.wantContains(t, "<CreateEntryResponse>", "<Signature></Signature>", "<Key>+5561988880000</Key>",
@@ -139,10 +139,10 @@ func TestEntryLifecycle(t *testing.T) {
 		t.Fatalf("content-type = %q", res.contentType)
 	}
 
-	// Repetir a mesma requisição é idempotente.
+	// Repeating the same request is idempotent.
 	do(t, h, "POST", base+"/entries", createReq, nil).wantStatus(t, http.StatusCreated)
 
-	// Consultar
+	// Get
 	res = do(t, h, "GET", base+"/entries/+5561988880000", "", getHeaders)
 	res.wantStatus(t, http.StatusOK)
 	res.wantContains(t, "<GetEntryResponse>", "<Name>João Silva</Name>")
@@ -154,17 +154,17 @@ func TestEntryLifecycle(t *testing.T) {
 	res.wantStatus(t, http.StatusOK)
 	res.wantContains(t, "<OwnerStatistics>", "<KeyStatistics>", `<Settlements d90="0" m12="0" m60="0"></Settlements>`)
 
-	// Atualizar
+	// Update
 	res = do(t, h, "PUT", base+"/entries/+5561988880000", updateReq, nil)
 	res.wantStatus(t, http.StatusOK)
 	res.wantContains(t, "<UpdateEntryResponse>", "<AccountNumber>0009999999</AccountNumber>", "<Name>João Souza</Name>")
 
-	// Verificar chaves
+	// Check keys
 	res = do(t, h, "POST", base+"/keys/check", checkReq, nil)
 	res.wantStatus(t, http.StatusOK)
 	res.wantContains(t, `<Key hasEntry="true">+5561988880000</Key>`, `<Key hasEntry="false">mail2@mail.com</Key>`)
 
-	// Remover
+	// Delete
 	res = do(t, h, "POST", base+"/entries/+5561988880000/delete", deleteReq, nil)
 	res.wantStatus(t, http.StatusOK)
 	res.wantContains(t, "<DeleteEntryResponse>", "<Key>+5561988880000</Key>")
@@ -176,7 +176,7 @@ func TestProblems(t *testing.T) {
 	h := newHandler()
 	do(t, h, "POST", base+"/entries", createReq, nil).wantStatus(t, http.StatusCreated)
 
-	t.Run("sem header de identificação", func(t *testing.T) {
+	t.Run("missing identification header", func(t *testing.T) {
 		res := do(t, h, "POST", base+"/keys/check", checkReq, map[string]string{httpapi.ParticipantHeader: ""})
 		res.wantStatus(t, http.StatusForbidden)
 		res.wantContains(t, `<problem xmlns="urn:ietf:rfc:7807">`,
@@ -186,42 +186,42 @@ func TestProblems(t *testing.T) {
 		}
 	})
 
-	t.Run("outro participante não remove", func(t *testing.T) {
+	t.Run("another participant cannot delete", func(t *testing.T) {
 		res := do(t, h, "POST", base+"/entries/+5561988880000/delete", deleteReq,
 			map[string]string{httpapi.ParticipantHeader: "87654321"})
 		res.wantStatus(t, http.StatusForbidden)
 	})
 
-	t.Run("chave inexistente", func(t *testing.T) {
+	t.Run("unknown key", func(t *testing.T) {
 		res := do(t, h, "GET", base+"/entries/mail@mail.com", "", getHeaders)
 		res.wantStatus(t, http.StatusNotFound)
 		res.wantContains(t, "<detail>Entry associated with given key does not exist</detail>")
 	})
 
-	t.Run("entry inválida traz violations", func(t *testing.T) {
+	t.Run("invalid entry returns violations", func(t *testing.T) {
 		bad := strings.Replace(createReq, "<Key>+5561988880000</Key>", "<Key>61988887777</Key>", 1)
 		res := do(t, h, "POST", base+"/entries", bad, nil)
 		res.wantStatus(t, http.StatusBadRequest)
 		res.wantContains(t, "/error/EntryInvalid", "<violations>", "<property>entry.key</property>")
 	})
 
-	t.Run("XML malformado", func(t *testing.T) {
+	t.Run("malformed XML", func(t *testing.T) {
 		res := do(t, h, "POST", base+"/entries", "<CreateEntryRequest>", nil)
 		res.wantStatus(t, http.StatusBadRequest)
 		res.wantContains(t, "<detail>Could not parse request body</detail>")
 	})
 
-	t.Run("elemento raiz errado", func(t *testing.T) {
+	t.Run("wrong root element", func(t *testing.T) {
 		do(t, h, "POST", base+"/keys/check", deleteReq, nil).wantStatus(t, http.StatusBadRequest)
 	})
 
-	t.Run("consulta sem headers PI-*", func(t *testing.T) {
+	t.Run("lookup without PI-* headers", func(t *testing.T) {
 		res := do(t, h, "GET", base+"/entries/+5561988880000", "", nil)
 		res.wantStatus(t, http.StatusBadRequest)
 		res.wantContains(t, "PI-RequestingParticipant", "PI-PayerId", "PI-EndToEndId")
 	})
 
-	t.Run("rota inexistente", func(t *testing.T) {
+	t.Run("unknown route", func(t *testing.T) {
 		do(t, h, "GET", base+"/nope", "", nil).wantStatus(t, http.StatusNotFound)
 	})
 }

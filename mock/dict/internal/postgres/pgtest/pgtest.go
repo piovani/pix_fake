@@ -1,4 +1,4 @@
-// Package pgtest prepara um Postgres isolado para testes de integração.
+// Package pgtest prepares an isolated Postgres for integration tests.
 package pgtest
 
 import (
@@ -13,9 +13,9 @@ import (
 	"pixfake/mock/dict/internal/postgres"
 )
 
-// NewPool devolve um pool ligado a um schema exclusivo do teste, já migrado e
-// removido ao final. Assim pacotes de teste rodando em paralelo não dividem
-// tabelas. Sem DICT_TEST_DATABASE_URL o teste é pulado.
+// NewPool returns a pool bound to a schema exclusive to the test, already migrated and
+// dropped at the end. This way test packages running in parallel do not share
+// tables. Without DICT_TEST_DATABASE_URL the test is skipped.
 func NewPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("DICT_TEST_DATABASE_URL")

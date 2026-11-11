@@ -7,7 +7,7 @@ import (
 
 const timeLayout = "2006-01-02T15:04:05.000Z"
 
-// isoTime serializa datas em UTC com milissegundos, como nos exemplos da spec.
+// isoTime serializes dates in UTC with milliseconds, as in the spec examples.
 type isoTime time.Time
 
 func (t isoTime) MarshalText() ([]byte, error) {
@@ -38,7 +38,7 @@ type ownerXML struct {
 	TradeName   string `xml:"TradeName,omitempty"`
 }
 
-// entryXML serve para requisições (CreationDate/KeyOwnershipDate ignorados) e respostas.
+// entryXML is used for requests (CreationDate/KeyOwnershipDate are ignored) and responses.
 type entryXML struct {
 	Key              string     `xml:"Key,omitempty"`
 	KeyType          string     `xml:"KeyType"`
@@ -48,7 +48,7 @@ type entryXML struct {
 	KeyOwnershipDate *isoTime   `xml:"KeyOwnershipDate,omitempty"`
 }
 
-// --- Requisições ---
+// --- Requests ---
 
 type createEntryRequest struct {
 	XMLName   xml.Name `xml:"CreateEntryRequest"`
@@ -79,11 +79,11 @@ type checkKeysRequest struct {
 	} `xml:"Keys"`
 }
 
-// --- Respostas ---
+// --- Responses ---
 
-// header reúne os campos comuns a todas as respostas do DICT.
+// header holds the fields common to every DICT response.
 type header struct {
-	Signature     string  `xml:"Signature"` // o mock não assina: elemento vazio
+	Signature     string  `xml:"Signature"` // the mock does not sign: empty element
 	ResponseTime  isoTime `xml:"ResponseTime"`
 	CorrelationID string  `xml:"CorrelationId"`
 }
@@ -127,7 +127,7 @@ type checkKeysResponse struct {
 	} `xml:"Keys"`
 }
 
-// --- Estatísticas antifraude (sempre zeradas no mock) ---
+// --- Anti-fraud statistics (always zero in the mock) ---
 
 type windowed struct {
 	D90 int `xml:"d90,attr"`

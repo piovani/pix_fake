@@ -35,8 +35,8 @@ func TestSeedDataIsValidAndIdempotent(t *testing.T) {
 	}
 }
 
-// O seed deve servir para testar todos os cenários: todos os tipos de chave,
-// pessoa física e jurídica, e pagamentos entre instituições diferentes.
+// The seed must support every test scenario: all key types, natural and legal
+// persons, and payments between different institutions.
 func TestSeedDataCoverage(t *testing.T) {
 	keyTypes := map[dict.KeyType]bool{}
 	people := map[dict.PersonType]bool{}
@@ -62,7 +62,7 @@ func TestSeedDataCoverage(t *testing.T) {
 	}
 }
 
-// Evita que a documentação fique para trás: toda chave do seed precisa estar no README.
+// Keeps the docs from falling behind: every seeded key must appear in the README.
 func TestEveryKeyIsDocumentedInReadme(t *testing.T) {
 	readme, err := os.ReadFile("../../README.md")
 	if err != nil {

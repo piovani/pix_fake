@@ -1,4 +1,4 @@
-// Package postgres implementa dict.Repository sobre PostgreSQL.
+// Package postgres implements dict.Repository on PostgreSQL.
 package postgres
 
 import (

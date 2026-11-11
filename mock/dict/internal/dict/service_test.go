@@ -34,7 +34,7 @@ func createInput(e dict.Entry) dict.CreateEntryInput {
 	return dict.CreateEntryInput{Entry: e, Reason: dict.ReasonUserRequested, RequestID: requestID}
 }
 
-// wantKind verifica que err é um *dict.Error do tipo esperado.
+// wantKind checks that err is a *dict.Error of the expected kind.
 func wantKind(t *testing.T, err error, kind dict.Kind) *dict.Error {
 	t.Helper()
 	var de *dict.Error
@@ -47,7 +47,7 @@ func wantKind(t *testing.T, err error, kind dict.Kind) *dict.Error {
 func TestCreateEntry(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("cria e consulta", func(t *testing.T) {
+	t.Run("creates and looks up", func(t *testing.T) {
 		svc := newService()
 		got, err := svc.CreateEntry(ctx, psp, createInput(phoneEntry()))
 		if err != nil {
@@ -62,7 +62,7 @@ func TestCreateEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("EVP gera a chave", func(t *testing.T) {
+	t.Run("EVP generates the key", func(t *testing.T) {
 		e := phoneEntry()
 		e.Key, e.KeyType = "", dict.KeyEVP
 		got, err := newService().CreateEntry(ctx, psp, createInput(e))
@@ -74,14 +74,14 @@ func TestCreateEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("EVP com chave informada é inválido", func(t *testing.T) {
+	t.Run("EVP with a supplied key is invalid", func(t *testing.T) {
 		e := phoneEntry()
 		e.Key, e.KeyType = dict.NewEVP(), dict.KeyEVP
 		_, err := newService().CreateEntry(ctx, psp, createInput(e))
 		wantKind(t, err, dict.KindEntryInvalid)
 	})
 
-	t.Run("mesmo RequestId e mesmos dados é idempotente", func(t *testing.T) {
+	t.Run("same RequestId and same data is idempotent", func(t *testing.T) {
 		svc := newService()
 		first, err := svc.CreateEntry(ctx, psp, createInput(phoneEntry()))
 		if err != nil {
@@ -93,7 +93,7 @@ func TestCreateEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("mesmo RequestId com dados diferentes", func(t *testing.T) {
+	t.Run("same RequestId with different data", func(t *testing.T) {
 		svc := newService()
 		if _, err := svc.CreateEntry(ctx, psp, createInput(phoneEntry())); err != nil {
 			t.Fatal(err)
@@ -104,7 +104,7 @@ func TestCreateEntry(t *testing.T) {
 		wantKind(t, err, dict.KindRequestIDAlreadyUsed)
 	})
 
-	t.Run("chave já registrada", func(t *testing.T) {
+	t.Run("key already registered", func(t *testing.T) {
 		svc := newService()
 		if _, err := svc.CreateEntry(ctx, psp, createInput(phoneEntry())); err != nil {
 			t.Fatal(err)
@@ -115,21 +115,21 @@ func TestCreateEntry(t *testing.T) {
 		wantKind(t, err, dict.KindConflict)
 	})
 
-	t.Run("conta SLRY", func(t *testing.T) {
+	t.Run("SLRY account", func(t *testing.T) {
 		e := phoneEntry()
 		e.Account.Type = dict.AccountSalary
 		_, err := newService().CreateEntry(ctx, psp, createInput(e))
 		wantKind(t, err, dict.KindAccountTypeInvalid)
 	})
 
-	t.Run("conta de outro participante", func(t *testing.T) {
+	t.Run("account of another participant", func(t *testing.T) {
 		_, err := newService().CreateEntry(ctx, otherPSP, createInput(phoneEntry()))
 		wantKind(t, err, dict.KindForbidden)
 	})
 
-	t.Run("campos inválidos trazem violations", func(t *testing.T) {
+	t.Run("invalid fields return violations", func(t *testing.T) {
 		e := phoneEntry()
-		e.Key = "61988887777" // sem o +55
+		e.Key = "61988887777" // without the +55
 		in := createInput(e)
 		in.Reason = dict.ReasonFraud
 		_, err := newService().CreateEntry(ctx, psp, in)
@@ -143,7 +143,7 @@ func TestCreateEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("chave CPF deve ser do titular", func(t *testing.T) {
+	t.Run("CPF key must belong to the owner", func(t *testing.T) {
 		e := phoneEntry()
 		e.Key, e.KeyType = "99999999999", dict.KeyCPF
 		_, err := newService().CreateEntry(ctx, psp, createInput(e))
@@ -170,7 +170,7 @@ func TestUpdateEntry(t *testing.T) {
 	}
 	key := phoneEntry().Key
 
-	t.Run("atualiza conta e nome", func(t *testing.T) {
+	t.Run("updates account and name", func(t *testing.T) {
 		acc := phoneEntry().Account
 		acc.AccountNumber = "0001111111"
 		owner := phoneEntry().Owner
@@ -186,36 +186,36 @@ func TestUpdateEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("não troca o participante", func(t *testing.T) {
+	t.Run("does not change the participant", func(t *testing.T) {
 		acc := phoneEntry().Account
 		acc.Participant = otherPSP
 		_, err := setup(t).UpdateEntry(ctx, psp, key, dict.UpdateEntryInput{Key: key, Account: &acc, Reason: dict.ReasonUserRequested})
 		wantKind(t, err, dict.KindBadRequest)
 	})
 
-	t.Run("não troca o documento do titular", func(t *testing.T) {
+	t.Run("does not change the owner's tax id", func(t *testing.T) {
 		owner := phoneEntry().Owner
 		owner.TaxID = "99988877766"
 		_, err := setup(t).UpdateEntry(ctx, psp, key, dict.UpdateEntryInput{Key: key, Owner: &owner, Reason: dict.ReasonUserRequested})
 		wantKind(t, err, dict.KindBadRequest)
 	})
 
-	t.Run("outro participante", func(t *testing.T) {
+	t.Run("another participant", func(t *testing.T) {
 		_, err := setup(t).UpdateEntry(ctx, otherPSP, key, dict.UpdateEntryInput{Key: key, Reason: dict.ReasonUserRequested})
 		wantKind(t, err, dict.KindForbidden)
 	})
 
-	t.Run("não existe", func(t *testing.T) {
+	t.Run("does not exist", func(t *testing.T) {
 		_, err := newService().UpdateEntry(ctx, psp, key, dict.UpdateEntryInput{Key: key, Reason: dict.ReasonUserRequested})
 		wantKind(t, err, dict.KindNotFound)
 	})
 
-	t.Run("chave do corpo difere da URL", func(t *testing.T) {
+	t.Run("body key differs from the URL", func(t *testing.T) {
 		_, err := setup(t).UpdateEntry(ctx, psp, key, dict.UpdateEntryInput{Key: "+5561900000000", Reason: dict.ReasonUserRequested})
 		wantKind(t, err, dict.KindBadRequest)
 	})
 
-	t.Run("EVP não aceita USER_REQUESTED", func(t *testing.T) {
+	t.Run("EVP does not accept USER_REQUESTED", func(t *testing.T) {
 		svc := newService()
 		e := phoneEntry()
 		e.Key, e.KeyType = "", dict.KeyEVP
@@ -244,7 +244,7 @@ func TestDeleteEntry(t *testing.T) {
 	forbidden := in
 	forbidden.Participant = otherPSP
 	wantKind(t, svc.DeleteEntry(ctx, otherPSP, key, forbidden), dict.KindForbidden)
-	wantKind(t, svc.DeleteEntry(ctx, otherPSP, key, in), dict.KindForbidden) // caller != Participant do corpo
+	wantKind(t, svc.DeleteEntry(ctx, otherPSP, key, in), dict.KindForbidden) // caller != Participant in the body
 
 	invalidReason := in
 	invalidReason.Reason = dict.ReasonBranchTransfer

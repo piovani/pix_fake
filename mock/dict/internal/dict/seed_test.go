@@ -18,7 +18,7 @@ func evpEntry() dict.Entry {
 func TestSeed(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("cria, e rodar de novo não duplica", func(t *testing.T) {
+	t.Run("creates, and running again does not duplicate", func(t *testing.T) {
 		svc := newService()
 		entries := []dict.Entry{phoneEntry(), evpEntry()}
 
@@ -31,20 +31,20 @@ func TestSeed(t *testing.T) {
 			t.Fatalf("second run = %+v, %v; want 0 created and 2 existing", res, err)
 		}
 
-		// A chave EVP é a informada, não uma gerada.
+		// The EVP key is the one given, not a generated one.
 		got, err := svc.GetEntry(ctx, fixedEVP)
 		if err != nil || got.KeyType != dict.KeyEVP || got.CreationDate.IsZero() {
 			t.Fatalf("GetEntry(EVP) = %+v, %v", got, err)
 		}
 	})
 
-	t.Run("não sobrescreve vínculo existente", func(t *testing.T) {
+	t.Run("does not overwrite an existing entry", func(t *testing.T) {
 		svc := newService()
 		if _, err := svc.Seed(ctx, []dict.Entry{phoneEntry()}); err != nil {
 			t.Fatal(err)
 		}
 		changed := phoneEntry()
-		changed.Owner.Name = "Outro Nome"
+		changed.Owner.Name = "Another Name"
 		res, err := svc.Seed(ctx, []dict.Entry{changed})
 		if err != nil || len(res.Existing) != 1 {
 			t.Fatalf("res = %+v, %v", res, err)
@@ -54,7 +54,7 @@ func TestSeed(t *testing.T) {
 		}
 	})
 
-	t.Run("convive com vínculos criados pela API", func(t *testing.T) {
+	t.Run("coexists with entries created through the API", func(t *testing.T) {
 		svc := newService()
 		if _, err := svc.CreateEntry(ctx, psp, createInput(phoneEntry())); err != nil {
 			t.Fatal(err)
@@ -78,13 +78,13 @@ func TestSeedRejectsInvalidData(t *testing.T) {
 		name    string
 		entries []dict.Entry
 	}{
-		{"chave fora do formato", []dict.Entry{bad(func(e *dict.Entry) { e.Key = "61988887777" })}},
-		{"EVP fora do formato", []dict.Entry{bad(func(e *dict.Entry) { e.Key, e.KeyType = "nao-e-uuid", dict.KeyEVP })}},
-		{"tipo de chave desconhecido", []dict.Entry{bad(func(e *dict.Entry) { e.KeyType = "X" })}},
-		{"conta SLRY", []dict.Entry{bad(func(e *dict.Entry) { e.Account.Type = dict.AccountSalary })}},
-		{"ISPB inválido", []dict.Entry{bad(func(e *dict.Entry) { e.Account.Participant = "123" })}},
-		{"CPF de outro titular", []dict.Entry{bad(func(e *dict.Entry) { e.Key, e.KeyType = "99999999999", dict.KeyCPF })}},
-		{"chave repetida", []dict.Entry{phoneEntry(), phoneEntry()}},
+		{"key with wrong format", []dict.Entry{bad(func(e *dict.Entry) { e.Key = "61988887777" })}},
+		{"EVP with wrong format", []dict.Entry{bad(func(e *dict.Entry) { e.Key, e.KeyType = "not-a-uuid", dict.KeyEVP })}},
+		{"unknown key type", []dict.Entry{bad(func(e *dict.Entry) { e.KeyType = "X" })}},
+		{"SLRY account", []dict.Entry{bad(func(e *dict.Entry) { e.Account.Type = dict.AccountSalary })}},
+		{"invalid ISPB", []dict.Entry{bad(func(e *dict.Entry) { e.Account.Participant = "123" })}},
+		{"CPF of another owner", []dict.Entry{bad(func(e *dict.Entry) { e.Key, e.KeyType = "99999999999", dict.KeyCPF })}},
+		{"duplicate key", []dict.Entry{phoneEntry(), phoneEntry()}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestSeedRejectsInvalidData(t *testing.T) {
 		})
 	}
 
-	t.Run("valida tudo antes de gravar qualquer coisa", func(t *testing.T) {
+	t.Run("validates everything before writing anything", func(t *testing.T) {
 		svc := newService()
 		invalid := bad(func(e *dict.Entry) { e.Key, e.Owner.TaxID = "+5561999990000", "123" })
 		if _, err := svc.Seed(ctx, []dict.Entry{phoneEntry(), invalid}); err == nil {

@@ -1,5 +1,5 @@
-// Comando seed popula o banco do DICT mock com chaves de teste. É idempotente:
-// pode ser executado quantas vezes for preciso (por exemplo, em `make setup`).
+// Command seed loads test keys into the DICT mock database. It is idempotent:
+// it can be run as many times as needed (for example, in `make setup`).
 package main
 
 import (
@@ -39,7 +39,7 @@ func run(log *slog.Logger) error {
 	if err := pool.Ping(ctx); err != nil {
 		return err
 	}
-	// Garante o schema mesmo que o servidor ainda não tenha rodado.
+	// Ensure the schema exists even if the server has not run yet.
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}

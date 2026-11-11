@@ -2,8 +2,8 @@ package dict
 
 import "errors"
 
-// Kind identifica o tipo de erro de negócio. O valor é usado como último
-// segmento do campo "type" do problem+xml (…/api/v2/error/<Kind>).
+// Kind identifies the kind of business error. The value is used as the last
+// segment of the "type" field of the problem+xml (…/api/v2/error/<Kind>).
 type Kind string
 
 const (
@@ -16,14 +16,14 @@ const (
 	KindConflict             Kind = "ResourceConflict"
 )
 
-// Violation descreve um campo inválido (elemento <violation> do problem+xml).
+// Violation describes an invalid field (the <violation> element of the problem+xml).
 type Violation struct {
 	Reason   string
 	Value    string
 	Property string
 }
 
-// Error é um erro de negócio que a camada HTTP traduz para problem+xml.
+// Error is a business error that the HTTP layer translates into problem+xml.
 type Error struct {
 	Kind       Kind
 	Detail     string
@@ -40,7 +40,7 @@ func invalid(kind Kind, detail string, v violations) *Error {
 	return &Error{Kind: kind, Detail: detail, Violations: v}
 }
 
-// Erros sentinela devolvidos pelo Repository.
+// Sentinel errors returned by the Repository.
 var (
 	ErrNotFound      = errors.New("entry not found")
 	ErrKeyExists     = errors.New("key already exists")

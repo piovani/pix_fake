@@ -121,7 +121,7 @@ func (s *Server) checkKeys(r *http.Request, _ string) (int, any, error) {
 	return http.StatusOK, resp, nil
 }
 
-// --- Conversões XML <-> domínio ---
+// --- XML <-> domain conversions ---
 
 func accountFromXML(a accountXML) dict.Account {
 	return dict.Account{

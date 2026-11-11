@@ -1,4 +1,4 @@
-// Package config lê a configuração do serviço a partir de variáveis de ambiente.
+// Package config reads the service configuration from environment variables.
 package config
 
 import "os"

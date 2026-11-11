@@ -1,4 +1,4 @@
-// Package dict contém as regras do diretório de chaves Pix (DICT) simulado.
+// Package dict holds the rules of the simulated Pix key directory (DICT).
 package dict
 
 import "time"
@@ -30,7 +30,7 @@ const (
 	LegalPerson   PersonType = "LEGAL_PERSON"
 )
 
-// Reason é o motivo informado nas operações de escrita (EntryOperationReason).
+// Reason is the reason given in write operations (EntryOperationReason).
 type Reason string
 
 const (
@@ -43,7 +43,7 @@ const (
 )
 
 type Account struct {
-	Participant   string // ISPB do provedor da conta
+	Participant   string // ISPB of the account provider
 	Branch        string
 	AccountNumber string
 	Type          AccountType
@@ -54,10 +54,10 @@ type Owner struct {
 	Type      PersonType
 	TaxID     string
 	Name      string
-	TradeName string // apenas pessoa jurídica
+	TradeName string // legal persons only
 }
 
-// Entry é o vínculo entre chave, conta transacional e titular.
+// Entry is the link between a key, a transactional account and its owner.
 type Entry struct {
 	Key              string
 	KeyType          KeyType
@@ -67,7 +67,7 @@ type Entry struct {
 	KeyOwnershipDate time.Time
 }
 
-// KeyStatus é o resultado da verificação de uma chave (/keys/check).
+// KeyStatus is the result of checking a key (/keys/check).
 type KeyStatus struct {
 	Key      string
 	HasEntry bool

@@ -1,4 +1,4 @@
-// Package httpapi expõe o serviço DICT via HTTP/XML, no formato da spec do Bacen.
+// Package httpapi exposes the DICT service over HTTP/XML, in the Bacen spec format.
 package httpapi
 
 import (
@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	// BasePath é o prefixo da API, igual ao da URL real (…/api/v2).
+	// BasePath is the API prefix, same as the real URL (…/api/v2).
 	BasePath = "/api/v2"
-	// ParticipantHeader identifica a instituição chamadora. Substitui o mTLS.
+	// ParticipantHeader identifies the calling institution. It replaces mTLS.
 	ParticipantHeader = "X-Participant-ISPB"
 
 	maxBodyBytes = 1 << 20
@@ -31,12 +31,12 @@ type Server struct {
 	now    func() time.Time
 }
 
-// New cria o servidor. health é chamado em GET /healthz (pode ser nil).
+// New creates the server. health is called on GET /healthz (it may be nil).
 func New(svc *dict.Service, log *slog.Logger, health func(context.Context) error) *Server {
 	return &Server{svc: svc, log: log, health: health, now: time.Now}
 }
 
-// handlerFunc devolve o status e o corpo de sucesso, ou um erro.
+// handlerFunc returns the status and success body, or an error.
 type handlerFunc func(r *http.Request, caller string) (status int, body any, err error)
 
 func (s *Server) Handler() http.Handler {
@@ -64,7 +64,7 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, "ok")
 }
 
-// api exige o header de identificação da instituição e traduz resultado/erro em XML.
+// api requires the institution identification header and translates the result or error into XML.
 func (s *Server) api(fn handlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller := r.Header.Get(ParticipantHeader)

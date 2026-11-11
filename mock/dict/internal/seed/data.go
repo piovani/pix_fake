@@ -1,8 +1,8 @@
-// Package seed define as chaves de teste que o DICT mock carrega com `make seed`.
+// Package seed defines the test keys that the DICT mock loads with `make seed`.
 //
-// Os ISPBs são fictícios. CPFs e CNPJs têm dígito verificador válido, para que a
-// validação da carteira (se houver) também aceite os dados. Ao alterar este
-// arquivo, atualize a tabela "Seed data" do README (um teste confere as chaves).
+// The ISPBs are fictional. CPFs and CNPJs have valid check digits, so that the
+// wallet's own validation (if any) also accepts the data. When changing this
+// file, update the "Seed data" table in the README (a test checks the keys).
 package seed
 
 import (
@@ -11,14 +11,14 @@ import (
 	"pixfake/mock/dict/internal/dict"
 )
 
-// Instituições participantes do seed.
+// Institutions taking part in the seed.
 const (
-	WalletISPB = "99000001" // a carteira do projeto
-	AlfaISPB   = "99000002" // Banco Alfa (outro banco)
-	BetaISPB   = "99000003" // Banco Beta (outro banco)
+	WalletISPB = "99000001" // the project's wallet
+	AlfaISPB   = "99000002" // Banco Alfa (another bank)
+	BetaISPB   = "99000003" // Banco Beta (another bank)
 )
 
-var opened = time.Date(2020, 3, 10, 3, 0, 0, 0, time.UTC) // 00:00 em BRT
+var opened = time.Date(2020, 3, 10, 3, 0, 0, 0, time.UTC) // 00:00 in BRT
 
 type holder struct {
 	account dict.Account
@@ -43,7 +43,7 @@ func (h holder) key(typ dict.KeyType, key string) dict.Entry {
 	return dict.Entry{Key: key, KeyType: typ, Account: h.account, Owner: h.owner}
 }
 
-// Entries devolve os vínculos do seed.
+// Entries returns the seed entries.
 func Entries() []dict.Entry {
 	ana := natural(WalletISPB, "00123456", dict.AccountChecking, "52998224725", "Ana Souza")
 	bruno := natural(WalletISPB, "00234567", dict.AccountSavings, "11144477735", "Bruno Lima")
@@ -53,7 +53,7 @@ func Entries() []dict.Entry {
 	mercadinho := legal(BetaISPB, "00678901", dict.AccountChecking, "45678912000155", "Mercadinho do Zé ME", "Mercadinho do Ze")
 
 	return []dict.Entry{
-		// Carteira
+		// Wallet
 		ana.key(dict.KeyCPF, "52998224725"),
 		ana.key(dict.KeyPhone, "+5511999990001"),
 		ana.key(dict.KeyEmail, "ana.souza@example.com"),

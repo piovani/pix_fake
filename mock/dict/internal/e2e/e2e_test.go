@@ -1,4 +1,4 @@
-// Package e2e testa a API HTTP completa sobre um Postgres real.
+// Package e2e tests the complete HTTP API on a real Postgres.
 package e2e_test
 
 import (
@@ -35,8 +35,8 @@ type reply struct {
 	body        string
 }
 
-// newClient sobe a API real (handlers + service + Postgres) em um httptest.Server.
-// Sem DICT_TEST_DATABASE_URL o teste é pulado (ver pgtest).
+// newClient starts the real API (handlers + service + Postgres) in an httptest.Server.
+// Without DICT_TEST_DATABASE_URL the test is skipped (see pgtest).
 func newClient(t *testing.T) *client {
 	t.Helper()
 	pool := pgtest.NewPool(t)
@@ -125,7 +125,7 @@ const (
 func TestEntryLifecycleOnPostgres(t *testing.T) {
 	c := newClient(t)
 
-	// Criação e repetição idempotente devolvem o mesmo vínculo (mesmas datas, vindas do banco).
+	// Creating and repeating the request return the same entry (same dates, read from the database).
 	first := c.do("POST", base+"/entries", createBody(phone, reqA), nil).
 		want(t, http.StatusCreated, "<Key>"+phoneKey+"</Key>", "<CreationDate>")
 	again := c.do("POST", base+"/entries", createBody(phone, reqA), nil).want(t, http.StatusCreated)
@@ -133,18 +133,18 @@ func TestEntryLifecycleOnPostgres(t *testing.T) {
 		t.Fatalf("replay returned a different CreationDate:\n%s\n%s", first.body, again.body)
 	}
 
-	// Mesmo RequestId com outros dados e mesma chave com outro RequestId são recusados.
+	// The same RequestId with other data, and the same key with another RequestId, are rejected.
 	other := strings.Replace(createBody(phone, reqA), "0007654321", "0000000001", 1)
 	c.do("POST", base+"/entries", other, nil).want(t, http.StatusBadRequest, "/error/RequestIdAlreadyUsed")
 	c.do("POST", base+"/entries", createBody(phone, reqB), nil).want(t, http.StatusConflict, "/error/ResourceConflict")
 
-	// Consulta (com e sem estatísticas), por outro participante identificado.
+	// Lookup (with and without statistics), by another identified participant.
 	c.do("GET", base+"/entries/"+phoneKey, "", getHeaders).
 		want(t, http.StatusOK, "<Name>João Silva</Name>", "<OpeningDate>2010-01-10T03:00:00.000Z</OpeningDate>")
 	c.do("GET", base+"/entries/"+phoneKey+"?IncludeStatistics=true", "", getHeaders).
 		want(t, http.StatusOK, "<OwnerStatistics>", "<KeyStatistics>")
 
-	// Atualização persiste conta e nome.
+	// Update persists account and name.
 	update := `<UpdateEntryRequest><Key>` + phoneKey + `</Key>
         <Account><Participant>` + psp + `</Participant><Branch>0002</Branch><AccountNumber>0009999999</AccountNumber>
         <AccountType>SVGS</AccountType><OpeningDate>2010-01-10T03:00:00Z</OpeningDate></Account>
@@ -155,18 +155,18 @@ func TestEntryLifecycleOnPostgres(t *testing.T) {
 	c.do("GET", base+"/entries/"+phoneKey, "", getHeaders).
 		want(t, http.StatusOK, "<Name>João Souza</Name>", "<Branch>0002</Branch>")
 
-	// Outro participante não altera nem remove.
+	// Another participant can neither update nor delete.
 	otherPSP := map[string]string{httpapi.ParticipantHeader: "87654321"}
 	c.do("PUT", base+"/entries/"+phoneKey, update, otherPSP).want(t, http.StatusForbidden)
 	del := `<DeleteEntryRequest><Key>` + phoneKey + `</Key><Participant>` + psp + `</Participant><Reason>ACCOUNT_CLOSURE</Reason></DeleteEntryRequest>`
 	c.do("POST", base+"/entries/"+phoneKey+"/delete", del, otherPSP).want(t, http.StatusForbidden)
 
-	// Verificação de chaves reflete o banco.
+	// The key check reflects the database.
 	check := `<CheckKeysRequest><Keys><Key>` + phoneKey + `</Key><Key>mail@mail.com</Key></Keys></CheckKeysRequest>`
 	c.do("POST", base+"/keys/check", check, nil).
 		want(t, http.StatusOK, `<Key hasEntry="true">`+phoneKey+`</Key>`, `<Key hasEntry="false">mail@mail.com</Key>`)
 
-	// Remoção: depois dela a chave some e não pode ser removida de novo.
+	// Delete: afterwards the key is gone and cannot be deleted again.
 	c.do("POST", base+"/entries/"+phoneKey+"/delete", del, nil).
 		want(t, http.StatusOK, "<DeleteEntryResponse>", "<Key>"+phoneKey+"</Key>")
 	c.do("GET", base+"/entries/"+phoneKey, "", getHeaders).want(t, http.StatusNotFound)
@@ -190,7 +190,7 @@ func TestEVPKeyIsGeneratedAndPersisted(t *testing.T) {
 	c.do("GET", base+"/entries/"+created.Entry.Key, "", getHeaders).
 		want(t, http.StatusOK, "<Key>"+created.Entry.Key+"</Key>", "<KeyType>EVP</KeyType>")
 
-	// Repetir o RequestId devolve a mesma chave EVP, em vez de gerar outra.
+	// Repeating the RequestId returns the same EVP key instead of generating another.
 	c.do("POST", base+"/entries", createBody(`<KeyType>EVP</KeyType>`, reqA), nil).
 		want(t, http.StatusCreated, "<Key>"+created.Entry.Key+"</Key>")
 }
@@ -229,7 +229,7 @@ func TestSeededKeysAreServedByTheAPI(t *testing.T) {
 		t.Fatalf("seed = %+v, %v", res, err)
 	}
 
-	// Cada chave do seed pode ser consultada, como a carteira faria antes de pagar.
+	// Each seeded key can be looked up, as the wallet would before paying.
 	keys := make([]string, len(entries))
 	for i, e := range entries {
 		keys[i] = e.Key
@@ -237,7 +237,7 @@ func TestSeededKeysAreServedByTheAPI(t *testing.T) {
 			"<Key>"+e.Key+"</Key>", "<Participant>"+e.Account.Participant+"</Participant>", "<Name>"+e.Owner.Name+"</Name>")
 	}
 
-	// A verificação em lote enxerga todas.
+	// The batch check sees all of them.
 	body := "<CheckKeysRequest><Keys>"
 	for _, k := range keys {
 		body += "<Key>" + k + "</Key>"
@@ -248,11 +248,11 @@ func TestSeededKeysAreServedByTheAPI(t *testing.T) {
 		t.Fatalf("%d of %d seeded keys reported as existing", n, len(keys))
 	}
 
-	// Já cadastradas, não podem ser criadas de novo pela API.
+	// Already registered, they cannot be created again through the API.
 	c.do("POST", base+"/entries", createBody(`<Key>`+keys[1]+`</Key><KeyType>PHONE</KeyType>`, reqB), nil).
 		want(t, http.StatusConflict, "/error/ResourceConflict")
 
-	// Rodar o seed outra vez não muda nada.
+	// Running the seed again changes nothing.
 	res, err = c.svc.Seed(context.Background(), entries)
 	if err != nil || len(res.Created) != 0 || len(res.Existing) != len(entries) {
 		t.Fatalf("second seed = %+v, %v", res, err)
