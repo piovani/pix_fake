@@ -1,9 +1,12 @@
 DATABASE_URL ?= postgres://dict:dict@localhost:5432/dict?sslmode=disable
 
-.PHONY: run test test-integration lint db-up db-down
+.PHONY: run seed test test-integration lint db-up db-down
 
 run: db-up ## sobe o mock em :8080
 	DICT_DATABASE_URL=$(DATABASE_URL) go run ./cmd/dict
+
+seed: db-up ## popula o banco com chaves de teste (idempotente)
+	DICT_DATABASE_URL=$(DATABASE_URL) go run ./cmd/seed
 
 test: ## testes unitários (sem banco)
 	go test -race ./...

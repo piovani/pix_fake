@@ -2,6 +2,7 @@
 package e2e_test
 
 import (
+	"context"
 	"encoding/xml"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"pixfake/mock/dict/internal/httpapi"
 	"pixfake/mock/dict/internal/postgres"
 	"pixfake/mock/dict/internal/postgres/pgtest"
+	"pixfake/mock/dict/internal/seed"
 )
 
 const (
@@ -24,6 +26,7 @@ const (
 type client struct {
 	t   *testing.T
 	url string
+	svc *dict.Service
 }
 
 type reply struct {
@@ -42,7 +45,7 @@ func newClient(t *testing.T) *client {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := httptest.NewServer(httpapi.New(svc, log, pool.Ping).Handler())
 	t.Cleanup(srv.Close)
-	return &client{t: t, url: srv.URL}
+	return &client{t: t, url: srv.URL, svc: svc}
 }
 
 func (c *client) do(method, path, body string, headers map[string]string) reply {
@@ -215,4 +218,43 @@ func creation(t *testing.T, body string) string {
 		t.Fatalf("no CreationDate in response (%v):\n%s", err, body)
 	}
 	return out.Entry.CreationDate
+}
+
+func TestSeededKeysAreServedByTheAPI(t *testing.T) {
+	c := newClient(t)
+	entries := seed.Entries()
+
+	res, err := c.svc.Seed(context.Background(), entries)
+	if err != nil || len(res.Created) != len(entries) {
+		t.Fatalf("seed = %+v, %v", res, err)
+	}
+
+	// Cada chave do seed pode ser consultada, como a carteira faria antes de pagar.
+	keys := make([]string, len(entries))
+	for i, e := range entries {
+		keys[i] = e.Key
+		c.do("GET", base+"/entries/"+e.Key, "", getHeaders).want(t, http.StatusOK,
+			"<Key>"+e.Key+"</Key>", "<Participant>"+e.Account.Participant+"</Participant>", "<Name>"+e.Owner.Name+"</Name>")
+	}
+
+	// A verificação em lote enxerga todas.
+	body := "<CheckKeysRequest><Keys>"
+	for _, k := range keys {
+		body += "<Key>" + k + "</Key>"
+	}
+	body += "</Keys></CheckKeysRequest>"
+	res2 := c.do("POST", base+"/keys/check", body, nil).want(t, http.StatusOK)
+	if n := strings.Count(res2.body, `hasEntry="true"`); n != len(keys) {
+		t.Fatalf("%d of %d seeded keys reported as existing", n, len(keys))
+	}
+
+	// Já cadastradas, não podem ser criadas de novo pela API.
+	c.do("POST", base+"/entries", createBody(`<Key>`+keys[1]+`</Key><KeyType>PHONE</KeyType>`, reqB), nil).
+		want(t, http.StatusConflict, "/error/ResourceConflict")
+
+	// Rodar o seed outra vez não muda nada.
+	res, err = c.svc.Seed(context.Background(), entries)
+	if err != nil || len(res.Created) != 0 || len(res.Existing) != len(entries) {
+		t.Fatalf("second seed = %+v, %v", res, err)
+	}
 }

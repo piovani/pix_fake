@@ -2,6 +2,7 @@ package dict
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 )
@@ -10,6 +11,16 @@ import (
 func NewEVP() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read não retorna erro (Go 1.24+)
+	return formatUUID(b)
+}
+
+// deterministicUUID deriva sempre o mesmo UUID v4 a partir de s.
+func deterministicUUID(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return formatUUID([16]byte(sum[:16]))
+}
+
+func formatUUID(b [16]byte) string {
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
 	h := hex.EncodeToString(b[:])

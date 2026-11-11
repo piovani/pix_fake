@@ -16,6 +16,7 @@ Requires Go 1.27.3+ and Docker (for Postgres).
 
 ```sh
 make run               # starts Postgres (docker compose) and the mock on :8080
+make seed              # loads the test keys into the database (idempotent)
 make test              # unit tests, no database needed
 make test-integration  # everything, including the Postgres repository and end-to-end tests
 ```
@@ -29,6 +30,30 @@ Migrations in `internal/postgres/migrations/` are applied on startup. `GET /heal
 
 The base path is `/api/v2`, the same as the real service, so pointing the wallet at the real DICT later is
 a base URL change.
+
+## Seed data
+
+`make seed` starts Postgres if needed, applies the migrations and registers a fixed set of keys, so the DICT
+already answers lookups for tests. It is **idempotent**: running it again changes nothing and reports what already
+existed, so it is safe inside a future `make setup`. Existing entries are never overwritten; to start from scratch
+run `docker compose down -v` first.
+
+The data lives in [`internal/seed/data.go`](internal/seed/data.go). The institutions use fictional ISPBs, and CPFs
+and CNPJs have valid check digits (the mock itself does not verify them). Keys are fixed, including the `EVP` ones,
+so tests can rely on them.
+
+| Participant | ISPB | Owner | Account | Keys |
+|-------------|------|-------|---------|------|
+| Wallet | `99000001` | Ana Souza (CPF `52998224725`) | `0001` / `00123456`, `CACC` | CPF `52998224725`, PHONE `+5511999990001`, EMAIL `ana.souza@example.com`, EVP `8f3c1a52-6b7d-4e0a-9c11-2d5a7b3e9f01` |
+| Wallet | `99000001` | Bruno Lima (CPF `11144477735`) | `0001` / `00234567`, `SVGS` | CPF `11144477735`, PHONE `+5511999990002` |
+| Wallet | `99000001` | Padaria Pão Quente Ltda (CNPJ `11222333000181`) | `0001` / `00345678`, `CACC` | CNPJ `11222333000181`, EMAIL `contato@paoquente.example.com` |
+| Banco Alfa | `99000002` | Carlos Mendes (CPF `39053344705`) | `0001` / `00456789`, `CACC` | CPF `39053344705`, PHONE `+5521999990003`, EVP `2b9d4e17-a3c8-4f65-8d02-7e1c6a0b5d93` |
+| Banco Beta | `99000003` | Daniela Rocha (CPF `16899535009`) | `0001` / `00567890`, `TRAN` | CPF `16899535009`, EMAIL `daniela.rocha@example.com` |
+| Banco Beta | `99000003` | Mercadinho do Zé ME (CNPJ `45678912000155`) | `0001` / `00678901`, `CACC` | CNPJ `45678912000155`, PHONE `+5531999990004` |
+
+It covers every key type, natural and legal persons, and payments inside the wallet (Ana to Bruno) as well as
+across institutions (wallet to Banco Alfa or Beta, and back). A test fails if a seeded key is missing from this
+table.
 
 ## Identifying the institution
 
@@ -105,6 +130,7 @@ Unimplemented paths return `404 problem+xml`.
 ```
 mock/dict/
 ├── cmd/dict/              # main: config, wiring, graceful shutdown
+├── cmd/seed/              # loads the test keys (make seed)
 ├── internal/
 │   ├── dict/              # domain: entities, validation, service, Repository interface
 │   ├── httpapi/           # HTTP handlers, XML types, problem+xml
@@ -112,6 +138,7 @@ mock/dict/
 │   │   └── pgtest/        # per-test Postgres schema for integration tests
 │   ├── memstore/          # in-memory Repository, tests only
 │   ├── e2e/               # end-to-end tests: real HTTP API on Postgres
+│   ├── seed/              # the seed data (keys, owners, institutions)
 │   └── config/
 ├── docs/openapi.json      # Bacen DICT API v2.13.0 (source of truth)
 ├── docker-compose.yml
