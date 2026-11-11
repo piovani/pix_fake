@@ -3,14 +3,12 @@ package postgres_test
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"pixfake/mock/dict/internal/dict"
 	"pixfake/mock/dict/internal/postgres"
+	"pixfake/mock/dict/internal/postgres/pgtest"
 )
 
 const (
@@ -18,29 +16,9 @@ const (
 	reqB = "b946d533-7f22-42a5-9a9b-e87cd55c0f4d"
 )
 
-// newRepo exige um Postgres real; sem DICT_TEST_DATABASE_URL o teste é pulado.
 func newRepo(t *testing.T) *postgres.Repository {
 	t.Helper()
-	url := os.Getenv("DICT_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("DICT_TEST_DATABASE_URL not set; run `make test-integration`")
-	}
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	if err := postgres.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
-	if err := postgres.Migrate(ctx, pool); err != nil { // segunda execução deve ser no-op
-		t.Fatalf("migrate is not idempotent: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `TRUNCATE entries`); err != nil {
-		t.Fatal(err)
-	}
-	return postgres.NewRepository(pool)
+	return postgres.NewRepository(pgtest.NewPool(t))
 }
 
 func entry(key string) dict.Entry {
@@ -103,5 +81,17 @@ func TestRepository(t *testing.T) {
 	}
 	if err := repo.Update(ctx, e); !errors.Is(err, dict.ErrNotFound) {
 		t.Fatalf("Update missing: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMigrateIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.NewPool(t) // já aplica as migrations uma vez
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		t.Fatalf("second Migrate failed: %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("schema_migrations rows = %d, %v; want 1", n, err)
 	}
 }

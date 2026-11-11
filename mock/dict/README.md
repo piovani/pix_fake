@@ -17,7 +17,7 @@ Requires Go 1.27.3+ and Docker (for Postgres).
 ```sh
 make run               # starts Postgres (docker compose) and the mock on :8080
 make test              # unit tests, no database needed
-make test-integration  # everything, including the Postgres repository tests
+make test-integration  # everything, including the Postgres repository and end-to-end tests
 ```
 
 | Variable            | Default                                                        |
@@ -109,7 +109,9 @@ mock/dict/
 │   ├── dict/              # domain: entities, validation, service, Repository interface
 │   ├── httpapi/           # HTTP handlers, XML types, problem+xml
 │   ├── postgres/          # Repository on Postgres + embedded migrations
+│   │   └── pgtest/        # per-test Postgres schema for integration tests
 │   ├── memstore/          # in-memory Repository, tests only
+│   ├── e2e/               # end-to-end tests: real HTTP API on Postgres
 │   └── config/
 ├── docs/openapi.json      # Bacen DICT API v2.13.0 (source of truth)
 ├── docker-compose.yml
