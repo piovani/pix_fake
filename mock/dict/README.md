@@ -19,6 +19,9 @@ make run               # starts Postgres (docker compose) and the mock on :8080
 make seed              # loads the test keys into the database (idempotent)
 make test              # unit tests, no database needed
 make test-integration  # everything, including the Postgres repository and end-to-end tests
+make lint              # gofmt and go vet
+make db-up             # starts only Postgres
+make db-down           # stops Postgres (add -v to docker compose down to drop the data)
 ```
 
 | Variable            | Default                                                        |
@@ -55,6 +58,25 @@ It covers every key type, natural and legal persons, and payments inside the wal
 across institutions (wallet to Banco Alfa or Beta, and back). A test fails if a seeded key is missing from this
 table.
 
+The wallet's ISPB (`99000001`) is a placeholder: change the constants at the top of `internal/seed/data.go` and the
+table above to use the real one.
+
+### Trying it
+
+With the mock running (`make run`) and the seed loaded (`make seed`), look up a key of another institution the way
+the wallet would before paying (the `+` of the phone key is URL-encoded as `%2B`):
+
+```sh
+curl -s \
+  -H "X-Participant-ISPB: 99000001" \
+  -H "PI-RequestingParticipant: 99000001" \
+  -H "PI-PayerId: 52998224725" \
+  -H "PI-EndToEndId: E9900000120261111120000000000001" \
+  "http://localhost:8080/api/v2/entries/%2B5521999990003"
+```
+
+It returns the owner (Carlos Mendes) and the account at Banco Alfa. A key that is not in the seed returns `404`.
+
 ## Identifying the institution
 
 There is no mTLS. Every request to `/api/v2/*` must carry the participant's ISPB:
@@ -83,6 +105,10 @@ A missing or malformed header returns `403 Forbidden`. It is used for simple aut
 | `checkKeys`     | `POST /keys/check`                   | 200     |
 
 ### Not implemented yet
+
+Paying and receiving Pix only needs the five operations above. The claims (moving a key that is already registered
+at another institution) were left out on purpose and can be added later; the rest belongs to the fraud and
+reconciliation side of the ecosystem.
 
 | Area              | Endpoints |
 |-------------------|-----------|
