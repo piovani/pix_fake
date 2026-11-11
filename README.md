@@ -131,6 +131,11 @@ PI-EndToEndId: E9900000120261111120000000000001
 A key that does not exist returns `404` with a `problem+xml` body. Note that `PI-EndToEndId` is required: the payment
 identifier must exist **before** the key lookup, and it is the same one later sent in the `pacs.008`.
 
+A key held by the participant that is asking (`PI-RequestingParticipant`) returns `400`
+`EntryCannotBeQueriedForBookTransfer`: payments between customers of the same institution are settled internally and
+do not query the DICT. They also do not go through the SPI, but must be reported to Bacen afterwards; see
+[Payments inside the same institution](docs/architecture.md#payments-inside-the-same-institution-book-transfer).
+
 ### 2. SPI: Instant Payment System
 
 The SPI settles Pix payments in real time between participants. Payments are exchanged as **ISO 20022** XML messages.

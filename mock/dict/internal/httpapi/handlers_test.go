@@ -121,10 +121,12 @@ func (r response) wantContains(t *testing.T, parts ...string) {
 	}
 }
 
+// getHeaders are the headers of a lookup made by another institution (the payer's), which is
+// the normal case. The entries in these tests are held by participant 12345678.
 var getHeaders = map[string]string{
-	"PI-RequestingParticipant": "12345678",
+	"PI-RequestingParticipant": "87654321",
 	"PI-PayerId":               "11122233300",
-	"PI-EndToEndId":            "E1234567820240101120000000000001",
+	"PI-EndToEndId":            "E8765432120240101120000000000001",
 }
 
 func TestEntryLifecycle(t *testing.T) {
@@ -190,6 +192,26 @@ func TestProblems(t *testing.T) {
 		res := do(t, h, "POST", base+"/entries/+5561988880000/delete", deleteReq,
 			map[string]string{httpapi.ParticipantHeader: "87654321"})
 		res.wantStatus(t, http.StatusForbidden)
+	})
+
+	t.Run("key held by the requesting participant", func(t *testing.T) {
+		heldByRequester := map[string]string{
+			"PI-RequestingParticipant": "12345678", // holds the entry: this is a book transfer
+			"PI-PayerId":               "11122233300",
+			"PI-EndToEndId":            "E1234567820240101120000000000001",
+		}
+		res := do(t, h, "GET", base+"/entries/+5561988880000", "", heldByRequester)
+		res.wantStatus(t, http.StatusBadRequest)
+		res.wantContains(t, "<type>https://dict.pi.rsfn.net.br/api/v2/error/EntryCannotBeQueriedForBookTransfer</type>",
+			"<status>400</status>")
+		if res.contentType != "application/problem+xml" {
+			t.Fatalf("content-type = %q", res.contentType)
+		}
+	})
+
+	t.Run("unknown key held by nobody is still a 404 for the same participant", func(t *testing.T) {
+		sameParticipant := map[string]string{"PI-RequestingParticipant": "12345678", "PI-PayerId": "11122233300", "PI-EndToEndId": "E1"}
+		do(t, h, "GET", base+"/entries/mail@mail.com", "", sameParticipant).wantStatus(t, http.StatusNotFound)
 	})
 
 	t.Run("unknown key", func(t *testing.T) {

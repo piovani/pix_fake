@@ -18,6 +18,7 @@ var problems = map[dict.Kind]struct {
 }{
 	dict.KindBadRequest:           {http.StatusBadRequest, "Bad Request"},
 	dict.KindEntryInvalid:         {http.StatusBadRequest, "Entry is invalid"},
+	dict.KindBookTransfer:         {http.StatusBadRequest, "Entry cannot be queried for a book transfer"},
 	dict.KindAccountTypeInvalid:   {http.StatusBadRequest, "Account type is invalid"},
 	dict.KindRequestIDAlreadyUsed: {http.StatusBadRequest, "RequestId already used"},
 	dict.KindForbidden:            {http.StatusForbidden, "Forbidden"},

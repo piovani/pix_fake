@@ -88,10 +88,12 @@ func (r reply) want(t *testing.T, status int, parts ...string) reply {
 	return r
 }
 
+// getHeaders are the headers of a lookup made by another institution (the payer's). The
+// entries created in these tests are held by psp, so psp itself cannot be the requester.
 var getHeaders = map[string]string{
-	"PI-RequestingParticipant": psp,
+	"PI-RequestingParticipant": "87654321",
 	"PI-PayerId":               "11122233300",
-	"PI-EndToEndId":            "E1234567820240101120000000000001",
+	"PI-EndToEndId":            "E8765432120240101120000000000001",
 }
 
 func createBody(keyElems, requestID string) string {
@@ -247,6 +249,26 @@ func TestSeededKeysAreServedByTheAPI(t *testing.T) {
 	if n := strings.Count(res2.body, `hasEntry="true"`); n != len(keys) {
 		t.Fatalf("%d of %d seeded keys reported as existing", n, len(keys))
 	}
+
+	// A participant cannot look up keys it holds itself: that is a book transfer, settled
+	// internally. The same participant can still look up keys held by other institutions.
+	var walletKey, alfaKey string
+	for _, e := range entries {
+		switch {
+		case walletKey == "" && e.Account.Participant == seed.WalletISPB:
+			walletKey = e.Key
+		case alfaKey == "" && e.Account.Participant == seed.AlfaISPB:
+			alfaKey = e.Key
+		}
+	}
+	asWallet := map[string]string{
+		"PI-RequestingParticipant": seed.WalletISPB,
+		"PI-PayerId":               "52998224725",
+		"PI-EndToEndId":            "E9900000120261111120000000000001",
+	}
+	c.do("GET", base+"/entries/"+walletKey, "", asWallet).
+		want(t, http.StatusBadRequest, "/error/EntryCannotBeQueriedForBookTransfer")
+	c.do("GET", base+"/entries/"+alfaKey, "", asWallet).want(t, http.StatusOK, "<Participant>"+seed.AlfaISPB+"</Participant>")
 
 	// Already registered, they cannot be created again through the API.
 	c.do("POST", base+"/entries", createBody(`<Key>`+keys[1]+`</Key><KeyType>PHONE</KeyType>`, reqB), nil).

@@ -58,7 +58,7 @@ func (s *Server) getEntry(r *http.Request, _ string) (int, any, error) {
 		return 0, nil, &dict.Error{Kind: dict.KindBadRequest, Detail: "Request has invalid parameters", Violations: v}
 	}
 
-	e, err := s.svc.GetEntry(r.Context(), r.PathValue("Key"))
+	e, err := s.svc.LookupEntry(r.Context(), participant, r.PathValue("Key"))
 	if err != nil {
 		return 0, nil, err
 	}

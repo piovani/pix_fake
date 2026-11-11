@@ -114,7 +114,24 @@ func sameAccount(a, b Account) bool {
 		a.OpeningDate.Equal(b.OpeningDate)
 }
 
-// GetEntry looks up the entry of a key.
+// LookupEntry is the DICT query that a payer's participant makes before a payment.
+// An entry held by the requesting participant itself cannot be queried: a payment
+// between two customers of the same participant is a book transfer, settled
+// internally, and must not use the DICT (error EntryCannotBeQueriedForBookTransfer).
+func (s *Service) LookupEntry(ctx context.Context, requestingParticipant, key string) (Entry, error) {
+	e, err := s.GetEntry(ctx, key)
+	if err != nil {
+		return Entry{}, err
+	}
+	if e.Account.Participant == requestingParticipant {
+		return Entry{}, newError(KindBookTransfer,
+			"The entry is held by the same participant as the payer: payments between customers of the same "+
+				"participant are settled internally and must not query the DICT")
+	}
+	return e, nil
+}
+
+// GetEntry reads the entry of a key, without any participant rule.
 func (s *Service) GetEntry(ctx context.Context, key string) (Entry, error) {
 	if err := checkKeyFormat(key); err != nil {
 		return Entry{}, err

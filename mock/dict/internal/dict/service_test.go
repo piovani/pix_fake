@@ -282,3 +282,34 @@ func TestCheckKeys(t *testing.T) {
 	_, err = svc.CheckKeys(ctx, make([]string, 201))
 	wantKind(t, err, dict.KindBadRequest)
 }
+
+func TestLookupEntry(t *testing.T) {
+	ctx := context.Background()
+	svc := newService()
+	if _, err := svc.CreateEntry(ctx, psp, createInput(phoneEntry())); err != nil { // held by psp
+		t.Fatal(err)
+	}
+	key := phoneEntry().Key
+
+	t.Run("another participant can query", func(t *testing.T) {
+		got, err := svc.LookupEntry(ctx, otherPSP, key)
+		if err != nil || got.Owner.Name != "João Silva" {
+			t.Fatalf("LookupEntry = %+v, %v", got, err)
+		}
+	})
+
+	t.Run("the holder cannot query its own entry", func(t *testing.T) {
+		_, err := svc.LookupEntry(ctx, psp, key)
+		wantKind(t, err, dict.KindBookTransfer)
+	})
+
+	t.Run("unknown key is not found for anyone", func(t *testing.T) {
+		_, err := svc.LookupEntry(ctx, psp, "mail@mail.com")
+		wantKind(t, err, dict.KindNotFound)
+	})
+
+	t.Run("malformed key", func(t *testing.T) {
+		_, err := svc.LookupEntry(ctx, otherPSP, "not-a-key")
+		wantKind(t, err, dict.KindBadRequest)
+	})
+}

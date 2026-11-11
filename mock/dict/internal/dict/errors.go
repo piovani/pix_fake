@@ -7,8 +7,10 @@ import "errors"
 type Kind string
 
 const (
-	KindBadRequest           Kind = "BadRequest"
-	KindEntryInvalid         Kind = "EntryInvalid"
+	KindBadRequest   Kind = "BadRequest"
+	KindEntryInvalid Kind = "EntryInvalid"
+	// KindBookTransfer: the entry is held by the participant that is querying it.
+	KindBookTransfer         Kind = "EntryCannotBeQueriedForBookTransfer"
 	KindAccountTypeInvalid   Kind = "AccountTypeInvalid"
 	KindRequestIDAlreadyUsed Kind = "RequestIdAlreadyUsed"
 	KindForbidden            Kind = "Forbidden"

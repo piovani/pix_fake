@@ -54,9 +54,9 @@ so tests can rely on them.
 | Banco Beta | `99000003` | Daniela Rocha (CPF `16899535009`) | `0001` / `00567890`, `TRAN` | CPF `16899535009`, EMAIL `daniela.rocha@example.com` |
 | Banco Beta | `99000003` | Mercadinho do Zé ME (CNPJ `45678912000155`) | `0001` / `00678901`, `CACC` | CNPJ `45678912000155`, PHONE `+5531999990004` |
 
-It covers every key type, natural and legal persons, and payments inside the wallet (Ana to Bruno) as well as
-across institutions (wallet to Banco Alfa or Beta, and back). A test fails if a seeded key is missing from this
-table.
+It covers every key type, natural and legal persons, and payments across institutions (wallet to Banco Alfa or
+Beta, and back). Ana and Bruno are both wallet customers, so a payment between them is a book transfer that never
+queries the DICT (see [Book transfers](#book-transfers)). A test fails if a seeded key is missing from this table.
 
 The wallet's ISPB (`99000001`) is a placeholder: change the constants at the top of `internal/seed/data.go` and the
 table above to use the real one.
@@ -77,6 +77,29 @@ curl -s \
 
 It returns the owner (Carlos Mendes) and the account at Banco Alfa. A key that is not in the seed returns `404`.
 
+The same lookup for a key the wallet itself holds (Ana's CPF) is refused, as in the real DICT:
+
+```sh
+curl -s \
+  -H "X-Participant-ISPB: 99000001" \
+  -H "PI-RequestingParticipant: 99000001" \
+  -H "PI-PayerId: 11144477735" \
+  -H "PI-EndToEndId: E9900000120261111120000000000002" \
+  "http://localhost:8080/api/v2/entries/52998224725"
+```
+
+It returns `400` with the `EntryCannotBeQueriedForBookTransfer` problem.
+
+## Book transfers
+
+When payer and payee are customers of the same participant, the payment is a *book transfer*: it is settled inside
+the institution, never reaches the SPI and must not query the DICT. The DICT API v2.13.0 lists the error
+`EntryCannotBeQueriedForBookTransfer` for this case, and the mock enforces it: `GET /entries/{Key}` returns `400`
+when the entry is held by the participant given in `PI-RequestingParticipant`. A key that does not exist is still a
+`404`, and the other operations are not affected.
+
+The participant has to recognize its own keys in its own records, since the DICT will not answer for them.
+
 ## Identifying the institution
 
 There is no mTLS. Every request to `/api/v2/*` must carry the participant's ISPB:
@@ -90,7 +113,8 @@ A missing or malformed header returns `403 Forbidden`. It is used for simple aut
 - `POST /entries`: `Entry/Account/Participant` must equal the header.
 - `PUT /entries/{Key}` and `POST /entries/{Key}/delete`: the entry must belong to the caller (and, for delete,
   `Participant` in the body must be the caller), otherwise `403`.
-- Reads (`GET /entries/{Key}`, `POST /keys/check`) are open to any identified participant.
+- Reads (`POST /keys/check`, and `GET /entries/{Key}` except for [book transfers](#book-transfers)) are open to any
+  identified participant.
 
 ## Endpoints
 
@@ -135,7 +159,7 @@ Unimplemented paths return `404 problem+xml`.
   different parameters return `RequestIdAlreadyUsed`. `SLRY` accounts return `AccountTypeInvalid`.
 - `updateEntry` only changes account data, `Name` and `TradeName`; allowed `Reason` depends on the key type.
 - `getEntry` requires the `PI-RequestingParticipant`, `PI-PayerId` and `PI-EndToEndId` headers and honors
-  `IncludeStatistics`.
+  `IncludeStatistics`. It refuses keys held by the requesting participant (book transfer, see above).
 - `checkKeys` accepts 1 to 200 keys and keeps their order.
 - Errors use `application/problem+xml` (RFC 7807) with `violations` for invalid fields.
 
