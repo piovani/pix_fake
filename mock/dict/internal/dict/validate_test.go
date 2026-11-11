@@ -1,0 +1,77 @@
+package dict
+
+import "testing"
+
+func TestDetectKeyType(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want KeyType
+		ok   bool
+	}{
+		{"cpf", "11122233300", KeyCPF, true},
+		{"cnpj numérico", "12345678901234", KeyCNPJ, true},
+		{"cnpj alfanumérico", "AB12CD34EF5601", KeyCNPJ, true},
+		{"phone", "+5561988887777", KeyPhone, true},
+		{"email", "pix@bcb.gov.br", KeyEmail, true},
+		{"evp", "123e4567-e89b-12d3-a456-426655440000", KeyEVP, true},
+		{"phone sem +", "5561988887777", "", false},
+		{"phone começando em 0", "+0561988887777", "", false},
+		{"email maiúsculo", "Pix@bcb.gov.br", "", false},
+		{"email com %", "pi%x@bcb.gov.br", "", false},
+		{"email acima de 77", repeat("a", 70) + "@bcb.gov.br", "", false},
+		{"evp maiúsculo", "123E4567-E89B-12D3-A456-426655440000", "", false},
+		{"vazio", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := DetectKeyType(tt.key)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("DetectKeyType(%q) = %q, %v; want %q, %v", tt.key, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestValidateOwner(t *testing.T) {
+	tests := []struct {
+		name  string
+		owner Owner
+		bad   bool
+	}{
+		{"pf ok", Owner{Type: NaturalPerson, TaxID: "11122233300", Name: "João D'Ávila-Silva"}, false},
+		{"pf com nome fantasia", Owner{Type: NaturalPerson, TaxID: "11122233300", Name: "João", TradeName: "x"}, true},
+		{"pf cpf inválido", Owner{Type: NaturalPerson, TaxID: "123", Name: "João"}, true},
+		{"pf nome com dígito", Owner{Type: NaturalPerson, TaxID: "11122233300", Name: "João 2"}, true},
+		{"pj ok", Owner{Type: LegalPerson, TaxID: "11222333000150", Name: "Padaria Tres Irmaos Ltda", TradeName: "Padaria 3 Irmãos"}, false},
+		{"pj fantasia só asteriscos", Owner{Type: LegalPerson, TaxID: "11222333000150", Name: "Padaria", TradeName: "***"}, true},
+		{"pj nome vazio", Owner{Type: LegalPerson, TaxID: "11222333000150"}, true},
+		{"tipo desconhecido", Owner{Type: "X", TaxID: "11122233300", Name: "João"}, true},
+		{"nome acima de 150", Owner{Type: NaturalPerson, TaxID: "11122233300", Name: repeat("a", 151)}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v violations
+			validateOwner("owner", tt.owner, &v)
+			if got := len(v) > 0; got != tt.bad {
+				t.Fatalf("violations = %v, want invalid=%v", v, tt.bad)
+			}
+		})
+	}
+}
+
+func TestNewEVP(t *testing.T) {
+	for range 100 {
+		if kt, ok := DetectKeyType(NewEVP()); !ok || kt != KeyEVP {
+			t.Fatal("NewEVP generated an invalid EVP key")
+		}
+	}
+}
+
+func repeat(s string, n int) string {
+	out := ""
+	for range n {
+		out += s
+	}
+	return out
+}
