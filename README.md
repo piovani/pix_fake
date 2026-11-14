@@ -180,6 +180,8 @@ Messages to mock:
 
 The `pacs.002` response carries the status of the transaction (for example `ACSC` for settled and `RJCT` for rejected, with a reason code).
 
+**Comparison with FedNow:** [FedNow](https://www.frbservices.org/financial-services/fednow), the instant payment service of the US Federal Reserve, also exchanges **ISO 20022** messages (`pacs.008` for the credit transfer, `pacs.002` for the status report, `pacs.004` for returns). The message families are the same as in the SPI, but the schemas, versions and business rules differ. This project mocks only the Pix contracts; FedNow is mentioned as a reference for how other instant payment systems use the same standard.
+
 ## Official references
 
 Bacen documentation is the source of truth for every contract in this project. Links are listed so the mocks can be checked against the originals:
@@ -189,6 +191,7 @@ Bacen documentation is the source of truth for every contract in this project. L
 - Pix technical specifications and manuals (SPI, message catalog): https://www.bcb.gov.br/estabilidadefinanceira/pix, under "Documentação técnica"
 - Bacen Pix API (OpenAPI specs, GitHub): https://github.com/bacen/pix-api
 - ISO 20022 message catalog: https://www.iso20022.org/iso-20022-message-definitions
+- FedNow Service (US Federal Reserve), for comparison: https://www.frbservices.org/financial-services/fednow
 
 > **Note:** verify the links against the Bacen site, since it reorganizes its documentation pages from time to time. The old `bacen/pix-dict-api` GitHub repository is obsolete: current DICT specifications are published only on the Bacen site. Each mock keeps the specification it was built from under its own `docs/` folder and records the version and the date it was taken.
 
