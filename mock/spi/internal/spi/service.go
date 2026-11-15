@@ -2,6 +2,7 @@ package spi
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -64,42 +65,84 @@ func (s *Service) Deliver(ctx context.Context, ispb string, body []byte) (string
 	return m.ResourceID, nil
 }
 
-// StartStream opens a new read stream and returns its token.
-func (s *Service) StartStream(ctx context.Context, ispb string) (string, error) {
-	token := newToken()
-	if err := s.store.StartStream(ctx, ispb, token); err != nil {
-		return "", err
+// A stream token is the position in the participant's queue, in hex. The stream is stateless:
+// a token that is older than what the participant already acknowledged is "gone" (410).
+
+func encodeToken(seq int64) string { return strconv.FormatInt(seq, 16) }
+
+func decodeToken(token string) (int64, error) {
+	seq, err := strconv.ParseInt(token, 16, 64)
+	if err != nil || seq < 0 {
+		return 0, ErrStreamGone
 	}
-	return token, nil
+	return seq, nil
 }
 
-// Pull reads up to limit messages from the stream. With none available it waits up to
-// the poll time, then returns no messages and the token to use next.
+// checkToken returns the position of a token, or ErrStreamGone when it is malformed or stale.
+func (s *Service) checkToken(ctx context.Context, ispb, token string) (int64, error) {
+	pos, err := decodeToken(token)
+	if err != nil {
+		return 0, err
+	}
+	acked, err := s.store.Acked(ctx, ispb)
+	if err != nil {
+		return 0, err
+	}
+	if pos < acked {
+		return 0, ErrStreamGone
+	}
+	return pos, nil
+}
+
+// StartStream opens a read stream, positioned after the last message the participant acknowledged,
+// and returns its token.
+func (s *Service) StartStream(ctx context.Context, ispb string) (string, error) {
+	acked, err := s.store.Acked(ctx, ispb)
+	if err != nil {
+		return "", err
+	}
+	return encodeToken(acked), nil
+}
+
+// Pull reads up to limit messages after the position of the token. With none available it waits
+// up to the poll time, then returns no messages and the token to use next.
 func (s *Service) Pull(ctx context.Context, ispb, token string, limit int) ([]Message, string, error) {
+	pos, err := s.checkToken(ctx, ispb, token)
+	if err != nil {
+		return nil, "", err
+	}
 	if limit < 1 || limit > MaxMessages {
 		limit = 1
 	}
 	// Subscribe before reading so a message delivered in between is not missed.
 	wake := s.notify.channel(ispb)
-	msgs, next, err := s.store.Read(ctx, ispb, token, newToken(), limit)
-	if err != nil || len(msgs) > 0 || s.pollWait <= 0 {
-		return msgs, next, err
+	msgs, err := s.store.ReadAfter(ctx, ispb, pos, limit)
+	if err == nil && len(msgs) == 0 && s.pollWait > 0 {
+		timer := time.NewTimer(s.pollWait)
+		defer timer.Stop()
+		select {
+		case <-wake:
+			msgs, err = s.store.ReadAfter(ctx, ispb, pos, limit)
+		case <-timer.C:
+		case <-ctx.Done():
+		}
 	}
-	timer := time.NewTimer(s.pollWait)
-	defer timer.Stop()
-	select {
-	case <-wake:
-		return s.store.Read(ctx, ispb, token, newToken(), limit)
-	case <-timer.C:
-		return nil, next, nil
-	case <-ctx.Done():
-		return nil, next, nil
+	if err != nil {
+		return nil, "", err
 	}
+	if len(msgs) == 0 {
+		return nil, token, nil
+	}
+	return msgs, encodeToken(msgs[len(msgs)-1].Seq), nil
 }
 
-// CloseStream marks what the stream delivered as read and releases it.
+// CloseStream marks everything up to the position of the token as read.
 func (s *Service) CloseStream(ctx context.Context, ispb, token string) error {
-	return s.store.Ack(ctx, ispb, token)
+	pos, err := s.checkToken(ctx, ispb, token)
+	if err != nil {
+		return err
+	}
+	return s.store.Ack(ctx, ispb, pos)
 }
 
 // notifier wakes the reads waiting for messages of a participant.

@@ -66,14 +66,6 @@ func TestPacs002RoundTrip(t *testing.T) {
 	}
 }
 
-func TestFamily(t *testing.T) {
-	for in, want := range map[string]string{"pacs.008.spi.1.16": "pacs.008", "admi.002.spi.1.5": "admi.002", "x": "x"} {
-		if got := iso.Family(in); got != want {
-			t.Errorf("Family(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestAmountAndTime(t *testing.T) {
 	ts, err := iso.ParseTime("2026-11-14T12:00:00.000Z")
 	if err != nil || iso.FormatTime(ts) != "2026-11-14T12:00:00.000Z" {

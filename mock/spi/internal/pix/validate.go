@@ -53,21 +53,21 @@ func reject(code, format string, args ...any) *rejection {
 // groupCheck validates what is common to all the transactions of a pacs.008. A non-nil
 // result rejects every transaction in the message.
 func groupCheck(m *iso.Pacs008, sender string) *rejection {
-	msgID, createdAt, nbOfTxs, method, priority, level := m.Group()
-	if !msgIDPattern.MatchString(msgID) {
+	g := m.Group()
+	if !msgIDPattern.MatchString(g.MsgID) {
 		return reject(reasonInvalidContent, "invalid MsgId")
 	}
-	if _, err := iso.ParseTime(createdAt); err != nil {
+	if _, err := iso.ParseTime(g.CreDtTm); err != nil {
 		return reject(reasonBadDate, "invalid CreDtTm")
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(nbOfTxs))
+	n, err := strconv.Atoi(strings.TrimSpace(g.NbOfTxs))
 	if err != nil || n != len(m.Transactions()) {
 		return reject(reasonBadCount, "NbOfTxs does not match the number of transactions")
 	}
-	if method != "CLRG" {
+	if g.SttlmInf.Method != "CLRG" {
 		return reject(reasonInvalidContent, "SttlmMtd must be CLRG")
 	}
-	if priority != "HIGH" || level != "PAGPRI" {
+	if g.PmtTpInf.Priority != "HIGH" || g.PmtTpInf.SvcLvl.Proprietary != "PAGPRI" {
 		return reject(reasonInvalidContent, "only HIGH priority and PAGPRI are supported")
 	}
 	if m.AppHdr.Fr.ISPB() != sender {
@@ -76,22 +76,39 @@ func groupCheck(m *iso.Pacs008, sender string) *rejection {
 	return nil
 }
 
-// checkTransaction validates one transaction. A nil result means it can be processed.
+// checkTransaction validates one transaction. A nil result means it can be processed. The order of
+// the checks decides which reason wins when an order has several problems.
 func (p *Processor) checkTransaction(tx iso.CreditTransfer, sender string) *rejection {
-	e2e := tx.PmtID.EndToEnd
+	if rj := checkEndToEnd(tx.PmtID.EndToEnd, p.now()); rj != nil {
+		return rj
+	}
+	if rj := checkPayment(tx); rj != nil {
+		return rj
+	}
+	if rj := checkParties(tx); rj != nil {
+		return rj
+	}
+	return p.checkParticipants(tx, sender)
+}
+
+// checkEndToEnd checks the identifier and that its date is close to now.
+func checkEndToEnd(e2e string, now time.Time) *rejection {
 	if !ValidEndToEndID(e2e) {
 		return reject(reasonBadEndToEnd, "malformed EndToEndId")
 	}
 	date, err := time.Parse("200601021504", e2e[9:21])
-	if err != nil || date.Before(p.now().Add(-endToEndTolerance)) || date.After(p.now().Add(endToEndTolerance)) {
+	if err != nil || date.Before(now.Add(-endToEndTolerance)) || date.After(now.Add(endToEndTolerance)) {
 		return reject(reasonBadEndToEnd, "date of the EndToEndId is out of the accepted range")
 	}
+	return nil
+}
 
+// checkPayment checks the amount, how the payment was initiated and what the mock supports.
+func checkPayment(tx iso.CreditTransfer) *rejection {
 	if tx.Amount.Ccy != "BRL" || !amountPattern.MatchString(strings.TrimSpace(tx.Amount.Value)) {
 		return reject(reasonInvalidContent, "invalid amount")
 	}
-	cents, _ := ParseAmount(tx.Amount.Value)
-	if cents == 0 {
+	if cents, _ := ParseAmount(tx.Amount.Value); cents == 0 {
 		return reject(reasonZeroAmount, "amount is zero")
 	}
 	if _, err := iso.ParseTime(tx.AcceptedAt); err != nil {
@@ -122,7 +139,11 @@ func (p *Processor) checkTransaction(tx iso.CreditTransfer, sender string) *reje
 	if tx.RmtInf != nil && len(tx.RmtInf.Ustrd) > 140 {
 		return reject(reasonInvalidContent, "remittance information is longer than 140 characters")
 	}
+	return nil
+}
 
+// checkParties checks the payer, the receiver and their accounts.
+func checkParties(tx iso.CreditTransfer) *rejection {
 	if name := tx.Debtor.Name; name == "" || len(name) > 140 {
 		return reject(reasonInvalidContent, "invalid payer name")
 	}
@@ -149,21 +170,22 @@ func (p *Processor) checkTransaction(tx iso.CreditTransfer, sender string) *reje
 	case !oneOf(t, "CACC", "SVGS", "TRAN"):
 		return reject(reasonInvalidContent, "invalid receiver account type")
 	}
+	return nil
+}
 
+// checkParticipants checks the two participants against the sender and the registered ones.
+func (p *Processor) checkParticipants(tx iso.CreditTransfer, sender string) *rejection {
 	payer, receiver := tx.DebtorAgent.ISPB(), tx.CreditorAgent.ISPB()
-	if !ispbPattern.MatchString(payer) || !ispbPattern.MatchString(receiver) {
+	switch {
+	case !ispbPattern.MatchString(payer) || !ispbPattern.MatchString(receiver):
 		return reject(reasonInvalidContent, "invalid participant ISPB")
-	}
-	if payer != sender {
+	case payer != sender:
 		return reject(reasonWrongAgent, "the payer's participant is not the sender")
-	}
-	if !p.participants.Known(payer) {
+	case !p.participants.Known(payer):
 		return reject(reasonUnknownPayer, "payer participant is not registered")
-	}
-	if !p.participants.Known(receiver) {
+	case !p.participants.Known(receiver):
 		return reject(reasonUnknownReceiver, "receiver participant is not registered")
-	}
-	if payer == receiver {
+	case payer == receiver:
 		return reject(reasonBookTransfer, "payer and receiver are the same participant; a book transfer does not go through the SPI")
 	}
 	return nil
@@ -197,9 +219,4 @@ func ParseAmount(s string) (int64, bool) {
 	}
 	v, err := strconv.ParseInt(whole+frac, 10, 64)
 	return v, err == nil
-}
-
-// FormatAmount converts cents into "10.50".
-func FormatAmount(cents int64) string {
-	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
 }

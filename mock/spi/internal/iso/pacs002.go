@@ -31,21 +31,30 @@ type Pacs002 struct {
 
 // TxStatus is the status of one transaction.
 type TxStatus struct {
-	OrgnlInstrID  string `xml:"OrgnlInstrId"`
-	OrgnlEndToEnd string `xml:"OrgnlEndToEndId"`
-	Status        string `xml:"TxSts"`
-	Reason        []struct {
-		Rsn struct {
-			Cd string `xml:"Cd"`
-		} `xml:"Rsn"`
-		AddtlInf []string `xml:"AddtlInf,omitempty"`
-	} `xml:"StsRsnInf,omitempty"`
-	SettledAt *struct {
-		DtTm string `xml:"DtTm"`
-	} `xml:"FctvIntrBkSttlmDt,omitempty"`
-	OrgnlTxRef *struct {
-		SettlementDate string `xml:"IntrBkSttlmDt"`
-	} `xml:"OrgnlTxRef,omitempty"`
+	OrgnlInstrID  string         `xml:"OrgnlInstrId"`
+	OrgnlEndToEnd string         `xml:"OrgnlEndToEndId"`
+	Status        string         `xml:"TxSts"`
+	Reason        []StatusReason `xml:"StsRsnInf,omitempty"`
+	SettledAt     *SettledAt     `xml:"FctvIntrBkSttlmDt,omitempty"`
+	OrgnlTxRef    *TxRef         `xml:"OrgnlTxRef,omitempty"`
+}
+
+// StatusReason is why a transaction was rejected.
+type StatusReason struct {
+	Rsn struct {
+		Cd string `xml:"Cd"`
+	} `xml:"Rsn"`
+	AddtlInf []string `xml:"AddtlInf,omitempty"`
+}
+
+// SettledAt is the settlement date and time, filled only by the SPI.
+type SettledAt struct {
+	DtTm string `xml:"DtTm"`
+}
+
+// TxRef carries the accounting date, filled only by the SPI.
+type TxRef struct {
+	SettlementDate string `xml:"IntrBkSttlmDt"`
 }
 
 // ReasonCode returns the first reason code, empty when there is none.
@@ -68,9 +77,6 @@ func ParsePacs002(body []byte) (*Pacs002, error) {
 // Statuses returns the transaction statuses of the message.
 func (m *Pacs002) Statuses() []TxStatus { return m.Document.FIToFIPmtStsRpt.TxInfAndSts }
 
-// MsgID returns the message identification of the group header.
-func (m *Pacs002) MsgID() string { return m.Document.FIToFIPmtStsRpt.GrpHdr.MsgID }
-
 // NewPacs002 builds a status report with one transaction status.
 func NewPacs002(from, to, msgID, createdAt string, st TxStatus) *Pacs002 {
 	m := &Pacs002{Xmlns: nsPacs002}
@@ -91,12 +97,7 @@ func (t TxStatus) WithReason(code, detail string) TxStatus {
 	if len(detail) > 105 {
 		detail = detail[:105]
 	}
-	r := struct {
-		Rsn struct {
-			Cd string `xml:"Cd"`
-		} `xml:"Rsn"`
-		AddtlInf []string `xml:"AddtlInf,omitempty"`
-	}{}
+	var r StatusReason
 	r.Rsn.Cd = code
 	if detail != "" {
 		r.AddtlInf = []string{detail}
@@ -105,14 +106,10 @@ func (t TxStatus) WithReason(code, detail string) TxStatus {
 	return t
 }
 
-// WithSettlement adds the settlement date and time and the accounting date, filled only by the SPI.
-func (t TxStatus) WithSettlement(settledAt string, accountingDate string) TxStatus {
-	t.SettledAt = &struct {
-		DtTm string `xml:"DtTm"`
-	}{DtTm: settledAt}
-	t.OrgnlTxRef = &struct {
-		SettlementDate string `xml:"IntrBkSttlmDt"`
-	}{SettlementDate: accountingDate}
+// WithSettlement adds the settlement date and time and the accounting date.
+func (t TxStatus) WithSettlement(settledAt, accountingDate string) TxStatus {
+	t.SettledAt = &SettledAt{DtTm: settledAt}
+	t.OrgnlTxRef = &TxRef{SettlementDate: accountingDate}
 	return t
 }
 

@@ -5,7 +5,6 @@ package spi
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"time"
 )
@@ -13,7 +12,7 @@ import (
 // MaxMessages is the most messages the API accepts or returns in one request (multipart).
 const MaxMessages = 10
 
-// ErrStreamGone means the stream token is unknown, already closed or belongs to another participant.
+// ErrStreamGone means the stream token is malformed or older than what the participant already acknowledged.
 var ErrStreamGone = errors.New("stream gone")
 
 // Message is one stored ISO 20022 message. The body is kept exactly as received.
@@ -43,10 +42,4 @@ func NewResourceID() string {
 	var b [24]byte
 	_, _ = rand.Read(b[:])
 	return base64.StdEncoding.EncodeToString(b[:])
-}
-
-func newToken() string {
-	var b [6]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }

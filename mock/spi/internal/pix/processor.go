@@ -82,7 +82,7 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 			continue
 		}
 
-		pay := p.newPayment(tx, msg)
+		pay := p.newPayment(tx)
 		existing, created, err := p.payments.CreatePayment(ctx, pay)
 		if err != nil {
 			p.log.Error("store payment", "end_to_end_id", e2e, "error", err)
@@ -92,11 +92,11 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 			p.resendOutcome(ctx, existing)
 			continue
 		}
-		p.forward(ctx, pay, tx, msg)
+		p.forward(ctx, pay, tx)
 	}
 }
 
-func (p *Processor) newPayment(tx iso.CreditTransfer, msg *iso.Pacs008) Payment {
+func (p *Processor) newPayment(tx iso.CreditTransfer) Payment {
 	cents, _ := ParseAmount(tx.Amount.Value)
 	acceptedAt, _ := iso.ParseTime(tx.AcceptedAt)
 	pay := Payment{
@@ -128,7 +128,7 @@ func (p *Processor) newPayment(tx iso.CreditTransfer, msg *iso.Pacs008) Payment 
 }
 
 // forward sends the order to the receiving participant, or asks the responder when it is simulated.
-func (p *Processor) forward(ctx context.Context, pay Payment, tx iso.CreditTransfer, in *iso.Pacs008) {
+func (p *Processor) forward(ctx context.Context, pay Payment, tx iso.CreditTransfer) {
 	if p.participants.Simulated(pay.PayeeISPB) {
 		p.finalize(ctx, pay.EndToEndID, p.responder.Decide(pay))
 		return
@@ -179,26 +179,23 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 
 // finalize applies the receiver's answer: settle and confirm to both sides, or reject.
 func (p *Processor) finalize(ctx context.Context, e2e string, d Decision) {
-	now := p.now()
+	status := StatusRejected
 	if d.Accept {
-		pay, changed, err := p.payments.FinalizePayment(ctx, e2e, StatusSettled, "", "", now)
-		if err != nil || !changed {
-			if err != nil {
-				p.log.Error("settle payment", "end_to_end_id", e2e, "error", err)
-			}
-			return
-		}
+		status = StatusSettled
+	}
+	pay, changed, err := p.payments.FinalizePayment(ctx, e2e, status, d.ReasonCode, d.Detail, p.now())
+	if err != nil {
+		p.log.Error("finalize payment", "end_to_end_id", e2e, "status", status, "error", err)
+		return
+	}
+	if !changed {
+		return // already settled or rejected
+	}
+	if d.Accept {
 		p.sendSettled(ctx, pay)
-		return
+	} else {
+		p.sendRejection(ctx, pay.PayerISPB, e2e, d.ReasonCode, d.Detail)
 	}
-	pay, changed, err := p.payments.FinalizePayment(ctx, e2e, StatusRejected, d.ReasonCode, d.Detail, now)
-	if err != nil || !changed {
-		if err != nil {
-			p.log.Error("reject payment", "end_to_end_id", e2e, "error", err)
-		}
-		return
-	}
-	p.sendRejection(ctx, pay.PayerISPB, e2e, d.ReasonCode, d.Detail)
 }
 
 // sendSettled tells the payer's participant (ACSC) and the receiver's (ACCC) that the payment settled.

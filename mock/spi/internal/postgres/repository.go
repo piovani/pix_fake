@@ -42,86 +42,38 @@ func (r *Repository) AddOutbound(ctx context.Context, m spi.Message) error {
 	return err
 }
 
-func (r *Repository) StartStream(ctx context.Context, ispb, token string) error {
-	// Streams that were never closed are dropped after an hour.
-	if _, err := r.pool.Exec(ctx, `DELETE FROM streams WHERE created_at < now() - interval '1 hour'`); err != nil {
-		return err
-	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO streams (token, ispb, cursor)
-		VALUES ($1, $2, COALESCE((SELECT acked FROM cursors WHERE ispb = $2), 0))`, token, ispb)
-	return err
-}
-
-func (r *Repository) Read(ctx context.Context, ispb, token, newToken string, limit int) ([]spi.Message, string, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var cursor int64
-	err = tx.QueryRow(ctx, `SELECT cursor FROM streams WHERE token = $1 AND ispb = $2`, token, ispb).Scan(&cursor)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, "", spi.ErrStreamGone
-	}
-	if err != nil {
-		return nil, "", err
-	}
-
-	rows, err := tx.Query(ctx, `
+func (r *Repository) ReadAfter(ctx context.Context, ispb string, after int64, limit int) ([]spi.Message, error) {
+	rows, err := r.pool.Query(ctx, `
 		SELECT seq, resource_id, body, created_at FROM messages
 		WHERE direction = 'out' AND ispb = $1 AND seq > $2
-		ORDER BY seq LIMIT $3`, ispb, cursor, limit)
+		ORDER BY seq LIMIT $3`, ispb, after, limit)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
+	defer rows.Close()
 	var msgs []spi.Message
 	for rows.Next() {
 		m := spi.Message{ISPB: ispb}
 		if err := rows.Scan(&m.Seq, &m.ResourceID, &m.Body, &m.CreatedAt); err != nil {
-			rows.Close()
-			return nil, "", err
+			return nil, err
 		}
 		msgs = append(msgs, m)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, "", err
-	}
-	if len(msgs) == 0 {
-		return nil, token, nil
-	}
-
-	if _, err := tx.Exec(ctx, `INSERT INTO streams (token, ispb, cursor) VALUES ($1, $2, $3)`,
-		newToken, ispb, msgs[len(msgs)-1].Seq); err != nil {
-		return nil, "", err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, "", err
-	}
-	return msgs, newToken, nil
+	return msgs, rows.Err()
 }
 
-func (r *Repository) Ack(ctx context.Context, ispb, token string) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var cursor int64
-	err = tx.QueryRow(ctx, `DELETE FROM streams WHERE token = $1 AND ispb = $2 RETURNING cursor`, token, ispb).Scan(&cursor)
+func (r *Repository) Acked(ctx context.Context, ispb string) (int64, error) {
+	var acked int64
+	err := r.pool.QueryRow(ctx, `SELECT acked FROM cursors WHERE ispb = $1`, ispb).Scan(&acked)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return spi.ErrStreamGone
+		return 0, nil
 	}
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `
+	return acked, err
+}
+
+func (r *Repository) Ack(ctx context.Context, ispb string, seq int64) error {
+	_, err := r.pool.Exec(ctx, `
 		INSERT INTO cursors (ispb, acked) VALUES ($1, $2)
-		ON CONFLICT (ispb) DO UPDATE SET acked = GREATEST(cursors.acked, EXCLUDED.acked)`, ispb, cursor); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+		ON CONFLICT (ispb) DO UPDATE SET acked = GREATEST(cursors.acked, EXCLUDED.acked)`, ispb, seq)
+	return err
 }

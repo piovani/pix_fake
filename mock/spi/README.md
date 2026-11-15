@@ -14,10 +14,12 @@ The ICOM interface, as in the Interfaces manual 1.12. Go, `net/http` from the st
 | `POST /api/v1/in/{ispb}/msgs` | Stores one message (`application/xml; charset=utf-8`) or up to 10 (`multipart/mixed`), gzip accepted. Answers `201` with `PI-ResourceId` (32 characters, one per message, comma separated). The content is not validated, as in the real API at this point |
 | `GET /api/v1/out/{ispb}/stream/start` | Opens a read stream and reads from it. `Accept: multipart/mixed` returns up to 10 messages per response, with `PI-ResourceId` on each part |
 | `GET /api/v1/out/{ispb}/stream/{token}` | Reads the next messages: `200` with messages, or `204` after waiting (long polling, `SPI_POLL_WAIT`, default 5 s). `PI-Pull-Next` carries the path of the next read |
-| `DELETE /api/v1/out/{ispb}/stream/{token}` | Closes the stream and marks what it delivered as read (`200`; `410` if unknown or already closed) |
+| `DELETE /api/v1/out/{ispb}/stream/{token}` | Closes the stream and marks what it delivered as read (`200`; `410` if the token is malformed or older than what was already acknowledged) |
 | `GET /api/v1/in/catalog`, `/out/catalog` | Message versions of the catalog package `spi.5.13.2` |
 
 - A message not closed with `DELETE` is delivered again by the next stream, with the same `ResourceId`.
+- A stream keeps no state: the token in `PI-Pull-Next` is the position in the participant's queue, and `DELETE` saves
+  that position. So closing twice is harmless (`200`), and a closed token can still be read from.
 - Errors are `application/problem+xml` (RFC 7807): `400`, `404`, `405`, `406`, `410`, `411`, `413`, `415`, `503`.
 
 ### Payment cycle (`pacs.008` to `pacs.002`)

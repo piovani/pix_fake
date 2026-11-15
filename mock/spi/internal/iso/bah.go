@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -79,13 +78,4 @@ func Header(body []byte) (AppHdr, error) {
 		return AppHdr{}, errors.New("missing AppHdr/MsgDefIdr")
 	}
 	return env.AppHdr, nil
-}
-
-// Family returns the message family of a MsgDefIdr: "pacs.008" for "pacs.008.spi.1.16".
-func Family(msgDefIdr string) string {
-	parts := strings.SplitN(msgDefIdr, ".", 3)
-	if len(parts) < 2 {
-		return msgDefIdr
-	}
-	return parts[0] + "." + parts[1]
 }

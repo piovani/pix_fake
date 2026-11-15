@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -386,13 +385,11 @@ func TestOrdersTheSPIRejects(t *testing.T) {
 		{"sender in the header is not the sender", order{mutate: func(m *iso.Pacs008) { m.AppHdr.Fr = iso.NewParty(alfa) }}, "AGNT"},
 		{"count does not match", order{mutate: func(m *iso.Pacs008) { m.Document.FIToFICstmrCdtTrf.GrpHdr.NbOfTxs = "2" }}, "AM18"},
 		{"purpose not supported", order{purpose: "OTHR"}, "CH16"},
-		{"normal priority", order{mutate: func(m *iso.Pacs008) { m.Document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.InstrPrty = "NORM" }}, "CH16"},
-		{"scheduled", order{mutate: func(m *iso.Pacs008) { m.Document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.SvcLvl.Prtry = "PAGAGD" }}, "CH16"},
+		{"normal priority", order{mutate: func(m *iso.Pacs008) { m.Document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.Priority = "NORM" }}, "CH16"},
+		{"scheduled", order{mutate: func(m *iso.Pacs008) { m.Document.FIToFICstmrCdtTrf.GrpHdr.PmtTpInf.SvcLvl.Proprietary = "PAGAGD" }}, "CH16"},
 		{"DICT without key", order{mutateTx: func(tx *iso.CreditTransfer) { tx.Mandate.Tp.LclInstrm.Prtry = "DICT" }}, "CH16"},
 		{"manual entry with key", order{mutateTx: func(tx *iso.CreditTransfer) {
-			tx.CreditorAcct.Prxy = &struct {
-				ID string `xml:"Id"`
-			}{ID: "k"}
+			tx.CreditorAcct.Prxy = &iso.Proxy{ID: "k"}
 		}}, "CH16"},
 		{"QR code initiation", order{mutateTx: func(tx *iso.CreditTransfer) { tx.Mandate.Tp.LclInstrm.Prtry = "QRES" }}, "CH16"},
 		{"salary account receiver", order{mutateTx: func(tx *iso.CreditTransfer) { tx.CreditorAcct.Tp.Cd = "SLRY" }}, "AG03"},
@@ -405,9 +402,7 @@ func TestOrdersTheSPIRejects(t *testing.T) {
 		{"end to end 13 hours ahead", order{e2e: "E99000001202611150100DDDDDDDDDDD"}, "FF08"},
 		{"end to end with an impossible hour", order{e2e: "E99000001202611142500GGGGGGGGGGG"}, "FF08"},
 		{"split payment block", order{mutateTx: func(tx *iso.CreditTransfer) {
-			tx.Tax = &struct {
-				Inner string `xml:",innerxml"`
-			}{Inner: "<RefNb>x</RefNb>"}
+			tx.Tax = &iso.RawXML{Inner: "<RefNb>x</RefNb>"}
 		}}, "CH16"},
 	}
 	for _, tt := range tests {
@@ -492,11 +487,5 @@ func TestAmountHelpers(t *testing.T) {
 		if _, ok := pix.ParseAmount(in); ok {
 			t.Errorf("ParseAmount(%q) should fail", in)
 		}
-	}
-	if got := pix.FormatAmount(1050); got != "10.50" {
-		t.Errorf("FormatAmount = %q", got)
-	}
-	if !strings.HasPrefix(pix.FormatAmount(5), "0.0") {
-		t.Errorf("FormatAmount(5) = %q", pix.FormatAmount(5))
 	}
 }

@@ -91,8 +91,8 @@ func TestSendThenReadFlow(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("read after ack = %d, want 204", resp.StatusCode)
 	}
-	if resp, _ = call(t, http.MethodGet, srv.URL+next, nil, nil); resp.StatusCode != http.StatusGone {
-		t.Fatalf("closed stream = %d, want 410", resp.StatusCode)
+	if resp, _ = call(t, http.MethodGet, srv.URL+base+"/out/22222222/stream/0", nil, nil); resp.StatusCode != http.StatusGone {
+		t.Fatalf("token from before the ack = %d, want 410", resp.StatusCode)
 	}
 }
 

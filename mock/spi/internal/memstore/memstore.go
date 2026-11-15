@@ -10,24 +10,18 @@ import (
 	"pixfake/mock/spi/internal/spi"
 )
 
-type stream struct {
-	ispb   string
-	cursor int64
-}
-
 type Store struct {
 	mu       sync.Mutex
 	seq      int64
 	inbound  []spi.Message
 	outbound []spi.Message
-	streams  map[string]stream
 	acked    map[string]int64
 	payments map[string]pix.Payment
 	accounts map[string]pix.Account
 }
 
 func New() *Store {
-	return &Store{streams: map[string]stream{}, acked: map[string]int64{}}
+	return &Store{acked: map[string]int64{}}
 }
 
 // Inbound returns the messages received from participants, for assertions in tests.
@@ -57,46 +51,32 @@ func (s *Store) AddOutbound(_ context.Context, m spi.Message) error {
 	return nil
 }
 
-func (s *Store) StartStream(_ context.Context, ispb, token string) error {
+func (s *Store) ReadAfter(_ context.Context, ispb string, after int64, limit int) ([]spi.Message, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.streams[token] = stream{ispb: ispb, cursor: s.acked[ispb]}
-	return nil
-}
-
-func (s *Store) Read(_ context.Context, ispb, token, newToken string, limit int) ([]spi.Message, string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	st, ok := s.streams[token]
-	if !ok || st.ispb != ispb {
-		return nil, "", spi.ErrStreamGone
-	}
 	var msgs []spi.Message
 	for _, m := range s.outbound {
-		if m.ISPB == ispb && m.Seq > st.cursor {
+		if m.ISPB == ispb && m.Seq > after {
 			msgs = append(msgs, m)
 			if len(msgs) == limit {
 				break
 			}
 		}
 	}
-	if len(msgs) == 0 {
-		return nil, token, nil
-	}
-	s.streams[newToken] = stream{ispb: ispb, cursor: msgs[len(msgs)-1].Seq}
-	return msgs, newToken, nil
+	return msgs, nil
 }
 
-func (s *Store) Ack(_ context.Context, ispb, token string) error {
+func (s *Store) Acked(_ context.Context, ispb string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st, ok := s.streams[token]
-	if !ok || st.ispb != ispb {
-		return spi.ErrStreamGone
-	}
-	delete(s.streams, token)
-	if st.cursor > s.acked[ispb] {
-		s.acked[ispb] = st.cursor
+	return s.acked[ispb], nil
+}
+
+func (s *Store) Ack(_ context.Context, ispb string, seq int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if seq > s.acked[ispb] {
+		s.acked[ispb] = seq
 	}
 	return nil
 }

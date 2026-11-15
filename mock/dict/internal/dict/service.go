@@ -133,7 +133,7 @@ func (s *Service) LookupEntry(ctx context.Context, requestingParticipant, key st
 
 // GetEntry reads the entry of a key, without any participant rule.
 func (s *Service) GetEntry(ctx context.Context, key string) (Entry, error) {
-	if err := checkKeyFormat(key); err != nil {
+	if _, err := checkKeyFormat(key); err != nil {
 		return Entry{}, err
 	}
 	return s.find(ctx, key)
@@ -151,7 +151,7 @@ func (s *Service) UpdateEntry(ctx context.Context, caller, key string, in Update
 	if in.Key != key {
 		return Entry{}, newError(KindBadRequest, "Key in the body does not match the key in the path")
 	}
-	kt, err := detectKeyType(key)
+	kt, err := checkKeyFormat(key)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -209,7 +209,7 @@ func (s *Service) DeleteEntry(ctx context.Context, caller, key string, in Delete
 	if in.Key != key {
 		return newError(KindBadRequest, "Key in the body does not match the key in the path")
 	}
-	if err := checkKeyFormat(key); err != nil {
+	if _, err := checkKeyFormat(key); err != nil {
 		return err
 	}
 
@@ -258,7 +258,8 @@ func mapNotFound(err error) error {
 	return err
 }
 
-func detectKeyType(key string) (KeyType, error) {
+// checkKeyFormat returns the type of a key, or a BadRequest error when it is not a valid key.
+func checkKeyFormat(key string) (KeyType, error) {
 	kt, ok := DetectKeyType(key)
 	if !ok {
 		var v violations
@@ -266,9 +267,4 @@ func detectKeyType(key string) (KeyType, error) {
 		return "", invalid(KindBadRequest, "Key is invalid", v)
 	}
 	return kt, nil
-}
-
-func checkKeyFormat(key string) error {
-	_, err := detectKeyType(key)
-	return err
 }

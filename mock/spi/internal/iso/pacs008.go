@@ -12,27 +12,30 @@ type Pacs008 struct {
 	AppHdr   AppHdr   `xml:"AppHdr"`
 	Document struct {
 		FIToFICstmrCdtTrf struct {
-			GrpHdr struct {
-				MsgID    string `xml:"MsgId"`
-				CreDtTm  string `xml:"CreDtTm"`
-				NbOfTxs  string `xml:"NbOfTxs"`
-				SttlmInf struct {
-					SttlmMtd string `xml:"SttlmMtd"`
-				} `xml:"SttlmInf"`
-				PmtTpInf struct {
-					InstrPrty string `xml:"InstrPrty"`
-					SvcLvl    struct {
-						Prtry string `xml:"Prtry"`
-					} `xml:"SvcLvl"`
-				} `xml:"PmtTpInf"`
-			} `xml:"GrpHdr"`
+			GrpHdr      GroupHeader      `xml:"GrpHdr"`
 			CdtTrfTxInf []CreditTransfer `xml:"CdtTrfTxInf"`
 		} `xml:"FIToFICstmrCdtTrf"`
 	} `xml:"Document"`
 }
 
+// GroupHeader holds what the transactions of a pacs.008 have in common.
+type GroupHeader struct {
+	MsgID    string `xml:"MsgId"`
+	CreDtTm  string `xml:"CreDtTm"`
+	NbOfTxs  string `xml:"NbOfTxs"`
+	SttlmInf struct {
+		Method string `xml:"SttlmMtd"`
+	} `xml:"SttlmInf"`
+	PmtTpInf struct {
+		Priority string `xml:"InstrPrty"`
+		SvcLvl   struct {
+			Proprietary string `xml:"Prtry"`
+		} `xml:"SvcLvl"`
+	} `xml:"PmtTpInf"`
+}
+
 // CreditTransfer is one transaction of a pacs.008. Elements the mock does not support
-// (InitgPty, Tax, structured remittance) are read only to be refused.
+// (InitgPty, Tax, structured remittance) are kept as raw XML, only to be refused.
 type CreditTransfer struct {
 	PmtID struct {
 		InstrID  string `xml:"InstrId,omitempty"`
@@ -49,10 +52,8 @@ type CreditTransfer struct {
 			} `xml:"LclInstrm"`
 		} `xml:"Tp"`
 	} `xml:"MndtRltdInf"`
-	InitgPty *struct {
-		Inner string `xml:",innerxml"`
-	} `xml:"InitgPty,omitempty"`
-	Debtor struct {
+	InitgPty *RawXML `xml:"InitgPty,omitempty"`
+	Debtor   struct {
 		Name string `xml:"Nm"`
 		ID   PrvtID `xml:"Id"`
 	} `xml:"Dbtr"`
@@ -66,15 +67,16 @@ type CreditTransfer struct {
 	Purpose      struct {
 		Cd string `xml:"Cd"`
 	} `xml:"Purp"`
-	Tax *struct {
-		Inner string `xml:",innerxml"`
-	} `xml:"Tax,omitempty"`
+	Tax    *RawXML `xml:"Tax,omitempty"`
 	RmtInf *struct {
-		Ustrd string `xml:"Ustrd,omitempty"`
-		Strd  *struct {
-			Inner string `xml:",innerxml"`
-		} `xml:"Strd,omitempty"`
+		Ustrd string  `xml:"Ustrd,omitempty"`
+		Strd  *RawXML `xml:"Strd,omitempty"`
 	} `xml:"RmtInf,omitempty"`
+}
+
+// RawXML keeps an element's content untouched.
+type RawXML struct {
+	Inner string `xml:",innerxml"`
 }
 
 // Amount is a monetary amount with its currency attribute.
@@ -112,9 +114,12 @@ type Account struct {
 	Tp struct {
 		Cd string `xml:"Cd"`
 	} `xml:"Tp"`
-	Prxy *struct {
-		ID string `xml:"Id"`
-	} `xml:"Prxy,omitempty"`
+	Prxy *Proxy `xml:"Prxy,omitempty"`
+}
+
+// Proxy holds the Pix key used to find the account.
+type Proxy struct {
+	ID string `xml:"Id"`
 }
 
 // Number returns the account number.
@@ -162,15 +167,10 @@ func ParsePacs008(body []byte) (*Pacs008, error) {
 }
 
 // Transactions returns the transactions of the message.
-func (m *Pacs008) Transactions() []CreditTransfer {
-	return m.Document.FIToFICstmrCdtTrf.CdtTrfTxInf
-}
+func (m *Pacs008) Transactions() []CreditTransfer { return m.Document.FIToFICstmrCdtTrf.CdtTrfTxInf }
 
 // Group returns the group header.
-func (m *Pacs008) Group() (msgID, createdAt, nbOfTxs, method, priority, level string) {
-	g := m.Document.FIToFICstmrCdtTrf.GrpHdr
-	return g.MsgID, g.CreDtTm, g.NbOfTxs, g.SttlmInf.SttlmMtd, g.PmtTpInf.InstrPrty, g.PmtTpInf.SvcLvl.Prtry
-}
+func (m *Pacs008) Group() GroupHeader { return m.Document.FIToFICstmrCdtTrf.GrpHdr }
 
 // NewPacs008 builds a message carrying one transaction, as the SPI forwards it to the receiver.
 func NewPacs008(from, to, msgID, createdAt string, priority, level string, tx CreditTransfer) *Pacs008 {
@@ -178,8 +178,8 @@ func NewPacs008(from, to, msgID, createdAt string, priority, level string, tx Cr
 	m.AppHdr = AppHdr{Fr: NewParty(from), To: NewParty(to), BizMsgIdr: msgID, MsgDefIdr: Pacs008ID, CreDt: createdAt}
 	g := &m.Document.FIToFICstmrCdtTrf.GrpHdr
 	g.MsgID, g.CreDtTm, g.NbOfTxs = msgID, createdAt, "1"
-	g.SttlmInf.SttlmMtd = "CLRG"
-	g.PmtTpInf.InstrPrty, g.PmtTpInf.SvcLvl.Prtry = priority, level
+	g.SttlmInf.Method = "CLRG"
+	g.PmtTpInf.Priority, g.PmtTpInf.SvcLvl.Proprietary = priority, level
 	m.Document.FIToFICstmrCdtTrf.CdtTrfTxInf = []CreditTransfer{tx}
 	return m
 }
@@ -195,8 +195,8 @@ func marshal(v any) ([]byte, error) {
 	return []byte(xml.Header + string(out)), nil
 }
 
-// NewCreditTransfer is a helper for tests and callers that build a transaction.
-func NewCreditTransfer(e2e, amount string, acceptedAt string) CreditTransfer {
+// NewCreditTransfer starts a transaction. Fill the parties with SetDebtor and SetCreditor.
+func NewCreditTransfer(e2e, amount, acceptedAt string) CreditTransfer {
 	var tx CreditTransfer
 	tx.PmtID.EndToEnd = e2e
 	tx.Amount = Amount{Ccy: "BRL", Value: amount}
@@ -219,12 +219,9 @@ func (tx *CreditTransfer) SetCreditor(taxID, ispb, branch, number, accType, key 
 	tx.Creditor.ID = newPrvtID(taxID)
 	tx.CreditorAgent = newAgent(ispb)
 	tx.CreditorAcct.ID.Othr.Number, tx.CreditorAcct.ID.Othr.Branch, tx.CreditorAcct.Tp.Cd = number, branch, accType
+	tx.Mandate.Tp.LclInstrm.Prtry = "MANU"
 	if key != "" {
-		tx.CreditorAcct.Prxy = &struct {
-			ID string `xml:"Id"`
-		}{ID: key}
+		tx.CreditorAcct.Prxy = &Proxy{ID: key}
 		tx.Mandate.Tp.LclInstrm.Prtry = "DICT"
-	} else {
-		tx.Mandate.Tp.LclInstrm.Prtry = "MANU"
 	}
 }

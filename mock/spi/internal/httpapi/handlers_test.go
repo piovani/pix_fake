@@ -298,6 +298,7 @@ func TestStreamReadsInOrderAndEnds(t *testing.T) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 	next := r.header.Get("PI-Pull-Next")
+	first := next // the position after the first message
 	if !strings.HasPrefix(next, base+"/out/"+psp+"/stream/") {
 		t.Fatalf("PI-Pull-Next = %q", next)
 	}
@@ -317,8 +318,13 @@ func TestStreamReadsInOrderAndEnds(t *testing.T) {
 	if r = e.do(http.MethodDelete, next, nil, nil); r.status != http.StatusOK {
 		t.Fatalf("delete = %d", r.status)
 	}
-	assertProblem(t, e.do(http.MethodDelete, next, nil, nil), http.StatusGone, "gone")
-	assertProblem(t, e.do(http.MethodGet, next, nil, nil), http.StatusGone, "gone")
+	// Closing again is harmless.
+	if r = e.do(http.MethodDelete, next, nil, nil); r.status != http.StatusOK {
+		t.Fatalf("second delete = %d, want 200", r.status)
+	}
+	// A token older than what was acknowledged is gone.
+	assertProblem(t, e.do(http.MethodGet, first, nil, nil), http.StatusGone, "gone")
+	assertProblem(t, e.do(http.MethodDelete, first, nil, nil), http.StatusGone, "gone")
 }
 
 func TestStreamRedeliversWhatWasNotClosed(t *testing.T) {
@@ -442,10 +448,17 @@ func TestStreamIsPerParticipant(t *testing.T) {
 	if r := e.do(http.MethodGet, base+"/out/"+psp+"/stream/start", nil, nil); r.status != http.StatusNoContent {
 		t.Fatalf("participant 1 got status %d, want 204", r.status)
 	}
-	// A token of one participant is useless to another.
-	next := e.do(http.MethodGet, base+"/out/22222222/stream/start", nil, nil).header.Get("PI-Pull-Next")
-	token := next[strings.LastIndex(next, "/")+1:]
-	assertProblem(t, e.do(http.MethodGet, base+"/out/"+psp+"/stream/"+token, nil, nil), http.StatusGone, "gone")
+	if r := e.do(http.MethodGet, base+"/out/22222222/stream/start", nil, nil); r.status != 200 || r.body != "<m>for 2</m>" {
+		t.Fatalf("participant 2 got %d %q", r.status, r.body)
+	}
+}
+
+func TestStreamMalformedTokenIsGone(t *testing.T) {
+	e := newEnv(t, 0)
+	for _, token := range []string{"nope", "-1", "zz", "1.5"} {
+		assertProblem(t, e.do(http.MethodGet, base+"/out/"+psp+"/stream/"+token, nil, nil), http.StatusGone, "gone")
+		assertProblem(t, e.do(http.MethodDelete, base+"/out/"+psp+"/stream/"+token, nil, nil), http.StatusGone, "gone")
+	}
 }
 
 func TestStreamAcceptHeader(t *testing.T) {

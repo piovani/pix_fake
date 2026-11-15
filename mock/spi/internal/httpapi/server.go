@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"pixfake/mock/spi/internal/spi"
@@ -39,11 +41,11 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	// Patterns carry no method: the handlers answer 405 in the API's problem format.
-	mux.Handle(BasePath+"/in/{ispb}/msgs", s.api(http.MethodPost, s.send))
-	mux.Handle(BasePath+"/out/{ispb}/stream/start", s.api(http.MethodGet, s.startStream))
-	mux.Handle(BasePath+"/out/{ispb}/stream/{token}", s.api(http.MethodGet+" "+http.MethodDelete, s.stream))
-	mux.Handle(BasePath+"/in/catalog", s.api(http.MethodGet, s.catalog(inCatalog)))
-	mux.Handle(BasePath+"/out/catalog", s.api(http.MethodGet, s.catalog(outCatalog)))
+	mux.Handle(BasePath+"/in/{ispb}/msgs", s.api(s.send, http.MethodPost))
+	mux.Handle(BasePath+"/out/{ispb}/stream/start", s.api(s.startStream, http.MethodGet))
+	mux.Handle(BasePath+"/out/{ispb}/stream/{token}", s.api(s.stream, http.MethodGet, http.MethodDelete))
+	mux.Handle(BasePath+"/in/catalog", s.api(s.catalog(inCatalog), http.MethodGet))
+	mux.Handle(BasePath+"/out/catalog", s.api(s.catalog(outCatalog), http.MethodGet))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { s.writeError(w, errNotFound) })
 	return s.recoverer(s.logRequests(mux))
 }
@@ -63,19 +65,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 type handlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 // api checks the HTTP method and turns returned errors into problem+xml responses.
-func (s *Server) api(methods string, fn handlerFunc) http.Handler {
-	allowed := map[string]bool{}
-	for start := 0; start < len(methods); {
-		end := start
-		for end < len(methods) && methods[end] != ' ' {
-			end++
-		}
-		allowed[methods[start:end]] = true
-		start = end + 1
-	}
+func (s *Server) api(fn handlerFunc, methods ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !allowed[r.Method] {
-			w.Header().Set("Allow", methods)
+		if !slices.Contains(methods, r.Method) {
+			w.Header().Set("Allow", strings.Join(methods, ", "))
 			s.writeError(w, errMethod)
 			return
 		}
