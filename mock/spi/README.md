@@ -37,16 +37,18 @@ Sources:
 
 ## Still missing
 
-- **Message catalog (Catálogo de Mensagens do SPI, XSD schemas).** Not downloaded yet. It defines the fields of
-  `pacs.008`, `pacs.002` and `pacs.004`, and the mock cannot validate messages without it. A Bacen forum presentation of
-  2026-03-26 mentions catalog versions 5.12 and 5.13 on its schedule, but the version in force was not confirmed. It
-  has to be located on the Bacen site (the manuals page, under technical documentation) and saved in `docs/` with its
-  version and date.
-- **Manual versions of Fluxos and Tempos.** Only the PDFs were saved; their version numbers still have to be read from
-  the documents and recorded above.
-- **Content review.** The PDFs were downloaded but not yet read for this project. The delivery model (push or polling),
-  authentication and message envelope are decided only after reading the Interfaces manual; until then, this README
-  makes no claim about them.
+- **Message catalog: collected.** Catálogo de Serviços do SFN Volume VI **5.13** and package `spi.5.13.2.zip` (XSD,
+  XLSX, samples), downloaded on 2026-11-14 and kept in [`docs/catalog/`](docs/catalog/README.md), together with the
+  Manual de Padrões para Iniciação do Pix 2.10.0 and the secondary channel guide. Confirm on the Bacen
+  `comunicacaodados` page that no newer package exists before building.
+- **Manual versions of Fluxos and Tempos.** Read from the documents: Fluxos is **2.1** (version 2.2 takes effect on
+  2027-02-01) and Tempos is **7.0**. The table above still says "version not read".
+- **Content review.** The Interfaces manual was read. The SPI delivery model is **pull**: the participant sends with
+  `POST /api/v1/in/{ispb}/msgs` and reads with long polling on `GET /api/v1/out/{ispb}/stream/start`, following the
+  `PI-Pull-Next` header. The ISPB is in the path, so the `X-Participant-ISPB` header planned in the roadmap is not
+  needed for the SPI. The Fluxos and Tempos manuals were read only where needed (settlement flow, return, time limits).
+- **Open decision.** The other banks of the seed do not exist, so the mock has to answer on behalf of the receiving
+  participant (the step that accepts or rejects before settlement). See the forced outcomes item in the roadmap.
 
 ## Next steps
 
