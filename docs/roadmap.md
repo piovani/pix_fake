@@ -38,7 +38,7 @@ These decisions apply to every phase:
   is settled internally: it never queries the DICT and never goes through the SPI, but it is reported to Bacen
   afterwards (see [architecture](architecture.md#payments-inside-the-same-institution-book-transfer)).
 - **Security is simplified on purpose.** No mTLS and no XML signatures. The calling institution is identified by the
-  `X-Participant-ISPB` header. Rate limiting is not simulated by default.
+  `X-Participant-ISPB` header in the DICT and by the `{ispb}` in the URL path in the SPI, as in the real API. Rate limiting is not simulated by default.
 - **Each mock is self-contained** under `mock/<name>/`: Go, `net/http` from the standard library, PostgreSQL, its own
   migrations, seed data and README.
 - **Test data is fixed and shared.** The seed uses the same fictional institutions across mocks, so a key found in the
@@ -61,7 +61,8 @@ The Pix key directory, following the Bacen DICT API v2.13.0. See [`mock/dict`](.
 
 Small follow-ups:
 
-- [ ] Validate the format of `PI-EndToEndId` (32 characters) together with the SPI, so both sides agree
+- [ ] Validate the format of `PI-EndToEndId` in the DICT against the SPI pattern, so both sides agree: `E` + ISPB (8) +
+  `yyyyMMddHHmm` (12 digits) + 11 alphanumeric characters (32 in total, from the `pacs.008` XSD)
 - [ ] Confirm the wallet's real ISPB (the seed uses the placeholder `99000001`)
 
 ## Phase 2: SPI mock (Next)
@@ -69,19 +70,29 @@ Small follow-ups:
 **Goal:** move money between two participants the way the Bacen SPI does, with the same ISO 20022 messages, so a
 payment can be made end to end without the wallet.
 
-- [ ] **Specification intake.** Get the SPI interface specification and message catalog from the Bacen site, save them
-  under `mock/spi/docs/` and record the version and date, as done for the DICT.
-- [ ] **Delivery model.** Take from the specification how participants send messages and how they receive them (push or
-  polling) and mirror it.
-- [ ] **Institution identification.** Same `X-Participant-ISPB` approach as the DICT; no certificates or signatures.
-- [ ] **`pacs.008` (credit transfer).** Accept and validate payment orders: `EndToEndId` format, ISPBs, amount,
-  accounts. Idempotent by `EndToEndId`.
-- [ ] **`pacs.002` (status report).** Answer with settled (`ACSC`) or rejected (`RJCT`) and a reason code, to the
-  participants involved.
-- [ ] **`pacs.004` (return).** Refunds of settled payments, with the rules for what can be returned.
+- [x] **Specification intake.** Interfaces manual 1.12, Fluxos 2.1, Tempos 7.0 and message catalog 5.13 (package
+  `spi.5.13.2`) are saved under `mock/spi/docs/` with versions and dates. Before building, confirm on the Bacen
+  `comunicacaodados` page that no newer package exists.
+- [ ] **Delivery model: pull.** Participants send with `POST /api/v1/in/{ispb}/msgs` (`201` plus `PI-ResourceId`, XML,
+  up to 10 messages in `multipart/mixed`, gzip) and read with long polling on `GET /api/v1/out/{ispb}/stream/start`,
+  following `PI-Pull-Next` (`200` with messages, `204` without) and closing with `DELETE`. Duplicates are identified by
+  `ResourceId`. Errors use `application/problem+xml` (RFC 7807). Also `GET /api/v1/in/catalog` and `/out/catalog`.
+- [ ] **Institution identification.** The `{ispb}` in the path; no `X-Participant-ISPB` header, certificates or
+  signatures.
+- [ ] **Receiving participant.** The seed banks do not exist, so the mock answers for the receiving participant (the
+  step that accepts or rejects before settlement). Decide the rule; it is the base for forced outcomes below.
+- [ ] **Channels and time limits.** `PAGPRI` and `PAGFRD` use the primary channel (40 s limit, then the SPI rejects);
+  `PAGAGD` uses the secondary channel (45 min). A message on the wrong channel yields an `admi.002`.
+- [ ] **`pacs.008` (credit transfer).** Accept and validate payment orders against `pacs.008.spi.1.16`: `EndToEndId`
+  format, ISPBs, amount, accounts. Idempotent by `EndToEndId`. Two phases: the SPI blocks the payer's balance and
+  forwards the order to the receiver, who answers; only then does the SPI settle and confirm to both.
+- [ ] **`pacs.002` (status report).** (`pacs.002.spi.1.18`) Answer with settled (`ACSC`) or rejected (`RJCT`) and a
+  reason code (`AB03`, `AM04`, `AC03`, `MD01` and others, listed in the catalog), to the participants involved.
+- [ ] **`pacs.004` (return).** (`pacs.004.spi.1.5`) Refunds of settled payments. The receiving participant
+  checks the 90-day limit, the amount and that the account is active.
 - [ ] **Report of transactions settled outside the SPI.** Accept the report that institutions must send about
   payments settled internally (message `TRCK.002`, art. 2-A of IN BCB 32/2020, at most 30 days after settlement).
-  Confirm the channel and the fields in the specification.
+  Schema `trck.002.spi.1.1`; the bucket for `trck.002` is on the secondary channel.
 - [ ] **Settlement model.** Simple and in line with the README: no real reserve accounts or liquidity management.
 - [ ] **Forced outcomes** *(proposed)*. A deterministic way for tests to trigger rejections (closed account,
   insufficient funds) and timeouts, so the wallet's error paths can be exercised.
