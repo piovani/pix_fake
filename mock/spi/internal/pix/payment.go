@@ -56,6 +56,8 @@ type PaymentStore interface {
 	CreatePayment(ctx context.Context, p Payment) (existing Payment, created bool, err error)
 	// GetPayment returns the payment or ErrPaymentNotFound.
 	GetPayment(ctx context.Context, endToEndID string) (Payment, error)
+	// PendingBefore returns the EndToEndIds of the PENDING payments created at or before t.
+	PendingBefore(ctx context.Context, t time.Time) ([]string, error)
 	// FinalizePayment moves a PENDING payment to SETTLED or REJECTED. When the payment is no
 	// longer pending it changes nothing and returns changed == false with its current state.
 	FinalizePayment(ctx context.Context, endToEndID, status, reasonCode, reasonDetail string, at time.Time) (p Payment, changed bool, err error)

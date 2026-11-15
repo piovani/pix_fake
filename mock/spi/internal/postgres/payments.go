@@ -62,6 +62,23 @@ func (r *Repository) GetPayment(ctx context.Context, endToEndID string) (pix.Pay
 	return p, err
 }
 
+func (r *Repository) PendingBefore(ctx context.Context, t time.Time) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT end_to_end_id FROM payments WHERE status = 'PENDING' AND created_at <= $1`, t)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (r *Repository) FinalizePayment(ctx context.Context, endToEndID, status, reasonCode, reasonDetail string, at time.Time) (pix.Payment, bool, error) {
 	var settledAt *time.Time
 	if status == pix.StatusSettled {

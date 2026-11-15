@@ -108,6 +108,18 @@ func (s *Store) GetPayment(_ context.Context, endToEndID string) (pix.Payment, e
 	return p, nil
 }
 
+func (s *Store) PendingBefore(_ context.Context, t time.Time) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ids []string
+	for id, p := range s.payments {
+		if p.Status == pix.StatusPending && !p.CreatedAt.After(t) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 func (s *Store) FinalizePayment(_ context.Context, endToEndID, status, reasonCode, reasonDetail string, at time.Time) (pix.Payment, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

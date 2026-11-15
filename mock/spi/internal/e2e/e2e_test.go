@@ -18,6 +18,7 @@ import (
 	"pixfake/mock/spi/internal/pix"
 	"pixfake/mock/spi/internal/postgres"
 	"pixfake/mock/spi/internal/postgres/pgtest"
+	"pixfake/mock/spi/internal/seed"
 	"pixfake/mock/spi/internal/spi"
 )
 
@@ -28,15 +29,25 @@ const base = httpapi.BasePath
 func newServer(t *testing.T) (*httptest.Server, *spi.Service) {
 	t.Helper()
 	pool := pgtest.NewPool(t)
-	repo := postgres.NewRepository(pool)
-	return start(t, repo, repo, pool.Ping)
+	return start(t, postgres.NewRepository(pool), pool.Ping)
 }
 
-func start(t *testing.T, store spi.Store, payments pix.PaymentStore, health func(context.Context) error) (*httptest.Server, *spi.Service) {
+// backend is what the SPI stores: messages, payments and accounts. The in-memory store and Postgres both do.
+type backend interface {
+	spi.Store
+	pix.PaymentStore
+	pix.AccountStore
+}
+
+// start runs the SPI as the binary does, with the seeded accounts and the account rules.
+func start(t *testing.T, b backend, health func(context.Context) error) (*httptest.Server, *spi.Service) {
 	t.Helper()
+	if _, err := pix.SeedAccounts(context.Background(), b, seed.Accounts()); err != nil {
+		t.Fatal(err)
+	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := spi.NewService(store, 50*time.Millisecond)
-	svc.SetHandler(pix.NewProcessor(svc, payments, pix.DefaultParticipants(), pix.AcceptAll{}, log))
+	svc := spi.NewService(b, 50*time.Millisecond)
+	svc.SetHandler(pix.NewProcessor(svc, b, pix.DefaultParticipants(), pix.AccountResponder{Accounts: b}, log))
 	srv := httptest.NewServer(httpapi.New(svc, log, health).Handler())
 	t.Cleanup(srv.Close)
 	return srv, svc
@@ -116,17 +127,30 @@ func e2eID(payer string, suffix string) string {
 	return "E" + payer + time.Now().UTC().Format("200601021504") + suffix
 }
 
-func pacs008(t *testing.T, payer, payee, id string) []byte {
+// pacs008 builds an order from payer to the account of a seeded holder.
+func pacs008(t *testing.T, payer string, to pix.Account, id string) []byte {
 	t.Helper()
 	now := time.Now().UTC()
 	tx := iso.NewCreditTransfer(id, "25.90", iso.FormatTime(now))
 	tx.SetDebtor("Ana Souza", "52998224725", payer, "0001", "00123456", "CACC")
-	tx.SetCreditor("39053344705", payee, "0001", "00456789", "CACC", "39053344705")
+	tx.SetCreditor(to.HolderTaxID, to.ISPB, "0001", to.Number, to.Type, to.HolderTaxID)
 	body, err := iso.NewPacs008(payer, pix.SPIISPB, "M"+payer+"abcdefghijklmnopqrstuvw", iso.FormatTime(now), "HIGH", "PAGPRI", tx).Marshal()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return body
+}
+
+// account returns a seeded account.
+func account(t *testing.T, number string) pix.Account {
+	t.Helper()
+	for _, a := range seed.Accounts() {
+		if a.Number == number {
+			return a
+		}
+	}
+	t.Fatalf("account %s is not in the seed", number)
+	return pix.Account{}
 }
 
 func pacs002(t *testing.T, from, id, status string) []byte {
@@ -173,14 +197,14 @@ func runPaymentCycle(t *testing.T, url string) {
 
 	// The wallet pays a customer of Banco Beta, which the mock simulates: settled at once.
 	idOut := e2eID(wallet, "OUTBOUND001")
-	post(t, url, wallet, pacs008(t, wallet, beta, idOut))
+	post(t, url, wallet, pacs008(t, wallet, account(t, "00567890"), idOut))
 	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusSettledPayer || st.OrgnlEndToEnd != idOut {
 		t.Fatalf("outbound payment: %+v; want ACSC for %s", st, idOut)
 	}
 
 	// Banco Alfa pays the wallet: the wallet receives the order, accepts it and both get the confirmation.
 	idIn := e2eID(alfa, "INBOUND0001")
-	post(t, url, alfa, pacs008(t, alfa, wallet, idIn))
+	post(t, url, alfa, pacs008(t, alfa, account(t, "00123456"), idIn))
 	fwd, err := iso.ParsePacs008([]byte(readOne(t, url, wallet)))
 	if err != nil || fwd.Transactions()[0].PmtID.EndToEnd != idIn {
 		t.Fatalf("forwarded order: %v", err)
@@ -195,15 +219,27 @@ func runPaymentCycle(t *testing.T, url string) {
 
 	// A payment between two customers of the wallet is a book transfer: the SPI refuses it.
 	idBook := e2eID(wallet, "BOOKTRANSF1")
-	post(t, url, wallet, pacs008(t, wallet, wallet, idBook))
+	post(t, url, wallet, pacs008(t, wallet, account(t, "00234567"), idBook))
 	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusRejected || st.ReasonCode() != "AG12" {
 		t.Fatalf("book transfer: %+v; want RJCT AG12", st)
+	}
+
+	// The receiving bank rejects a payment to a closed account.
+	idClosed := e2eID(wallet, "CLOSEDACCT1")
+	post(t, url, wallet, pacs008(t, wallet, account(t, seed.ClosedAccount), idClosed))
+	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusRejected || st.ReasonCode() != "AC07" || st.OrgnlEndToEnd != idClosed {
+		t.Fatalf("closed account: %+v; want RJCT AC07", st)
+	}
+
+	// A message the SPI cannot process is answered with an admi.002.
+	post(t, url, wallet, []byte("<not-iso/>"))
+	if a, err := iso.ParseAdmi002([]byte(readOne(t, url, wallet))); err != nil || a.AppHdr.MsgDefIdr != iso.Admi002ID || a.Ref() == "" {
+		t.Fatalf("error notification: %+v, %v", a, err)
 	}
 }
 
 func TestPaymentCycleOverHTTP(t *testing.T) {
-	store := memstore.New()
-	srv, _ := start(t, store, store, nil)
+	srv, _ := start(t, memstore.New(), nil)
 	runPaymentCycle(t, srv.URL)
 }
 

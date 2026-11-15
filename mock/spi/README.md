@@ -1,9 +1,10 @@
 # SPI mock
 
 Mock of the Central Bank of Brazil (Bacen) **SPI**, the Instant Payment System that settles Pix payments between
-participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange (step 1) and the
-payment cycle `pacs.008` to `pacs.002` (step 2) are implemented; returns (`pacs.004`), the report of transactions settled
-outside the SPI (`trck.002`), the rejection rules of the simulated banks, timeouts and `admi.002` are not yet.
+participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange, the
+payment cycle `pacs.008` to `pacs.002`, the account rules of the simulated banks, the 40-second timeout and the `admi.002`
+error notification are implemented; returns (`pacs.004`) and the report of transactions settled outside the SPI
+(`trck.002`) are not yet.
 
 ## What works today
 
@@ -42,18 +43,21 @@ sequenceDiagram
 ```
 
 - **Simulated receiver.** Banco Alfa (`99000002`) and Banco Beta (`99000003`) do not read a stream: the mock answers for
-  them, so the whole cycle runs inside the payer's `POST`. Today every order is accepted (`pix.AcceptAll`); the
-  creditor-account rules of the decision below replace it in the rejection step.
+  them, so the whole cycle runs inside the payer's `POST`, unless the account says otherwise: the answer depends on the
+  receiver's account, see [Receiving participant](#receiving-participant-decision).
 - **Real receiver.** The wallet (`99000001`) reads the forwarded `pacs.008` from its stream and answers with a `pacs.002`
-  (`ACSP` or `RJCT` with a reason). Without an answer the payment stays `PENDING` (the 40-second timeout is not built yet).
+  (`ACSP` or `RJCT` with a reason). Without an answer the payment stays `PENDING` and the SPI rejects it with `AB03` after 40 seconds
+  (`SPI_TIMEOUT`). The same happens when a simulated bank never answers (the silent test account). A late answer
+  changes nothing.
 - **Rejected by the SPI** (the payer gets `RJCT` with the code; nothing is stored): `AM01` zero amount, `AM18` wrong
   `NbOfTxs`, `FF08` `EndToEndId` date more than 12 hours away, `AG12` payer and receiver are the same participant,
   `RC10` unknown receiver participant, `AGNT` payer's participant is not the sender, `AG03` salary account, `CH16` any
   other invalid or unsupported content (only `IPAY`, `MANU` and `DICT`, `HIGH` priority and `PAGPRI`).
 - **Idempotent by `EndToEndId`.** A repeated order is not processed again: the payer gets the outcome that already
   exists, and a pending payment is not forwarded twice.
-- **Cannot be answered, only logged:** a malformed `EndToEndId` (a `pacs.002` needs a valid one), invalid XML, and
-  message types not built yet. The message is still stored. They will become `admi.002` in the rejection step.
+- **Error notification (`admi.002`).** A message the SPI cannot process gets an `admi.002` addressed to its sender,
+  referencing the `PI-ResourceId` it was given: invalid XML, a message type the mock does not support, and a malformed
+  `EndToEndId` (a `pacs.002` needs a valid one to answer with). The message is still stored.
 - Several transactions in one `pacs.008` are processed one by one, with one `pacs.002` each.
 
 ### Running
@@ -65,7 +69,8 @@ make test              # unit and HTTP tests, no database
 make test-integration  # also the Postgres repository and end-to-end tests
 ```
 
-Settings: `SPI_ADDR` (`:8081`), `SPI_DATABASE_URL`, `SPI_POLL_WAIT`.
+Settings: `SPI_ADDR` (`:8081`), `SPI_DATABASE_URL`, `SPI_POLL_WAIT` (`5s`), `SPI_TIMEOUT` (`40s`, how long a payment waits for
+the receiving participant; shorten it to test timeouts).
 
 ### Simplifications
 
@@ -103,8 +108,8 @@ found in the DICT can be paid in the SPI. A test reads the DICT seed file and fa
 The last three are the test accounts of the [receiving participant decision](#receiving-participant-decision). They have
 DICT keys (CPF and phone) too, so the whole path can be exercised: look the key up, then pay it.
 
-The seed only stores the accounts. The processor does not use them yet, so today every payment to Alfa or Beta is
-accepted; the rules arrive in the rejection step of the [roadmap](../../docs/roadmap.md).
+The simulated banks read these accounts to decide how to answer, see
+[Receiving participant](#receiving-participant-decision).
 
 ## Specification source (decision)
 
@@ -154,7 +159,7 @@ Sources:
 ## Receiving participant (decision)
 
 In the settlement flow, the receiving participant validates the creditor account and answers the SPI before the payment
-settles. The seed banks do not exist, so:
+settles. The seed banks do not exist, so (implemented in `pix.AccountResponder`):
 
 - **Banco Alfa (`99000002`) and Banco Beta (`99000003`) are simulated by the mock.** When a `pacs.008` is addressed to
   them, the mock answers with a `pacs.002` on their behalf.
@@ -166,7 +171,7 @@ settles. The seed banks do not exist, so:
 
 | Creditor account in the `pacs.008` | Answer |
 |------------------------------------|--------|
-| Not in the seed | `RJCT` `AC03` (invalid account) |
+| No such account at the participant, or another branch | `RJCT` `AC03` (invalid account) |
 | Seeded test account `00900001` (Banco Alfa), closed | `RJCT` `AC07` |
 | Seeded test account `00900002` (Banco Alfa), blocked | `RJCT` `AC06` |
 | Seeded test account `00900003` (Banco Beta), never answers | no answer; the SPI rejects with `AB03` after 40 s |
@@ -183,11 +188,12 @@ Notes:
 - The meaning of each reason code, and which side generates it, is in the
   [data contract](docs/catalog/data-contract.md#reason-codes). `AB03` is generated by the SPI (timeout), the others in
   the table by the receiving participant.
-- The timeout case uses the real 40 seconds, with a configuration to shorten it in tests.
+- The timeout is 40 seconds; `SPI_TIMEOUT` shortens it (a test can also move the clock and call `ExpirePending`).
+  A background loop in the binary checks for expired payments every second.
 - Not covered: rejection for insufficient balance (the wallet checks the payer before sending) and liquidity
   management of the participants' Conta PI, which stays out of scope.
 
 ## Next steps
 
-Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): finish the specification intake above,
-then the delivery model, `pacs.008`, `pacs.002`, `pacs.004` and the report of transactions settled outside the SPI.
+Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): the return (`pacs.004`), the report of
+transactions settled outside the SPI (`trck.002`) and the closing end-to-end test.

@@ -21,7 +21,7 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 3 of the build done) |
+| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 4 of the build done) |
 | 3 | Digital wallet and Pix integration layer | **Planned** |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
@@ -110,9 +110,10 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
    accept every order for now; the rules come in step 4.
 3. [x] **Seed.** Same institutions and accounts as the DICT seed, plus the test accounts `00900001` to `00900003` and
    their DICT keys, added to both seeds together (`make seed` in each mock; a test fails if the two seeds differ). It
-   comes before the rejection rules, which look the accounts up. The SPI seed is stored but not used yet.
-4. [ ] **Receiving participant rules and rejections.** Creditor-account rules, `RJCT` with reason codes, the 40-second
-   timeout (`AB03`, shortened by configuration in tests), `admi.002` for wrong channel or invalid messages.
+   comes before the rejection rules, which look the accounts up.
+4. [x] **Receiving participant rules and rejections.** Creditor-account rules (`AC03`, `AC07`, `AC06`, `BE01`, and a
+   silent account), the 40-second timeout (`AB03`, `SPI_TIMEOUT` shortens it), `admi.002` for invalid XML, unsupported
+   messages and a malformed `EndToEndId`. The "wrong channel" `admi.002` is not built: the mock has a single channel.
 5. [ ] **`pacs.004` (return).** `pacs.004.spi.1.5`: the receiving participant checks the 90-day limit, the amount and
    that the account is active.
 6. [ ] **Report of transactions settled outside the SPI.** Message `trck.002` (`trck.002.spi.1.1`, art. 2-A of

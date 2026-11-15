@@ -17,7 +17,12 @@ import (
 //	pacs.002 (receiver, ACSP/RJCT)  -> settle or reject
 //
 // When the receiver is simulated the mock answers for it, so the whole cycle runs inside one call.
+// A payment that the receiver does not answer within Timeout is rejected by the SPI (see ExpirePending).
+// A message that cannot be processed at all is answered with an admi.002.
 type Processor struct {
+	// Timeout is how long a payment may wait for the receiving participant. The Pix limit is 40 seconds.
+	Timeout time.Duration
+
 	svc          *spi.Service
 	payments     PaymentStore
 	participants Participants
@@ -28,9 +33,15 @@ type Processor struct {
 
 var _ spi.Handler = (*Processor)(nil)
 
+// DefaultTimeout is the time limit of a payment on the primary channel (Manual de Tempos do Pix).
+const DefaultTimeout = 40 * time.Second
+
 // NewProcessor creates the processor. responder decides for the simulated participants.
 func NewProcessor(svc *spi.Service, payments PaymentStore, participants Participants, responder Responder, log *slog.Logger) *Processor {
-	return &Processor{svc: svc, payments: payments, participants: participants, responder: responder, log: log, now: time.Now}
+	return &Processor{
+		Timeout: DefaultTimeout,
+		svc:     svc, payments: payments, participants: participants, responder: responder, log: log, now: time.Now,
+	}
 }
 
 // SetClock replaces the clock, for tests.
@@ -39,7 +50,7 @@ func (p *Processor) SetClock(now func() time.Time) { p.now = now }
 func (p *Processor) Handle(ctx context.Context, sender string, m spi.Message) {
 	hdr, err := iso.Header(m.Body)
 	if err != nil {
-		p.log.Warn("message ignored", "sender", sender, "resource_id", m.ResourceID, "error", err)
+		p.sendError(ctx, sender, m, "XML inválido", "AppHdr", err.Error())
 		return
 	}
 	switch hdr.MsgDefIdr {
@@ -48,22 +59,22 @@ func (p *Processor) Handle(ctx context.Context, sender string, m spi.Message) {
 	case iso.Pacs002ID:
 		p.handlePacs002(ctx, sender, m)
 	default:
-		p.log.Warn("message type not supported yet", "sender", sender, "resource_id", m.ResourceID, "type", hdr.MsgDefIdr)
+		p.sendError(ctx, sender, m, "Mensagem não suportada", "AppHdr/MsgDefIdr", hdr.MsgDefIdr+" is not supported by the mock")
 	}
 }
 
 func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Message) {
 	msg, err := iso.ParsePacs008(m.Body)
 	if err != nil {
-		p.log.Warn("message ignored", "sender", sender, "resource_id", m.ResourceID, "error", err)
+		p.sendError(ctx, sender, m, "XML inválido", "Document", err.Error())
 		return
 	}
 	group := groupCheck(msg, sender)
 	for _, tx := range msg.Transactions() {
 		e2e := tx.PmtID.EndToEnd
 		if !ValidEndToEndID(e2e) {
-			// There is no valid identifier to answer with in a pacs.002.
-			p.log.Warn("transaction ignored: malformed EndToEndId", "sender", sender, "resource_id", m.ResourceID)
+			// A pacs.002 needs a valid identifier, so the answer is an admi.002.
+			p.sendError(ctx, sender, m, "Identificador fim a fim inválido", "CdtTrfTxInf/PmtId/EndToEndId", "malformed EndToEndId")
 			continue
 		}
 
@@ -130,7 +141,9 @@ func (p *Processor) newPayment(tx iso.CreditTransfer) Payment {
 // forward sends the order to the receiving participant, or asks the responder when it is simulated.
 func (p *Processor) forward(ctx context.Context, pay Payment, tx iso.CreditTransfer) {
 	if p.participants.Simulated(pay.PayeeISPB) {
-		p.finalize(ctx, pay.EndToEndID, p.responder.Decide(pay))
+		if d := p.responder.Decide(ctx, pay); !d.NoAnswer {
+			p.finalize(ctx, pay.EndToEndID, d)
+		}
 		return
 	}
 	now := iso.FormatTime(p.now())
@@ -148,7 +161,7 @@ func (p *Processor) forward(ctx context.Context, pay Payment, tx iso.CreditTrans
 func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Message) {
 	msg, err := iso.ParsePacs002(m.Body)
 	if err != nil {
-		p.log.Warn("message ignored", "sender", sender, "resource_id", m.ResourceID, "error", err)
+		p.sendError(ctx, sender, m, "XML inválido", "Document", err.Error())
 		return
 	}
 	for _, st := range msg.Statuses() {
@@ -195,6 +208,49 @@ func (p *Processor) finalize(ctx context.Context, e2e string, d Decision) {
 		p.sendSettled(ctx, pay)
 	} else {
 		p.sendRejection(ctx, pay.PayerISPB, e2e, d.ReasonCode, d.Detail)
+	}
+}
+
+// ExpirePending rejects, with AB03, the payments the receiving participant did not answer within
+// Timeout, and tells the payer's participant. It returns how many it rejected.
+func (p *Processor) ExpirePending(ctx context.Context) int {
+	ids, err := p.payments.PendingBefore(ctx, p.now().Add(-p.Timeout))
+	if err != nil {
+		p.log.Error("look for expired payments", "error", err)
+		return 0
+	}
+	for _, id := range ids {
+		p.finalize(ctx, id, Decision{ReasonCode: "AB03", Detail: "no answer from the receiving participant within " + p.Timeout.String()})
+	}
+	return len(ids)
+}
+
+// RunExpiry calls ExpirePending every interval until ctx is done.
+func (p *Processor) RunExpiry(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			p.ExpirePending(ctx)
+		}
+	}
+}
+
+// sendError answers a message that cannot be processed with an admi.002 to its sender. The
+// message is referenced by the PI-ResourceId it was given when stored.
+func (p *Processor) sendError(ctx context.Context, to string, m spi.Message, reason, location, description string) {
+	p.log.Warn("message rejected", "sender", to, "resource_id", m.ResourceID, "reason", reason, "description", description)
+	now := iso.FormatTime(p.now())
+	body, err := iso.NewAdmi002(SPIISPB, to, newMsgID(), now, m.ResourceID, reason, location, description).Marshal()
+	if err != nil {
+		p.log.Error("encode admi.002", "error", err)
+		return
+	}
+	if _, err := p.svc.Deliver(ctx, to, body); err != nil {
+		p.log.Error("deliver admi.002", "error", err)
 	}
 }
 

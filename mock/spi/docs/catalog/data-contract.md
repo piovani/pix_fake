@@ -137,3 +137,17 @@ the return deadline).
   wallet's ledger and only reported afterwards.
 - **Insufficient funds (`AM04`) is about the participant's PI account**, not the customer's balance. The mock has no
   liquidity management, so it never produces it, unless a test asks for it.
+
+## `admi.002`: error notification
+
+Sent by the SPI to the sender of a message it cannot process. The mock builds it from `admi.002.spi.1.5`:
+
+| Field (XML tag) | Rule |
+|-----------------|------|
+| `Ref` (`RltdRef/Ref`) | Up to 33 characters: the `PI-ResourceId` of the rejected message (the manual says the notification carries it) |
+| `RjctgPtyRsn` | Short title, up to 35 characters |
+| `RjctnDtTm` | Date and time of the rejection (UTC) |
+| `ErrLctn`, `RsnDesc` | Where and what, up to 350 characters each |
+
+The mock sends it for invalid XML, a message type it does not support, and a `pacs.008` whose `EndToEndId` is malformed
+(a `pacs.002` cannot be built without a valid one).

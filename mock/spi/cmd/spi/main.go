@@ -48,7 +48,10 @@ func run(log *slog.Logger) error {
 
 	repo := postgres.NewRepository(pool)
 	svc := spi.NewService(repo, cfg.PollWait)
-	svc.SetHandler(pix.NewProcessor(svc, repo, pix.DefaultParticipants(), pix.AcceptAll{}, log))
+	proc := pix.NewProcessor(svc, repo, pix.DefaultParticipants(), pix.AccountResponder{Accounts: repo}, log)
+	proc.Timeout = cfg.Timeout
+	svc.SetHandler(proc)
+	go proc.RunExpiry(ctx, min(time.Second, cfg.Timeout/2))
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.New(svc, log, pool.Ping).Handler(),

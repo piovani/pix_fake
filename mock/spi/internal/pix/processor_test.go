@@ -28,24 +28,37 @@ type env struct {
 	t     *testing.T
 	store *memstore.Store
 	svc   *spi.Service
+	proc  *pix.Processor
+	clock time.Time
 }
 
 type responderFunc func(pix.Payment) pix.Decision
 
-func (f responderFunc) Decide(p pix.Payment) pix.Decision { return f(p) }
+func (f responderFunc) Decide(_ context.Context, p pix.Payment) pix.Decision { return f(p) }
 
+// newEnv starts the SPI with the given responder (accept-all when nil).
 func newEnv(t *testing.T, responder pix.Responder) *env {
 	t.Helper()
 	if responder == nil {
 		responder = pix.AcceptAll{}
 	}
+	return newEnvWith(t, func(*memstore.Store) pix.Responder { return responder })
+}
+
+// newEnvWith builds the responder from the store, for the ones that read accounts.
+func newEnvWith(t *testing.T, responder func(*memstore.Store) pix.Responder) *env {
+	t.Helper()
 	store := memstore.New()
 	svc := spi.NewService(store, 0)
-	proc := pix.NewProcessor(svc, store, pix.DefaultParticipants(), responder, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	proc.SetClock(func() time.Time { return now })
+	proc := pix.NewProcessor(svc, store, pix.DefaultParticipants(), responder(store), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	e := &env{t: t, store: store, svc: svc, proc: proc, clock: now}
+	proc.SetClock(func() time.Time { return e.clock })
 	svc.SetHandler(proc)
-	return &env{t: t, store: store, svc: svc}
+	return e
 }
+
+// advance moves the SPI's clock forward.
+func (e *env) advance(d time.Duration) { e.clock = e.clock.Add(d) }
 
 // order builds the pacs.008 a participant sends. The default is the wallet paying Banco Alfa.
 type order struct {
@@ -435,23 +448,60 @@ func TestEndToEndWithinTheToleranceIsAccepted(t *testing.T) {
 	}
 }
 
-func TestMalformedEndToEndCannotBeAnswered(t *testing.T) {
+// readErrors returns, and acknowledges, the admi.002 notifications queued for the participant.
+func (e *env) readErrors(ispb string) []*iso.Admi002 {
+	e.t.Helper()
+	var out []*iso.Admi002
+	for _, m := range e.read(ispb) {
+		a, err := iso.ParseAdmi002(m.Body)
+		if err != nil || a.AppHdr.MsgDefIdr != iso.Admi002ID {
+			e.t.Fatalf("message for %s is not an admi.002 (%v):\n%s", ispb, err, m.Body)
+		}
+		if a.AppHdr.Fr.ISPB() != pix.SPIISPB || a.AppHdr.To.ISPB() != ispb {
+			e.t.Fatalf("header Fr %q To %q", a.AppHdr.Fr.ISPB(), a.AppHdr.To.ISPB())
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func TestMalformedEndToEndGetsAnErrorNotification(t *testing.T) {
 	e := newEnv(t, nil)
-	e.sendOrder(order{e2e: "not-an-end-to-end-id"})
-	if got := e.read(wallet); len(got) != 0 {
-		t.Fatalf("got %d messages; there is no valid identifier to answer a pacs.002 with", len(got))
+	ids, err := e.svc.Receive(context.Background(), wallet, [][]byte{order{e2e: "not-an-end-to-end-id"}.body(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := e.readErrors(wallet)
+	if len(errs) != 1 || errs[0].Ref() != ids[0] || errs[0].Reason() != "Identificador fim a fim inválido" {
+		t.Fatalf("errors = %+v; want one admi.002 referencing %s", errs, ids[0])
 	}
 }
 
-func TestGarbageIsIgnored(t *testing.T) {
+func TestMessagesThatCannotBeProcessedGetAnErrorNotification(t *testing.T) {
 	e := newEnv(t, nil)
-	e.send(wallet, []byte("<not-iso/>"))
-	e.send(wallet, []byte("not xml at all"))
-	e.send(wallet, []byte(`<Envelope><AppHdr><MsgDefIdr>camt.060.spi.1.9</MsgDefIdr></AppHdr></Envelope>`))
-	if got := e.read(wallet); len(got) != 0 {
-		t.Fatalf("got %d messages, want none", len(got))
+	bodies := [][]byte{
+		[]byte("<not-iso/>"),
+		[]byte("not xml at all"),
+		[]byte(`<Envelope><AppHdr><MsgDefIdr>camt.060.spi.1.9</MsgDefIdr></AppHdr></Envelope>`),
+		[]byte(`<Envelope><AppHdr><MsgDefIdr>pacs.008.spi.1.16</MsgDefIdr></AppHdr><Document><x></Envelope>`),
 	}
-	if n := len(e.store.Inbound()); n != 3 {
+	ids, err := e.svc.Receive(context.Background(), wallet, bodies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := e.readErrors(wallet)
+	if len(errs) != len(bodies) {
+		t.Fatalf("got %d notifications, want %d", len(errs), len(bodies))
+	}
+	for i, a := range errs {
+		if a.Ref() != ids[i] {
+			t.Errorf("notification %d references %q, want the PI-ResourceId %q", i, a.Ref(), ids[i])
+		}
+	}
+	if errs[2].Reason() != "Mensagem não suportada" {
+		t.Errorf("unsupported type reason = %q", errs[2].Reason())
+	}
+	if n := len(e.store.Inbound()); n != len(bodies) {
 		t.Fatalf("stored %d messages; every message sent is kept even when it cannot be processed", n)
 	}
 }

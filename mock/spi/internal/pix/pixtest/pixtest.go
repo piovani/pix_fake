@@ -84,6 +84,27 @@ func Run(t *testing.T, newStore func(t *testing.T) pix.PaymentStore) {
 		}
 	})
 
+	t.Run("pending before a time", func(t *testing.T) {
+		s := newStore(t)
+		old, recent, done := payment("E9900000120261114120000000000001"), payment("E9900000120261114120000000000002"), payment("E9900000120261114120000000000003")
+		old.CreatedAt = time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+		recent.CreatedAt = old.CreatedAt.Add(time.Minute)
+		done.CreatedAt = old.CreatedAt
+		for _, p := range []pix.Payment{old, recent, done} {
+			_, _, _ = s.CreatePayment(ctx, p)
+		}
+		_, _, _ = s.FinalizePayment(ctx, done.EndToEndID, pix.StatusSettled, "", "", old.CreatedAt)
+
+		ids, err := s.PendingBefore(ctx, old.CreatedAt.Add(30*time.Second))
+		if err != nil || len(ids) != 1 || ids[0] != old.EndToEndID {
+			t.Fatalf("pending before = %v, %v; want only the old pending payment", ids, err)
+		}
+		ids, _ = s.PendingBefore(ctx, old.CreatedAt.Add(time.Hour))
+		if len(ids) != 2 {
+			t.Fatalf("pending before an hour later = %v; want both pending payments", ids)
+		}
+	})
+
 	t.Run("reject keeps the reason", func(t *testing.T) {
 		s := newStore(t)
 		_, _, _ = s.CreatePayment(ctx, payment(e2e))

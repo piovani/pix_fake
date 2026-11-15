@@ -66,6 +66,26 @@ func TestPacs002RoundTrip(t *testing.T) {
 	}
 }
 
+func TestAdmi002RoundTrip(t *testing.T) {
+	body, err := iso.NewAdmi002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:00.000Z",
+		"UEkBbgR78VqKK/uvuq9O0r9bqXyBH9Ur", "XML inválido", "Document", "could not read the XML").Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := iso.ParseAdmi002(body)
+	if err != nil || got.Ref() != "UEkBbgR78VqKK/uvuq9O0r9bqXyBH9Ur" || got.Reason() != "XML inválido" || got.AppHdr.MsgDefIdr != iso.Admi002ID {
+		t.Fatalf("parsed = %+v, %v", got, err)
+	}
+}
+
+func TestAdmi002ClipsLongText(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	m := iso.NewAdmi002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:00.000Z", long, long, long, long)
+	if len(m.Ref()) != 33 || len([]rune(m.Reason())) != 35 || len(m.Document.Admi.Rsn.Description) != 350 || len(m.Document.Admi.Rsn.ErrorLocation) != 350 {
+		t.Fatalf("lengths: ref %d, reason %d, description %d, location %d", len(m.Ref()), len([]rune(m.Reason())), len(m.Document.Admi.Rsn.Description), len(m.Document.Admi.Rsn.ErrorLocation))
+	}
+}
+
 func TestAmountAndTime(t *testing.T) {
 	ts, err := iso.ParseTime("2026-11-14T12:00:00.000Z")
 	if err != nil || iso.FormatTime(ts) != "2026-11-14T12:00:00.000Z" {
@@ -125,10 +145,14 @@ func TestGeneratedMessagesValidateAgainstXSD(t *testing.T) {
 	rejected := iso.NewTxStatus("E9900000120261114120000000000001", iso.StatusRejected).WithReason("AC03", "no such account")
 	p002rj, _ := iso.NewPacs002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:05.000Z", rejected).Marshal()
 
+	admi, _ := iso.NewAdmi002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:05.000Z",
+		"UEkBbgR78VqKK/uvuq9O0r9bqXyBH9Ur", "XML inválido", "Document", "could not read the XML").Marshal()
+
 	for name, c := range map[string]struct {
 		xsd  string
 		body []byte
 	}{
+		"admi.002":          {"admi.002.spi.1.5.xsd", admi},
 		"pacs.008":          {"pacs.008.spi.1.16.xsd", p008},
 		"pacs.002 settled":  {"pacs.002.spi.1.18.xsd", p002ok},
 		"pacs.002 rejected": {"pacs.002.spi.1.18.xsd", p002rj},
