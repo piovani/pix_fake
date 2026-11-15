@@ -9,7 +9,7 @@ The real Pix ecosystem is only reachable by regulated participants. To develop a
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | **DICT mock**: Pix key directory | Implemented: entries and keys, with seed data ([`mock/dict`](mock/dict/README.md)) |
-| 2 | **SPI mock**: instant payment settlement | In progress (message exchange done) |
+| 2 | **SPI mock**: instant payment settlement | Implemented: payments, returns, reports of internal transactions ([`mock/spi`](mock/spi/README.md)) |
 | 3 | Digital wallet + Pix integration layer | Planned |
 
 Mocks are built in this order, DICT first, then SPI. Each mock lives under `mock/` and has its own README. The full plan, with what comes next and what was left out on purpose, is in the [roadmap](docs/roadmap.md).
@@ -200,13 +200,27 @@ Bacen documentation is the source of truth for every contract in this project. L
 ```
 pix_fake/
 ├── README.md
+├── Makefile                 # make test, make e2e
 ├── docs/
 │   ├── architecture.md      # diagrams and flows
 │   └── roadmap.md           # plan: phases, status, backlog, open decisions
+├── e2e/                     # closing test: both mocks together, over HTTP and XML
+├── scripts/e2e.sh           # starts both mocks on Postgres and runs the closing test
 └── mock/
     ├── dict/                # DICT mock (Go + Postgres), see its README
-    └── spi/                 # SPI mock (in progress)
+    └── spi/                 # SPI mock (Go + Postgres), see its README
 ```
+
+## Trying both mocks together
+
+```sh
+make test   # unit and HTTP tests of both mocks, no database needed
+make e2e    # needs Docker: both mocks on PostgreSQL, seed data loaded, then the closing test
+```
+
+The closing test plays the wallet and a bank: it looks a seeded key up in the DICT, pays it through the SPI and gets the
+settled confirmation, gets rejections (closed and blocked accounts, timeout), returns a payment, reports a payment between
+two customers of the wallet, and receives a payment from another bank.
 
 ## License
 

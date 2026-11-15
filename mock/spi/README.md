@@ -1,10 +1,30 @@
 # SPI mock
 
 Mock of the Central Bank of Brazil (Bacen) **SPI**, the Instant Payment System that settles Pix payments between
-participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange, the
+participants. **Status: implemented** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange, the
 payment cycle `pacs.008` to `pacs.002`, the account rules of the simulated banks, the 40-second timeout, the `admi.002`
 error notification, returns (`pacs.004`) and the report of transactions settled outside the SPI (`trck.002`, answered
-with a `camt.025`) are implemented. What is left is the closing end-to-end test.
+with a `camt.025`) are implemented, as listed in [Messages](#messages). The whole thing is exercised together with the DICT
+mock by the [closing test](../../e2e/closing_test.go) (`make e2e` at the repository root).
+
+## Messages
+
+All of them follow the catalog package `spi.5.13.2` (see [`docs/catalog`](docs/catalog/README.md)).
+
+| Message | Direction | Status |
+|---------|-----------|--------|
+| `pacs.008` credit transfer | participant to SPI, SPI to receiving participant | Implemented: `IPAY` payments, `MANU` and `DICT`, `HIGH` priority |
+| `pacs.002` status report | both ways | Implemented: `ACSP`, `ACSC`, `ACCC`, `RJCT` |
+| `pacs.004` return | participant to SPI, SPI to the original payer's participant | Implemented: reason `MD06`, partial returns |
+| `trck.002` report of transactions settled outside the SPI | participant to SPI | Implemented |
+| `camt.025` receipt for a `trck.002` | SPI to participant | Implemented |
+| `admi.002` error notification | SPI to participant | Implemented: invalid XML, unsupported message, malformed identifier |
+| `pibr.001` / `pibr.002` connectivity test | both ways | Not built: answered with an `admi.002` |
+| `camt.060`, `camt.052`, `camt.053`, `camt.054`, `camt.014`, `reda.*` (queries, statements, reference data) | | Not built |
+| `camt.029`, `camt.055`, `pain.009` to `pain.014` (cancellation, Pix Automático) | | Not built |
+
+Left out of the payments themselves: Pix Saque and Troco, Split Payment, scheduled payments (secondary channel), MED
+reasons for returns (`BE08`, `FR01`), QR code and NFC initiation, and fraud holds (`PAGFRD`). Those payments get a `CH16`.
 
 ## What works today
 
@@ -236,4 +256,5 @@ Notes:
 
 ## Next steps
 
-Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): the closing end-to-end test.
+Phase 2 is done. The next phase of the [roadmap](../../docs/roadmap.md#phase-3-wallet-and-pix-integration-layer-next) is the
+wallet and its Pix integration layer, which will talk to this mock and to the DICT mock only through the Bacen contracts.

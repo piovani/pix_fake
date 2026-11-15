@@ -10,8 +10,8 @@ not been agreed yet. Everything else comes from the project's scope (see the [RE
 
 ```mermaid
 flowchart LR
-    P1["1. DICT mock<br/>Done"] --> P2["2. SPI mock<br/>Next"]
-    P2 --> P3["3. Wallet and<br/>Pix integration layer<br/>Planned"]
+    P1["1. DICT mock<br/>Done"] --> P2["2. SPI mock<br/>Done"]
+    P2 --> P3["3. Wallet and<br/>Pix integration layer<br/>Next"]
     P3 --> P4["4. MED 2<br/>Later"]
     P1 -.-> P3
     X["Environment and quality<br/>make setup, CI, contract tests"] -.-> P2
@@ -21,10 +21,10 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 6 of the build done) |
-| 3 | Digital wallet and Pix integration layer | **Planned** |
+| 2 | SPI mock: instant payment settlement | **Done** (payments, returns, reports, rejections, timeout; closing test `make e2e`) |
+| 3 | Digital wallet and Pix integration layer | **Next** |
 | 4 | MED 2: funds recovery | **Later** |
-| - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
+| - | Environment and quality (cross-cutting) | In progress: seeds, root `make test` and `make e2e` done; `make setup` pending |
 
 ## Principles
 
@@ -65,7 +65,7 @@ Small follow-ups:
   `yyyyMMddHHmm` (12 digits) + 11 alphanumeric characters (32 in total, from the `pacs.008` XSD)
 - [ ] Confirm the wallet's real ISPB (the seed uses the placeholder `99000001`)
 
-## Phase 2: SPI mock (Next)
+## Phase 2: SPI mock (Done)
 
 **Goal:** move money between two participants the way the Bacen SPI does, with the same ISO 20022 messages, so a
 payment can be made end to end without the wallet.
@@ -122,18 +122,20 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
    IN BCB 32/2020, at most 30 days after settlement). The SPI records each transaction and answers with a `camt.025`,
    one receipt per transaction (`ACPT` or `RJCT` with a reason). The real message travels on the secondary channel;
    the mock has a single one.
-7. [ ] **Closing.** End-to-end test of the "Done when" below and the README listing implemented and pending messages.
+7. [x] **Closing.** [`e2e/closing_test.go`](../e2e/closing_test.go) plays the wallet and a bank against both running mocks, over
+   HTTP and XML only, and covers every point of "Done when" below; `make e2e` starts everything on PostgreSQL and runs it
+   (needs Docker). The [SPI README](../mock/spi/README.md#messages) lists the messages implemented and the ones left out.
 
 **Done when:** a script or end-to-end test resolves a seeded key in the DICT, sends a `pacs.008` to the SPI and receives
 a settled `pacs.002`; a forced rejection comes back as `RJCT`; a payment can be returned with a `pacs.004`; a report of
 an internal transaction is accepted. Query and cancellation messages (`camt.*`) stay for later.
 
-### In parallel (DICT follow-ups)
+### Still open from Phase 1 (DICT follow-ups)
 
-These are listed in Phase 1 and are needed before slice 2 and slice 4: validate the `PI-EndToEndId` pattern in the DICT
-and confirm the wallet's real ISPB.
+Listed in Phase 1: validate the `PI-EndToEndId` pattern in the DICT and confirm the wallet's real ISPB. Neither blocks the
+SPI, which already checks the `EndToEndId` it receives.
 
-## Phase 3: Wallet and Pix integration layer (Planned)
+## Phase 3: Wallet and Pix integration layer (Next)
 
 **Goal:** wallet users can register keys, pay, receive and see their history, talking to the mocks only through the
 Bacen contracts.
@@ -165,8 +167,10 @@ register and remove a key.
 
 Can start before Phase 3 and grows with each mock.
 
+- [x] **Root `make test` and `make e2e`.** `make test` runs the tests of both mocks; `make e2e` runs the closing test on
+  PostgreSQL ([`scripts/e2e.sh`](../scripts/e2e.sh)).
 - [ ] **Root `make setup`.** One command that starts Postgres and every mock, applies the migrations and loads the seed
-  data, leaving Pix ready for testing. Plus a root `make test`.
+  data, leaving Pix ready for testing. `scripts/e2e.sh` already does most of it, for a test run.
 - [ ] **Containers for the mocks** *(proposed)*. A Dockerfile per mock and one root compose file. Today compose only
   starts Postgres and the mock runs with `go run`.
 - [ ] **Continuous integration** *(proposed)*: lint, unit tests and integration tests with a Postgres service.
@@ -231,6 +235,6 @@ Listed so they are not forgotten. None is agreed.
 | The wallet's real ISPB (the seed uses the placeholder `99000001`) | Seed data, wallet configuration |
 | Wallet technology stack and repository layout | Phase 3 |
 | Whether users need portability, that is, claims | Backlog |
-| Whether the SPI mock shares the DICT's Postgres instance and compose file | Phase 2, `make setup` |
+| Whether the DICT and SPI mocks share one Postgres instance and compose file (today each has its own: ports 5432 and 5433) | `make setup` |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |
 | Where continuous integration runs | Environment and quality |
