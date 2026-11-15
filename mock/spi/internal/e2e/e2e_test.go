@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"pixfake/mock/spi/internal/httpapi"
+	"pixfake/mock/spi/internal/iso"
+	"pixfake/mock/spi/internal/memstore"
+	"pixfake/mock/spi/internal/pix"
 	"pixfake/mock/spi/internal/postgres"
 	"pixfake/mock/spi/internal/postgres/pgtest"
 	"pixfake/mock/spi/internal/spi"
@@ -20,14 +23,21 @@ import (
 
 const base = httpapi.BasePath
 
-// newServer starts the real API (handlers + service + Postgres) in an httptest.Server.
-// Without SPI_TEST_DATABASE_URL the test is skipped (see pgtest).
+// newServer starts the real API (handlers + service + payment logic + Postgres) in an
+// httptest.Server. Without SPI_TEST_DATABASE_URL the test is skipped (see pgtest).
 func newServer(t *testing.T) (*httptest.Server, *spi.Service) {
 	t.Helper()
 	pool := pgtest.NewPool(t)
-	svc := spi.NewService(postgres.NewRepository(pool), 50*time.Millisecond)
+	repo := postgres.NewRepository(pool)
+	return start(t, repo, repo, pool.Ping)
+}
+
+func start(t *testing.T, store spi.Store, payments pix.PaymentStore, health func(context.Context) error) (*httptest.Server, *spi.Service) {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(httpapi.New(svc, log, pool.Ping).Handler())
+	svc := spi.NewService(store, 50*time.Millisecond)
+	svc.SetHandler(pix.NewProcessor(svc, payments, pix.DefaultParticipants(), pix.AcceptAll{}, log))
+	srv := httptest.NewServer(httpapi.New(svc, log, health).Handler())
 	t.Cleanup(srv.Close)
 	return srv, svc
 }
@@ -91,4 +101,113 @@ func TestHealthzChecksDatabase(t *testing.T) {
 	if resp, body := call(t, http.MethodGet, srv.URL+"/healthz", nil, nil); resp.StatusCode != 200 || !strings.Contains(body, "ok") {
 		t.Fatalf("healthz = %d %q", resp.StatusCode, body)
 	}
+}
+
+// --- The payment cycle over HTTP ---
+
+const (
+	wallet = "99000001"
+	alfa   = "99000002"
+	beta   = "99000003"
+	xmlCT  = "application/xml; charset=utf-8"
+)
+
+func e2eID(payer string, suffix string) string {
+	return "E" + payer + time.Now().UTC().Format("200601021504") + suffix
+}
+
+func pacs008(t *testing.T, payer, payee, id string) []byte {
+	t.Helper()
+	now := time.Now().UTC()
+	tx := iso.NewCreditTransfer(id, "25.90", iso.FormatTime(now))
+	tx.SetDebtor("Ana Souza", "52998224725", payer, "0001", "00123456", "CACC")
+	tx.SetCreditor("39053344705", payee, "0001", "00456789", "CACC", "39053344705")
+	body, err := iso.NewPacs008(payer, pix.SPIISPB, "M"+payer+"abcdefghijklmnopqrstuvw", iso.FormatTime(now), "HIGH", "PAGPRI", tx).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func pacs002(t *testing.T, from, id, status string) []byte {
+	t.Helper()
+	body, err := iso.NewPacs002(from, pix.SPIISPB, "M"+from+"abcdefghijklmnopqrstuvw", iso.FormatTime(time.Now()), iso.NewTxStatus(id, status)).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func post(t *testing.T, url, ispb string, body []byte) {
+	t.Helper()
+	resp, out := call(t, http.MethodPost, url+base+"/in/"+ispb+"/msgs", body, map[string]string{"Content-Type": xmlCT})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("send as %s = %d: %s", ispb, resp.StatusCode, out)
+	}
+}
+
+// readOne reads one message from the participant's output and closes the stream.
+func readOne(t *testing.T, url, ispb string) string {
+	t.Helper()
+	resp, body := call(t, http.MethodGet, url+base+"/out/"+ispb+"/stream/start", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("read as %s = %d: %s", ispb, resp.StatusCode, body)
+	}
+	if r, _ := call(t, http.MethodDelete, url+resp.Header.Get("PI-Pull-Next"), nil, nil); r.StatusCode != http.StatusOK {
+		t.Fatalf("close stream of %s = %d", ispb, r.StatusCode)
+	}
+	return body
+}
+
+func status(t *testing.T, body string) iso.TxStatus {
+	t.Helper()
+	m, err := iso.ParsePacs002([]byte(body))
+	if err != nil || len(m.Statuses()) != 1 {
+		t.Fatalf("not a pacs.002 with one status (%v):\n%s", err, body)
+	}
+	return m.Statuses()[0]
+}
+
+func runPaymentCycle(t *testing.T, url string) {
+	t.Helper()
+
+	// The wallet pays a customer of Banco Beta, which the mock simulates: settled at once.
+	idOut := e2eID(wallet, "OUTBOUND001")
+	post(t, url, wallet, pacs008(t, wallet, beta, idOut))
+	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusSettledPayer || st.OrgnlEndToEnd != idOut {
+		t.Fatalf("outbound payment: %+v; want ACSC for %s", st, idOut)
+	}
+
+	// Banco Alfa pays the wallet: the wallet receives the order, accepts it and both get the confirmation.
+	idIn := e2eID(alfa, "INBOUND0001")
+	post(t, url, alfa, pacs008(t, alfa, wallet, idIn))
+	fwd, err := iso.ParsePacs008([]byte(readOne(t, url, wallet)))
+	if err != nil || fwd.Transactions()[0].PmtID.EndToEnd != idIn {
+		t.Fatalf("forwarded order: %v", err)
+	}
+	post(t, url, wallet, pacs002(t, wallet, idIn, iso.StatusAcceptedByReceiver))
+	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusSettledReceiver || st.OrgnlEndToEnd != idIn {
+		t.Fatalf("receiver confirmation: %+v; want ACCC", st)
+	}
+	if st := status(t, readOne(t, url, alfa)); st.Status != iso.StatusSettledPayer || st.OrgnlEndToEnd != idIn {
+		t.Fatalf("payer confirmation: %+v; want ACSC", st)
+	}
+
+	// A payment between two customers of the wallet is a book transfer: the SPI refuses it.
+	idBook := e2eID(wallet, "BOOKTRANSF1")
+	post(t, url, wallet, pacs008(t, wallet, wallet, idBook))
+	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusRejected || st.ReasonCode() != "AG12" {
+		t.Fatalf("book transfer: %+v; want RJCT AG12", st)
+	}
+}
+
+func TestPaymentCycleOverHTTP(t *testing.T) {
+	store := memstore.New()
+	srv, _ := start(t, store, store, nil)
+	runPaymentCycle(t, srv.URL)
+}
+
+func TestPaymentCycleOverHTTPOnPostgres(t *testing.T) {
+	srv, _ := newServer(t)
+	runPaymentCycle(t, srv.URL)
 }

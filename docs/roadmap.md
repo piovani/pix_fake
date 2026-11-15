@@ -21,7 +21,7 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; step 1 of the build done) |
+| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 and 2 of the build done) |
 | 3 | Digital wallet and Pix integration layer | **Planned** |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
@@ -104,13 +104,14 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
 1. [x] **HTTP skeleton and storage.** `POST /api/v1/in/{ispb}/msgs`, the output stream with long polling
    (`PI-Pull-Next`, `200`/`204`, `DELETE`), the catalog endpoints, `problem+xml` errors, gzip, `PI-ResourceId`.
    PostgreSQL with its own migrations. The Postgres repository and end-to-end tests are written but were not run yet (`make test-integration` in `mock/spi`).
-2. [ ] **`pacs.008` to `pacs.002`, the happy path.** Validate against `pacs.008.spi.1.16`, idempotent by `EndToEndId`.
-   Two phases: the SPI blocks the payer's balance and forwards the order to the receiver, who answers `ACSP`; the SPI
-   settles and sends `ACSC` to the payer's participant and `ACCC` to the receiver's.
-3. [ ] **Receiving participant rules and rejections.** Creditor-account rules, `RJCT` with reason codes, the 40-second
+2. [x] **`pacs.008` to `pacs.002`, the happy path.** Validate against `pacs.008.spi.1.16`, idempotent by `EndToEndId`.
+   Two phases: the SPI forwards the order to the receiver, who answers `ACSP`; the SPI settles and sends `ACSC` to the
+   payer's participant and `ACCC` to the receiver's. No balance blocking (no liquidity management). Simulated banks
+   accept every order for now; the rules come in step 4.
+3. [ ] **Seed.** Same institutions and accounts as the DICT seed, plus the test accounts `00900001` to `00900003` and
+   their DICT keys, added to both seeds together. It comes before the rejection rules, which look the accounts up.
+4. [ ] **Receiving participant rules and rejections.** Creditor-account rules, `RJCT` with reason codes, the 40-second
    timeout (`AB03`, shortened by configuration in tests), `admi.002` for wrong channel or invalid messages.
-4. [ ] **Seed.** Same institutions and accounts as the DICT seed, plus the test accounts `00900001` to `00900003` and
-   their DICT keys, added to both seeds together.
 5. [ ] **`pacs.004` (return).** `pacs.004.spi.1.5`: the receiving participant checks the 90-day limit, the amount and
    that the account is active.
 6. [ ] **Report of transactions settled outside the SPI.** Message `trck.002` (`trck.002.spi.1.1`, art. 2-A of

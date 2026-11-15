@@ -4,7 +4,9 @@ package memstore
 import (
 	"context"
 	"sync"
+	"time"
 
+	"pixfake/mock/spi/internal/pix"
 	"pixfake/mock/spi/internal/spi"
 )
 
@@ -20,6 +22,7 @@ type Store struct {
 	outbound []spi.Message
 	streams  map[string]stream
 	acked    map[string]int64
+	payments map[string]pix.Payment
 }
 
 func New() *Store {
@@ -95,4 +98,49 @@ func (s *Store) Ack(_ context.Context, ispb, token string) error {
 		s.acked[ispb] = st.cursor
 	}
 	return nil
+}
+
+// --- Payments ---
+
+var _ pix.PaymentStore = (*Store)(nil)
+
+func (s *Store) CreatePayment(_ context.Context, p pix.Payment) (pix.Payment, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.payments == nil {
+		s.payments = map[string]pix.Payment{}
+	}
+	if existing, ok := s.payments[p.EndToEndID]; ok {
+		return existing, false, nil
+	}
+	s.payments[p.EndToEndID] = p
+	return p, true, nil
+}
+
+func (s *Store) GetPayment(_ context.Context, endToEndID string) (pix.Payment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.payments[endToEndID]
+	if !ok {
+		return pix.Payment{}, pix.ErrPaymentNotFound
+	}
+	return p, nil
+}
+
+func (s *Store) FinalizePayment(_ context.Context, endToEndID, status, reasonCode, reasonDetail string, at time.Time) (pix.Payment, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.payments[endToEndID]
+	if !ok {
+		return pix.Payment{}, false, pix.ErrPaymentNotFound
+	}
+	if p.Status != pix.StatusPending {
+		return p, false, nil
+	}
+	p.Status, p.ReasonCode, p.ReasonDetail = status, reasonCode, reasonDetail
+	if status == pix.StatusSettled {
+		p.SettledAt = at
+	}
+	s.payments[endToEndID] = p
+	return p, true, nil
 }

@@ -6,12 +6,20 @@ import (
 	"time"
 )
 
+// Handler processes the messages participants send. The payment logic implements it.
+type Handler interface {
+	// Handle is called, in order, for each message after it was stored. Problems with the
+	// content are the handler's to report; they do not change the answer to the sender.
+	Handle(ctx context.Context, sender string, m Message)
+}
+
 // Service implements the message exchange of the ICOM interface.
 type Service struct {
 	store    Store
 	pollWait time.Duration
 	notify   *notifier
 	now      func() time.Time
+	handler  Handler
 }
 
 // NewService creates the service. pollWait is how long a read waits for a message
@@ -20,8 +28,12 @@ func NewService(store Store, pollWait time.Duration) *Service {
 	return &Service{store: store, pollWait: pollWait, notify: newNotifier(), now: time.Now}
 }
 
+// SetHandler sets what processes the received messages. Call it before serving requests.
+func (s *Service) SetHandler(h Handler) { s.handler = h }
+
 // Receive stores messages sent by a participant and returns their PI-ResourceIds, in order.
-// Like the real API, it does not validate the content here.
+// Like the real API, it does not validate the content here: it hands the stored messages
+// to the handler, which processes them (the SPI does that after answering 201).
 func (s *Service) Receive(ctx context.Context, ispb string, bodies [][]byte) ([]string, error) {
 	msgs := make([]Message, len(bodies))
 	ids := make([]string, len(bodies))
@@ -31,6 +43,13 @@ func (s *Service) Receive(ctx context.Context, ispb string, bodies [][]byte) ([]
 	}
 	if err := s.store.AddInbound(ctx, msgs); err != nil {
 		return nil, err
+	}
+	if s.handler != nil {
+		// Processing goes on even if the sender gives up waiting for the answer.
+		hctx := context.WithoutCancel(ctx)
+		for _, m := range msgs {
+			s.handler.Handle(hctx, ispb, m)
+		}
 	}
 	return ids, nil
 }

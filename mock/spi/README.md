@@ -1,8 +1,9 @@
 # SPI mock
 
 Mock of the Central Bank of Brazil (Bacen) **SPI**, the Instant Payment System that settles Pix payments between
-participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange
-(step 1) is implemented; payment messages (`pacs.008`, `pacs.002`, `pacs.004`, `trck.002`) are not yet.
+participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange (step 1) and the
+payment cycle `pacs.008` to `pacs.002` (step 2) are implemented; returns (`pacs.004`), the report of transactions settled
+outside the SPI (`trck.002`), the rejection rules of the simulated banks, timeouts and `admi.002` are not yet.
 
 ## What works today
 
@@ -18,8 +19,40 @@ The ICOM interface, as in the Interfaces manual 1.12. Go, `net/http` from the st
 
 - A message not closed with `DELETE` is delivered again by the next stream, with the same `ResourceId`.
 - Errors are `application/problem+xml` (RFC 7807): `400`, `404`, `405`, `406`, `410`, `411`, `413`, `415`, `503`.
-- Nothing produces messages for the participants yet. `Service.Deliver` queues one; the `pacs.008` flow (step 2 of the
-  roadmap) will use it.
+
+### Payment cycle (`pacs.008` to `pacs.002`)
+
+A participant sends a `pacs.008` with `POST /api/v1/in/{ispb}/msgs`; the SPI processes it right after storing it.
+Rules in [`docs/catalog/data-contract.md`](docs/catalog/data-contract.md).
+
+```mermaid
+sequenceDiagram
+    participant P as Payer's participant
+    participant S as SPI mock
+    participant R as Receiving participant
+    P->>S: pacs.008
+    Note over S: validates, stores the payment (PENDING)
+    S->>R: pacs.008 (read from its stream)
+    R->>S: pacs.002 ACSP (accept) or RJCT + reason
+    Note over S: SETTLED or REJECTED
+    S->>P: pacs.002 ACSC (settled) or RJCT
+    S->>R: pacs.002 ACCC (settled)
+```
+
+- **Simulated receiver.** Banco Alfa (`99000002`) and Banco Beta (`99000003`) do not read a stream: the mock answers for
+  them, so the whole cycle runs inside the payer's `POST`. Today every order is accepted (`pix.AcceptAll`); the
+  creditor-account rules of the decision below replace it in the rejection step.
+- **Real receiver.** The wallet (`99000001`) reads the forwarded `pacs.008` from its stream and answers with a `pacs.002`
+  (`ACSP` or `RJCT` with a reason). Without an answer the payment stays `PENDING` (the 40-second timeout is not built yet).
+- **Rejected by the SPI** (the payer gets `RJCT` with the code; nothing is stored): `AM01` zero amount, `AM18` wrong
+  `NbOfTxs`, `FF08` `EndToEndId` date more than 12 hours away, `AG12` payer and receiver are the same participant,
+  `RC10` unknown receiver participant, `AGNT` payer's participant is not the sender, `AG03` salary account, `CH16` any
+  other invalid or unsupported content (only `IPAY`, `MANU` and `DICT`, `HIGH` priority and `PAGPRI`).
+- **Idempotent by `EndToEndId`.** A repeated order is not processed again: the payer gets the outcome that already
+  exists, and a pending payment is not forwarded twice.
+- **Cannot be answered, only logged:** a malformed `EndToEndId` (a `pacs.002` needs a valid one), invalid XML, and
+  message types not built yet. The message is still stored. They will become `admi.002` in the rejection step.
+- Several transactions in one `pacs.008` are processed one by one, with one `pacs.002` each.
 
 ### Running
 
@@ -38,6 +71,8 @@ Settings: `SPI_ADDR` (`:8081`), `SPI_DATABASE_URL`, `SPI_POLL_WAIT`.
 - One port and one queue per participant: the primary and secondary channels are not separated.
 - Parallel streams of the same participant may receive the same messages (the real SPI splits them). The participant
   deduplicates by `ResourceId`, as the manual already requires.
+- The order is processed inside the sender's `POST`, not after it. No balances: the Conta PI of the participants is not
+  tracked, so `AM04` never happens. A message id (`MsgId`) is not checked for repetition.
 - No limit of 6 streams per participant, no token-bucket rate limit (`429`), no check of the `Host` header.
 - The input/output catalog split follows the example in the Interfaces manual, updated to the versions of the package.
 

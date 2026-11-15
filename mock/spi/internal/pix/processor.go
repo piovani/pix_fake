@@ -1,0 +1,256 @@
+package pix
+
+import (
+	"context"
+	"crypto/rand"
+	"log/slog"
+	"strings"
+	"time"
+
+	"pixfake/mock/spi/internal/iso"
+	"pixfake/mock/spi/internal/spi"
+)
+
+// Processor handles the payment messages participants send to the SPI.
+//
+//	pacs.008 (payer's participant)  -> validate, store, forward to the receiver
+//	pacs.002 (receiver, ACSP/RJCT)  -> settle or reject
+//
+// When the receiver is simulated the mock answers for it, so the whole cycle runs inside one call.
+type Processor struct {
+	svc          *spi.Service
+	payments     PaymentStore
+	participants Participants
+	responder    Responder
+	log          *slog.Logger
+	now          func() time.Time
+}
+
+var _ spi.Handler = (*Processor)(nil)
+
+// NewProcessor creates the processor. responder decides for the simulated participants.
+func NewProcessor(svc *spi.Service, payments PaymentStore, participants Participants, responder Responder, log *slog.Logger) *Processor {
+	return &Processor{svc: svc, payments: payments, participants: participants, responder: responder, log: log, now: time.Now}
+}
+
+// SetClock replaces the clock, for tests.
+func (p *Processor) SetClock(now func() time.Time) { p.now = now }
+
+func (p *Processor) Handle(ctx context.Context, sender string, m spi.Message) {
+	hdr, err := iso.Header(m.Body)
+	if err != nil {
+		p.log.Warn("message ignored", "sender", sender, "resource_id", m.ResourceID, "error", err)
+		return
+	}
+	switch hdr.MsgDefIdr {
+	case iso.Pacs008ID:
+		p.handlePacs008(ctx, sender, m)
+	case iso.Pacs002ID:
+		p.handlePacs002(ctx, sender, m)
+	default:
+		p.log.Warn("message type not supported yet", "sender", sender, "resource_id", m.ResourceID, "type", hdr.MsgDefIdr)
+	}
+}
+
+func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Message) {
+	msg, err := iso.ParsePacs008(m.Body)
+	if err != nil {
+		p.log.Warn("message ignored", "sender", sender, "resource_id", m.ResourceID, "error", err)
+		return
+	}
+	group := groupCheck(msg, sender)
+	for _, tx := range msg.Transactions() {
+		e2e := tx.PmtID.EndToEnd
+		if !ValidEndToEndID(e2e) {
+			// There is no valid identifier to answer with in a pacs.002.
+			p.log.Warn("transaction ignored: malformed EndToEndId", "sender", sender, "resource_id", m.ResourceID)
+			continue
+		}
+
+		// The SPI is idempotent by EndToEndId: a repeated order gets the outcome that already exists.
+		if existing, err := p.payments.GetPayment(ctx, e2e); err == nil {
+			p.resendOutcome(ctx, existing)
+			continue
+		}
+
+		rj := group
+		if rj == nil {
+			rj = p.checkTransaction(tx, sender)
+		}
+		if rj != nil {
+			p.sendRejection(ctx, sender, e2e, rj.code, rj.detail)
+			continue
+		}
+
+		pay := p.newPayment(tx, msg)
+		existing, created, err := p.payments.CreatePayment(ctx, pay)
+		if err != nil {
+			p.log.Error("store payment", "end_to_end_id", e2e, "error", err)
+			continue
+		}
+		if !created {
+			p.resendOutcome(ctx, existing)
+			continue
+		}
+		p.forward(ctx, pay, tx, msg)
+	}
+}
+
+func (p *Processor) newPayment(tx iso.CreditTransfer, msg *iso.Pacs008) Payment {
+	cents, _ := ParseAmount(tx.Amount.Value)
+	acceptedAt, _ := iso.ParseTime(tx.AcceptedAt)
+	pay := Payment{
+		EndToEndID:       tx.PmtID.EndToEnd,
+		Status:           StatusPending,
+		AmountCents:      cents,
+		Purpose:          tx.Purpose.Cd,
+		Initiation:       tx.Mandate.Tp.LclInstrm.Prtry,
+		Priority:         "PAGPRI",
+		PayerISPB:        tx.DebtorAgent.ISPB(),
+		PayerName:        tx.Debtor.Name,
+		PayerTaxID:       tx.Debtor.ID.TaxID(),
+		PayerBranch:      tx.DebtorAcct.Branch(),
+		PayerAccount:     tx.DebtorAcct.Number(),
+		PayerAccountType: tx.DebtorAcct.Type(),
+		PayeeISPB:        tx.CreditorAgent.ISPB(),
+		PayeeTaxID:       tx.Creditor.ID.TaxID(),
+		PayeeBranch:      tx.CreditorAcct.Branch(),
+		PayeeAccount:     tx.CreditorAcct.Number(),
+		PayeeAccountType: tx.CreditorAcct.Type(),
+		PayeeKey:         tx.CreditorAcct.Key(),
+		AcceptedAt:       acceptedAt,
+		CreatedAt:        p.now(),
+	}
+	if tx.RmtInf != nil {
+		pay.Info = tx.RmtInf.Ustrd
+	}
+	return pay
+}
+
+// forward sends the order to the receiving participant, or asks the responder when it is simulated.
+func (p *Processor) forward(ctx context.Context, pay Payment, tx iso.CreditTransfer, in *iso.Pacs008) {
+	if p.participants.Simulated(pay.PayeeISPB) {
+		p.finalize(ctx, pay.EndToEndID, p.responder.Decide(pay))
+		return
+	}
+	now := iso.FormatTime(p.now())
+	out := iso.NewPacs008(SPIISPB, pay.PayeeISPB, newMsgID(), now, "HIGH", "PAGPRI", tx)
+	body, err := out.Marshal()
+	if err != nil {
+		p.log.Error("encode pacs.008", "end_to_end_id", pay.EndToEndID, "error", err)
+		return
+	}
+	if _, err := p.svc.Deliver(ctx, pay.PayeeISPB, body); err != nil {
+		p.log.Error("deliver pacs.008", "end_to_end_id", pay.EndToEndID, "error", err)
+	}
+}
+
+func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Message) {
+	msg, err := iso.ParsePacs002(m.Body)
+	if err != nil {
+		p.log.Warn("message ignored", "sender", sender, "resource_id", m.ResourceID, "error", err)
+		return
+	}
+	for _, st := range msg.Statuses() {
+		e2e := st.OrgnlEndToEnd
+		pay, err := p.payments.GetPayment(ctx, e2e)
+		if err != nil {
+			p.log.Warn("status for an unknown payment ignored", "sender", sender, "end_to_end_id", e2e)
+			continue
+		}
+		if pay.PayeeISPB != sender {
+			p.log.Warn("status from a participant that is not the receiver ignored", "sender", sender, "end_to_end_id", e2e)
+			continue
+		}
+		switch st.Status {
+		case iso.StatusAcceptedByReceiver:
+			p.finalize(ctx, e2e, Decision{Accept: true})
+		case iso.StatusRejected:
+			code := st.ReasonCode()
+			if code == "" {
+				code = "DS04"
+			}
+			p.finalize(ctx, e2e, Decision{ReasonCode: code})
+		default:
+			p.log.Warn("status not supported from a participant", "sender", sender, "end_to_end_id", e2e, "status", st.Status)
+		}
+	}
+}
+
+// finalize applies the receiver's answer: settle and confirm to both sides, or reject.
+func (p *Processor) finalize(ctx context.Context, e2e string, d Decision) {
+	now := p.now()
+	if d.Accept {
+		pay, changed, err := p.payments.FinalizePayment(ctx, e2e, StatusSettled, "", "", now)
+		if err != nil || !changed {
+			if err != nil {
+				p.log.Error("settle payment", "end_to_end_id", e2e, "error", err)
+			}
+			return
+		}
+		p.sendSettled(ctx, pay)
+		return
+	}
+	pay, changed, err := p.payments.FinalizePayment(ctx, e2e, StatusRejected, d.ReasonCode, d.Detail, now)
+	if err != nil || !changed {
+		if err != nil {
+			p.log.Error("reject payment", "end_to_end_id", e2e, "error", err)
+		}
+		return
+	}
+	p.sendRejection(ctx, pay.PayerISPB, e2e, d.ReasonCode, d.Detail)
+}
+
+// sendSettled tells the payer's participant (ACSC) and the receiver's (ACCC) that the payment settled.
+func (p *Processor) sendSettled(ctx context.Context, pay Payment) {
+	at := pay.SettledAt
+	for _, to := range []struct{ ispb, status string }{
+		{pay.PayerISPB, iso.StatusSettledPayer},
+		{pay.PayeeISPB, iso.StatusSettledReceiver},
+	} {
+		st := iso.NewTxStatus(pay.EndToEndID, to.status).WithSettlement(iso.FormatTime(at), at.UTC().Format(iso.DateLayout))
+		p.sendStatus(ctx, to.ispb, st)
+	}
+}
+
+func (p *Processor) sendRejection(ctx context.Context, to, e2e, code, detail string) {
+	p.sendStatus(ctx, to, iso.NewTxStatus(e2e, iso.StatusRejected).WithReason(code, detail))
+}
+
+// resendOutcome answers a repeated order with the outcome it already has.
+func (p *Processor) resendOutcome(ctx context.Context, pay Payment) {
+	switch pay.Status {
+	case StatusSettled:
+		st := iso.NewTxStatus(pay.EndToEndID, iso.StatusSettledPayer).
+			WithSettlement(iso.FormatTime(pay.SettledAt), pay.SettledAt.UTC().Format(iso.DateLayout))
+		p.sendStatus(ctx, pay.PayerISPB, st)
+	case StatusRejected:
+		p.sendRejection(ctx, pay.PayerISPB, pay.EndToEndID, pay.ReasonCode, pay.ReasonDetail)
+	}
+}
+
+func (p *Processor) sendStatus(ctx context.Context, to string, st iso.TxStatus) {
+	now := iso.FormatTime(p.now())
+	body, err := iso.NewPacs002(SPIISPB, to, newMsgID(), now, st).Marshal()
+	if err != nil {
+		p.log.Error("encode pacs.002", "end_to_end_id", st.OrgnlEndToEnd, "error", err)
+		return
+	}
+	if _, err := p.svc.Deliver(ctx, to, body); err != nil {
+		p.log.Error("deliver pacs.002", "end_to_end_id", st.OrgnlEndToEnd, "error", err)
+	}
+}
+
+const idAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// newMsgID returns a message identification from the SPI: M + SPI ISPB + 23 alphanumeric characters.
+func newMsgID() string {
+	var b [23]byte
+	_, _ = rand.Read(b[:])
+	var sb strings.Builder
+	sb.WriteString("M" + SPIISPB)
+	for _, v := range b {
+		sb.WriteByte(idAlphabet[int(v)%len(idAlphabet)])
+	}
+	return sb.String()
+}

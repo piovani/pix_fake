@@ -15,6 +15,7 @@ import (
 
 	"pixfake/mock/spi/internal/config"
 	"pixfake/mock/spi/internal/httpapi"
+	"pixfake/mock/spi/internal/pix"
 	"pixfake/mock/spi/internal/postgres"
 	"pixfake/mock/spi/internal/spi"
 )
@@ -45,7 +46,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	svc := spi.NewService(postgres.NewRepository(pool), cfg.PollWait)
+	repo := postgres.NewRepository(pool)
+	svc := spi.NewService(repo, cfg.PollWait)
+	svc.SetHandler(pix.NewProcessor(svc, repo, pix.DefaultParticipants(), pix.AcceptAll{}, log))
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.New(svc, log, pool.Ping).Handler(),
