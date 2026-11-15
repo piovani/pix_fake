@@ -65,6 +65,17 @@ func Entries() []dict.Entry {
 	fernanda := natural(AlfaISPB, BlockedAccount, dict.AccountSavings, "13579246828", "Fernanda Alves")
 	gustavo := natural(BetaISPB, SilentAccount, dict.AccountTransact, "86420975310", "Gustavo Pires")
 
+	// Accounts that make the SPI mock reject every payment with one reason (DS04, FRAD, AM02, AG03, ED05, AB09, AC14,
+	// CH11, in this order). Same numbers and holders as in the SPI seed, where the reason is set.
+	helena := natural(AlfaISPB, "00900004", dict.AccountChecking, "10293847541", "Helena Moraes")
+	igor := natural(BetaISPB, "00900005", dict.AccountSavings, "56473829164", "Igor Batista")
+	julia := natural(AlfaISPB, "00900006", dict.AccountTransact, "91827364564", "Julia Nogueira")
+	kleber := natural(BetaISPB, "00900007", dict.AccountSavings, "37281946546", "Kleber Duarte")
+	larissa := natural(AlfaISPB, "00900008", dict.AccountChecking, "64528193728", "Larissa Prado")
+	marcos := natural(BetaISPB, "00900009", dict.AccountTransact, "82910476340", "Marcos Vieira")
+	natalia := natural(AlfaISPB, "00900010", dict.AccountChecking, "45197286300", "Natalia Freitas")
+	otavio := natural(BetaISPB, "00900011", dict.AccountSavings, "73640812913", "Otavio Ramos")
+
 	return []dict.Entry{
 		// Wallet
 		ana.key(dict.KeyCPF, "52998224725"),
@@ -91,5 +102,14 @@ func Entries() []dict.Entry {
 		fernanda.key(dict.KeyPhone, "+5521999990006"),
 		gustavo.key(dict.KeyCPF, "86420975310"),
 		gustavo.key(dict.KeyPhone, "+5531999990007"),
+		// Test accounts that reject with one reason
+		helena.key(dict.KeyCPF, "10293847541"),
+		igor.key(dict.KeyCPF, "56473829164"),
+		julia.key(dict.KeyCPF, "91827364564"),
+		kleber.key(dict.KeyCPF, "37281946546"),
+		larissa.key(dict.KeyCPF, "64528193728"),
+		marcos.key(dict.KeyCPF, "82910476340"),
+		natalia.key(dict.KeyCPF, "45197286300"),
+		otavio.key(dict.KeyCPF, "73640812913"),
 	}
 }

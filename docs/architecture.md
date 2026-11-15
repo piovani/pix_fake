@@ -30,6 +30,8 @@ flowchart LR
     SPI -. "receipt (CAMT.025)" .-> PixInt
 ```
 
+For building and testing a participant against the mocks (the order of the calls, the messages, the test accounts and the control API that makes a bank pay the wallet or breaks things on purpose), see the [integration guide](integration-guide.md).
+
 Replacing the mocks with the real DICT and SPI is the long-term goal: the Pix integration layer should only depend on the Bacen contracts, never on mock internals. The DICT mock uses the same base path (`/api/v2`) as the real service, so the switch is a base URL change.
 
 ### Identifying the institution

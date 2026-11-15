@@ -512,3 +512,28 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("healthz = %d %q", r.status, r.body)
 	}
 }
+
+func TestUnknownParticipantInThePathIsForbidden(t *testing.T) {
+	store := memstore.New()
+	svc := spi.NewService(store, 0)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	known := func(ispb string) bool { return ispb == psp }
+	srv := httptest.NewServer(httpapi.New(svc, log, nil).WithParticipants(known).Handler())
+	defer srv.Close()
+	e := &env{t: t, url: srv.URL, svc: svc, store: store}
+
+	other := "22222222"
+	assertProblem(t, e.do(http.MethodPost, base+"/in/"+other+"/msgs", []byte("<m/>"), xmlHeaders()), http.StatusForbidden, "forbidden")
+	assertProblem(t, e.do(http.MethodGet, base+"/out/"+other+"/stream/start", nil, nil), http.StatusForbidden, "forbidden")
+	assertProblem(t, e.do(http.MethodGet, base+"/out/"+other+"/stream/0", nil, nil), http.StatusForbidden, "forbidden")
+	assertProblem(t, e.do(http.MethodDelete, base+"/out/"+other+"/stream/0", nil, nil), http.StatusForbidden, "forbidden")
+	if n := len(store.Inbound()); n != 0 {
+		t.Fatalf("stored %d messages from a participant that is not registered", n)
+	}
+
+	// A registered participant works, and a malformed ISPB is still a 400, not a 403.
+	if r := e.do(http.MethodPost, base+"/in/"+psp+"/msgs", []byte("<m/>"), xmlHeaders()); r.status != http.StatusCreated {
+		t.Fatalf("registered participant = %d", r.status)
+	}
+	assertProblem(t, e.do(http.MethodPost, base+"/in/abc/msgs", []byte("<m/>"), xmlHeaders()), http.StatusBadRequest, "ispb")
+}

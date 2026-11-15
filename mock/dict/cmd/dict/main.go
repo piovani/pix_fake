@@ -14,9 +14,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pixfake/mock/dict/internal/config"
+	"pixfake/mock/dict/internal/control"
 	"pixfake/mock/dict/internal/dict"
+	"pixfake/mock/dict/internal/fault"
 	"pixfake/mock/dict/internal/httpapi"
 	"pixfake/mock/dict/internal/postgres"
+	"pixfake/mock/dict/internal/seed"
 )
 
 func main() {
@@ -45,10 +48,17 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	svc := dict.NewService(postgres.NewRepository(pool))
+	repo := postgres.NewRepository(pool)
+	svc := dict.NewService(repo)
+	faults := &fault.Set{}
+	api := httpapi.New(svc, log, pool.Ping).WithFaults(faults)
+	if cfg.Control {
+		reseed := func(ctx context.Context) error { _, err := svc.Seed(ctx, seed.Entries()); return err }
+		api.WithControl(control.New(repo, reseed, faults).Handler())
+	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.New(svc, log, pool.Ping).Handler(),
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

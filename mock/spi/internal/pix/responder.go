@@ -32,6 +32,7 @@ func (AcceptAll) Decide(context.Context, Payment) Decision { return Decision{Acc
 //	account closed                                         -> AC07
 //	account blocked                                        -> AC06
 //	scenario "never answers"                               -> no answer (the SPI times out)
+//	scenario "rejects with CODE" (see RejectCodes)         -> that rejection
 //	CPF/CNPJ of the receiver differs from the holder       -> BE01
 //	anything else                                          -> accept
 type AccountResponder struct {
@@ -53,6 +54,9 @@ func (r AccountResponder) Decide(ctx context.Context, p Payment) Decision {
 		return decline("AC06", "account is blocked")
 	case acct.Scenario == ScenarioNoAnswer:
 		return Decision{NoAnswer: true}
+	case isForcedReject(acct.Scenario):
+		code, _ := RejectCode(acct.Scenario)
+		return decline(code, RejectCodes[code])
 	case acct.HolderTaxID != p.PayeeTaxID:
 		return decline("BE01", "CPF/CNPJ does not match the account holder")
 	}
@@ -60,3 +64,8 @@ func (r AccountResponder) Decide(ctx context.Context, p Payment) Decision {
 }
 
 func decline(code, detail string) Decision { return Decision{ReasonCode: code, Detail: detail} }
+
+func isForcedReject(scenario string) bool {
+	_, ok := RejectCode(scenario)
+	return ok
+}

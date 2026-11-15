@@ -36,6 +36,14 @@ type Processor struct {
 
 var _ spi.Handler = (*Processor)(nil)
 
+// idempotencyWindow is how long a repeated order gets the outcome it already has (catalog: idempotence with a
+// 24-hour window). After that it is validated like a new one, and its EndToEndId is by then too old to pass.
+const idempotencyWindow = 24 * time.Hour
+
+func (p *Processor) insideIdempotencyWindow(pay Payment) bool {
+	return p.now().Sub(pay.CreatedAt) <= idempotencyWindow
+}
+
 // DefaultTimeout is the time limit of a payment on the primary channel (Manual de Tempos do Pix).
 const DefaultTimeout = 40 * time.Second
 
@@ -85,8 +93,8 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 			continue
 		}
 
-		// The SPI is idempotent by EndToEndId: a repeated order gets the outcome that already exists.
-		if existing, err := p.payments.GetPayment(ctx, e2e); err == nil {
+		// The SPI is idempotent by EndToEndId for 24 hours: a repeated order gets the outcome that already exists.
+		if existing, err := p.payments.GetPayment(ctx, e2e); err == nil && p.insideIdempotencyWindow(existing) {
 			p.resendOutcome(ctx, existing)
 			continue
 		}

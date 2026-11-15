@@ -31,6 +31,7 @@ var (
 	errTooLarge       = &apiError{http.StatusRequestEntityTooLarge, "payload-too-large", "Conteúdo da requisição muito extenso."}
 	errMediaType      = &apiError{http.StatusUnsupportedMediaType, "media-type", "Content-Type ou Content-Encoding inválido."}
 	errUnavailable    = &apiError{http.StatusServiceUnavailable, "unavailable", "Serviço indisponível."}
+	errTooManyReqs    = &apiError{http.StatusTooManyRequests, "too-many-requests", "Muitas requisições."}
 )
 
 // problemXML is the RFC 7807 body as shown in the Interfaces manual: only type and title.

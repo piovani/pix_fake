@@ -28,8 +28,12 @@ make db-down           # stops Postgres (add -v to docker compose down to drop t
 |---------------------|----------------------------------------------------------------|
 | `DICT_ADDR`         | `:8080`                                                        |
 | `DICT_DATABASE_URL` | `postgres://dict:dict@localhost:5432/dict?sslmode=disable`     |
+| `DICT_CONTROL`      | on; `off` removes the control API (see below)                  |
 
 Migrations in `internal/postgres/migrations/` are applied on startup. `GET /healthz` pings the database.
+
+The whole environment (both mocks and their databases) starts with `make setup` at the repository root, from the
+[`Dockerfile`](Dockerfile) of this mock; see the [integration guide](../../docs/integration-guide.md).
 
 The base path is `/api/v2`, the same as the real service, so pointing the wallet at the real DICT later is
 a base URL change.
@@ -56,10 +60,19 @@ so tests can rely on them.
 | Banco Alfa | `99000002` | Eduardo Teixeira (CPF `24681357928`) | `0001` / `00900001`, `CACC` | CPF `24681357928`, PHONE `+5521999990005` |
 | Banco Alfa | `99000002` | Fernanda Alves (CPF `13579246828`) | `0001` / `00900002`, `SVGS` | CPF `13579246828`, PHONE `+5521999990006` |
 | Banco Beta | `99000003` | Gustavo Pires (CPF `86420975310`) | `0001` / `00900003`, `TRAN` | CPF `86420975310`, PHONE `+5531999990007` |
+| Banco Alfa | `99000002` | Helena Moraes (CPF `10293847541`) | `0001` / `00900004`, `CACC` | CPF `10293847541` |
+| Banco Beta | `99000003` | Igor Batista (CPF `56473829164`) | `0001` / `00900005`, `SVGS` | CPF `56473829164` |
+| Banco Alfa | `99000002` | Julia Nogueira (CPF `91827364564`) | `0001` / `00900006`, `TRAN` | CPF `91827364564` |
+| Banco Beta | `99000003` | Kleber Duarte (CPF `37281946546`) | `0001` / `00900007`, `SVGS` | CPF `37281946546` |
+| Banco Alfa | `99000002` | Larissa Prado (CPF `64528193728`) | `0001` / `00900008`, `CACC` | CPF `64528193728` |
+| Banco Beta | `99000003` | Marcos Vieira (CPF `82910476340`) | `0001` / `00900009`, `TRAN` | CPF `82910476340` |
+| Banco Alfa | `99000002` | Natalia Freitas (CPF `45197286300`) | `0001` / `00900010`, `CACC` | CPF `45197286300` |
+| Banco Beta | `99000003` | Otavio Ramos (CPF `73640812913`) | `0001` / `00900011`, `SVGS` | CPF `73640812913` |
 
-The last three accounts exist for the [SPI mock](../spi/README.md#seed-data): a payment to `00900001` is rejected as
-closed, to `00900002` as blocked, and `00900003` never answers (timeout). They are in both seeds with the same numbers
-and owners.
+The last eleven accounts (`00900001` to `00900011`) exist for the [SPI mock](../spi/README.md#seed-data): a payment to
+`00900001` is rejected as closed, to `00900002` as blocked, `00900003` never answers (timeout), and each of `00900004` to
+`00900011` rejects with one reason (`DS04`, `FRAD`, `AM02`, `AG03`, `ED05`, `AB09`, `AC14`, `CH11`, in this order), so a
+wallet can try its handling of each. They are in both seeds with the same numbers and owners.
 
 It covers every key type, natural and legal persons, and payments across institutions (wallet to Banco Alfa or
 Beta, and back). Ana and Bruno are both wallet customers, so a payment between them is a book transfer that never
@@ -174,10 +187,39 @@ Unimplemented paths return `404 problem+xml`.
 - `checkKeys` accepts 1 to 200 keys and keeps their order.
 - Errors use `application/problem+xml` (RFC 7807) with `violations` for invalid fields.
 
+## Control API and simulated failures
+
+Not part of the Bacen contract: JSON under `/mock`, to help test a client. It is on by default and `DICT_CONTROL=off` removes it.
+
+| | |
+|-|-|
+| `GET /mock/entries[?participant=&limit=]` | the registered keys, ordered by key |
+| `POST /mock/reset` | removes every entry and loads the seed data again; also clears the faults |
+| `POST /mock/faults` | makes the API answer `429` or `503` (with `Retry-After`), or answer late, for some requests or until removed |
+| `GET /mock/faults`, `DELETE /mock/faults[/{id}]` | list and remove |
+
+```sh
+curl -s -X POST localhost:8080/mock/faults -d '{"status":503,"retry_after":2}'                  # every request: 503
+curl -s -X POST localhost:8080/mock/faults -d '{"method":"GET","status":429,"retry_after":5,"count":3}'
+curl -s -X POST localhost:8080/mock/faults -d '{"delay_ms":8000,"count":1}'                      # one slow answer
+```
+
+A rule is `{method, path_prefix, status, retry_after, delay_ms, count}`; it never affects `/mock` or `/healthz`.
+
+## Contract tests
+
+`internal/contract` checks the mock against the Bacen OpenAPI file ([`docs/openapi.json`](docs/openapi.json)) with a small
+validator of its own, so there is no dependency: the examples in the file must follow the file's own schemas (which tests
+the validator); the mock must accept the requests of those examples; and for each of the five operations and for its
+errors (`400`, `403`, `404`, `409`, and the simulated `429` and `503`) the status must be one the file documents for that
+operation and the body must follow the schema of that response. A change in the XML that drifts from the specification
+fails the build. One known gap is listed in the test: the file limits `Keys` to 1..200 but documents no `400` for
+`checkKeys`, and the mock answers `400`.
+
 ## Deliberate simplifications and mock decisions
 
 - **No mTLS, no XML digital signatures.** `Signature` in requests is ignored; responses carry an empty `<Signature>`.
-- **No rate limiting** (`429` is never returned) and no policy buckets.
+- **No rate limiting of its own** (`429` only when a test asks for it, see above) and no policy buckets.
 - **Statistics are always zero.** `IncludeStatistics=true` returns well-formed counters with zeros.
 - **No claims/portability**, so `OpenClaimCreationDate` is never present.
 - **Key already registered** returns `409 ResourceConflict` (the spec has no dedicated error for it on create).
@@ -195,6 +237,9 @@ mock/dict/
 ├── internal/
 │   ├── dict/              # domain: entities, validation, service, Repository interface
 │   ├── httpapi/           # HTTP handlers, XML types, problem+xml
+│   ├── control/           # the control API under /mock
+│   ├── fault/             # the 429/503/delay rules a test can add
+│   ├── contract/          # contract tests against docs/openapi.json
 │   ├── postgres/          # Repository on Postgres + embedded migrations
 │   │   └── pgtest/        # per-test Postgres schema for integration tests
 │   ├── memstore/          # in-memory Repository, tests only
@@ -202,6 +247,7 @@ mock/dict/
 │   ├── seed/              # the seed data (keys, owners, institutions)
 │   └── config/
 ├── docs/openapi.json      # Bacen DICT API v2.13.0 (source of truth)
-├── docker-compose.yml
+├── Dockerfile             # the mock as a container (used by the root docker-compose.yml)
+├── docker-compose.yml     # only PostgreSQL, for `make run` here
 └── Makefile
 ```

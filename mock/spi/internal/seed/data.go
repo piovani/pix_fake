@@ -21,6 +21,19 @@ const (
 	SilentAccount  = "00900003" // Banco Beta: never answers
 )
 
+// ForcedRejections are test accounts that reject every payment with one reason, one per code of pix.RejectCodes.
+// The DICT seed has the same accounts and holders, each with its CPF as a key.
+var ForcedRejections = []struct{ Number, Code, TaxID, Name, Type, ISPB string }{
+	{"00900004", "DS04", "10293847541", "Helena Moraes", "CACC", AlfaISPB},
+	{"00900005", "FRAD", "56473829164", "Igor Batista", "SVGS", BetaISPB},
+	{"00900006", "AM02", "91827364564", "Julia Nogueira", "TRAN", AlfaISPB},
+	{"00900007", "AG03", "37281946546", "Kleber Duarte", "SVGS", BetaISPB},
+	{"00900008", "ED05", "64528193728", "Larissa Prado", "CACC", AlfaISPB},
+	{"00900009", "AB09", "82910476340", "Marcos Vieira", "TRAN", BetaISPB},
+	{"00900010", "AC14", "45197286300", "Natalia Freitas", "CACC", AlfaISPB},
+	{"00900011", "CH11", "73640812913", "Otavio Ramos", "SVGS", BetaISPB},
+}
+
 func account(ispb, number, typ, taxID, name string) pix.Account {
 	return pix.Account{
 		ISPB: ispb, Branch: "0001", Number: number, Type: typ, HolderTaxID: taxID, HolderName: name,
@@ -37,7 +50,7 @@ func Accounts() []pix.Account {
 	silent := account(BetaISPB, SilentAccount, "TRAN", "86420975310", "Gustavo Pires")
 	silent.Scenario = pix.ScenarioNoAnswer
 
-	return []pix.Account{
+	accounts := []pix.Account{
 		// Wallet (a real participant: it decides for itself; the accounts are here for completeness)
 		account(WalletISPB, "00123456", "CACC", "52998224725", "Ana Souza"),
 		account(WalletISPB, "00234567", "SVGS", "11144477735", "Bruno Lima"),
@@ -51,4 +64,10 @@ func Accounts() []pix.Account {
 		account(BetaISPB, "00678901", "CACC", "45678912000155", "Mercadinho do Zé ME"),
 		silent,
 	}
+	for _, f := range ForcedRejections {
+		a := account(f.ISPB, f.Number, f.Type, f.TaxID, f.Name)
+		a.Scenario = pix.RejectScenario(f.Code)
+		accounts = append(accounts, a)
+	}
+	return accounts
 }

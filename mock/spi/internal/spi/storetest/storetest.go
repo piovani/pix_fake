@@ -5,6 +5,7 @@ package storetest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"pixfake/mock/spi/internal/spi"
 )
@@ -77,6 +78,40 @@ func Run(t *testing.T, newStore func(t *testing.T) spi.Store) {
 		}
 		if got, _ := s.Acked(ctx, b); got != 0 {
 			t.Fatalf("acked of another participant = %d, want 0", got)
+		}
+	})
+
+	t.Run("purge deletes only what nobody needs any more", func(t *testing.T) {
+		s := newStore(t)
+		old := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+		recent := old.Add(48 * time.Hour)
+		mk := func(id string, at time.Time) spi.Message { m := out(id, a); m.CreatedAt = at; return m }
+		_ = s.AddOutbound(ctx, mk("old-read", old))
+		_ = s.AddOutbound(ctx, mk("old-unread", old))
+		_ = s.AddOutbound(ctx, mk("recent", recent))
+		_ = s.AddInbound(ctx, []spi.Message{
+			{ResourceID: "in-old", ISPB: a, Body: []byte("x"), CreatedAt: old},
+			{ResourceID: "in-recent", ISPB: a, Body: []byte("y"), CreatedAt: recent},
+		})
+		all, _ := s.ReadAfter(ctx, a, 0, 10)
+		if err := s.Ack(ctx, a, all[0].Seq); err != nil { // only the first one was read
+			t.Fatal(err)
+		}
+
+		deleted, err := s.PurgeMessages(ctx, old.Add(24*time.Hour))
+		if err != nil || deleted != 2 {
+			t.Fatalf("purge = %d, %v; want 2 (the old read message and the old message the participant sent)", deleted, err)
+		}
+		left, _ := s.ReadAfter(ctx, a, 0, 10)
+		if len(left) != 2 || left[0].ResourceID != "old-unread" || left[1].ResourceID != "recent" {
+			t.Fatalf("messages left = %v; an unread message must stay however old it is", ids(left))
+		}
+		// A message that was read keeps the reading position working: a new stream starts after it.
+		if acked, _ := s.Acked(ctx, a); acked != all[0].Seq {
+			t.Fatalf("acked = %d after the purge, want %d", acked, all[0].Seq)
+		}
+		if again, _ := s.PurgeMessages(ctx, old.Add(24*time.Hour)); again != 0 {
+			t.Fatalf("second purge deleted %d", again)
 		}
 	})
 }

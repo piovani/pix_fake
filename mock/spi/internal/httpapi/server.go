@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"pixfake/mock/spi/internal/fault"
 	"pixfake/mock/spi/internal/spi"
 )
 
@@ -30,11 +31,44 @@ type Server struct {
 	log    *slog.Logger
 	health func(context.Context) error
 	now    func() time.Time
+	known  func(ispb string) bool // nil accepts any well formed ISPB
+	faults *fault.Set
+	extra  http.Handler // the control API, mounted under /mock/
 }
 
 // New creates the server. health is called on GET /healthz (it may be nil).
 func New(svc *spi.Service, log *slog.Logger, health func(context.Context) error) *Server {
 	return &Server{svc: svc, log: log, health: health, now: time.Now}
+}
+
+// WithParticipants makes the API refuse (403) a path ISPB that is not a registered participant, as the real SPI
+// does for an institution it does not know. Without it any well formed ISPB is accepted.
+func (s *Server) WithParticipants(known func(ispb string) bool) *Server {
+	s.known = known
+	return s
+}
+
+// WithFaults makes the API apply the fault rules (429, 503, delays) that a test adds through the control API.
+func (s *Server) WithFaults(f *fault.Set) *Server {
+	s.faults = f
+	return s
+}
+
+// WithControl mounts the control API (everything under /mock/). It is not part of the Bacen contract.
+func (s *Server) WithControl(h http.Handler) *Server {
+	s.extra = h
+	return s
+}
+
+// checkISPB validates the participant in the path: the format (400) and, when a list is set, that it is registered (403).
+func (s *Server) checkISPB(ispb string) error {
+	switch {
+	case !spi.ValidISPB(ispb):
+		return errInvalidISPB
+	case s.known != nil && !s.known(ispb):
+		return errForbidden
+	}
+	return nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -47,7 +81,20 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(BasePath+"/in/catalog", s.api(s.catalog(inCatalog), http.MethodGet))
 	mux.Handle(BasePath+"/out/catalog", s.api(s.catalog(outCatalog), http.MethodGet))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { s.writeError(w, errNotFound) })
-	return s.recoverer(s.logRequests(mux))
+	if s.extra != nil {
+		mux.Handle("/mock/", s.extra)
+	}
+	var h http.Handler = mux
+	if s.faults != nil {
+		h = s.faults.Middleware(h, []string{"/mock/", "/healthz"}, func(w http.ResponseWriter, _ *http.Request, status int) {
+			if status == http.StatusTooManyRequests {
+				s.writeError(w, errTooManyReqs)
+				return
+			}
+			s.writeError(w, errUnavailable)
+		})
+	}
+	return s.recoverer(s.logRequests(h))
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {

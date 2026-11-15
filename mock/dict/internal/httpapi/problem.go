@@ -12,6 +12,9 @@ const problemTypeBase = "https://dict.pi.rsfn.net.br/api/v2/error/"
 // kindServiceUnavailable does not exist as a dict.Kind: unexpected errors become 503.
 const kindServiceUnavailable dict.Kind = "ServiceUnavailable"
 
+// kindTooManyRequests is the 429 of the fault simulation; the mock never rate limits on its own.
+const kindTooManyRequests dict.Kind = "TooManyRequests"
+
 var problems = map[dict.Kind]struct {
 	status int
 	title  string
@@ -25,6 +28,7 @@ var problems = map[dict.Kind]struct {
 	dict.KindNotFound:             {http.StatusNotFound, "Not found"},
 	dict.KindConflict:             {http.StatusConflict, "Conflict"},
 	kindServiceUnavailable:        {http.StatusServiceUnavailable, "Service Unavailable"},
+	kindTooManyRequests:           {http.StatusTooManyRequests, "Too Many Requests"},
 }
 
 // problemXML follows RFC 7807 in XML, as in the spec's Problem schema.

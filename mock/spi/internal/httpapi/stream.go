@@ -29,8 +29,8 @@ func (s *Server) startStream(w http.ResponseWriter, r *http.Request) error {
 // stream is GET (read the next messages) and DELETE (close) on /api/v1/out/{ispb}/stream/{token}.
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) error {
 	ispb := r.PathValue("ispb")
-	if !spi.ValidISPB(ispb) {
-		return errInvalidISPB
+	if err := s.checkISPB(ispb); err != nil {
+		return err
 	}
 	token := r.PathValue("token")
 
@@ -52,8 +52,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) error {
 // messages per response, application/xml (or none) for one.
 func (s *Server) readParams(r *http.Request) (ispb string, multi bool, err error) {
 	ispb = r.PathValue("ispb")
-	if !spi.ValidISPB(ispb) {
-		return "", false, errInvalidISPB
+	if err := s.checkISPB(ispb); err != nil {
+		return "", false, err
 	}
 	accept := r.Header.Get("Accept")
 	if accept == "" {

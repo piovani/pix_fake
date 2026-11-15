@@ -1,0 +1,83 @@
+# The whole Pix environment: PostgreSQL for each mock, the DICT mock and the SPI mock, with the seed data loaded.
+#
+#   make setup      build and start everything
+#   make down       stop it (the data stays in the volumes)
+#
+# The PostgreSQL ports are published for tools and for the integration tests of the mocks. They are the same ones
+# the compose files of the mocks use (5432 and 5433), so run either this or `make run` inside a mock, not both.
+name: pixfake
+
+services:
+  postgres-dict:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: dict
+      POSTGRES_PASSWORD: dict
+      POSTGRES_DB: dict
+    ports:
+      - "5432:5432"
+    volumes:
+      - dict-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dict -d dict"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  postgres-spi:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: spi
+      POSTGRES_PASSWORD: spi
+      POSTGRES_DB: spi
+    ports:
+      - "5433:5432"
+    volumes:
+      - spi-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spi -d spi"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  dict:
+    build: ./mock/dict
+    environment:
+      DICT_ADDR: ":8080"
+      DICT_DATABASE_URL: postgres://dict:dict@postgres-dict:5432/dict?sslmode=disable
+      DICT_CONTROL: ${DICT_CONTROL:-on}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-dict:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  spi:
+    build: ./mock/spi
+    environment:
+      SPI_ADDR: ":8081"
+      SPI_DATABASE_URL: postgres://spi:spi@postgres-spi:5432/spi?sslmode=disable
+      SPI_CONTROL: ${SPI_CONTROL:-on}
+      # How long a payment waits for the receiving participant (the Pix limit is 40 seconds), and how long a read
+      # waits for a message before answering that there is none.
+      SPI_TIMEOUT: ${SPI_TIMEOUT:-40s}
+      SPI_POLL_WAIT: ${SPI_POLL_WAIT:-5s}
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres-spi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/healthz >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  dict-pgdata:
+  spi-pgdata:

@@ -3,6 +3,7 @@ package memstore
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -71,6 +72,31 @@ func (s *Store) Acked(_ context.Context, ispb string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.acked[ispb], nil
+}
+
+func (s *Store) PurgeMessages(_ context.Context, before time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var deleted int64
+	keep := s.outbound[:0]
+	for _, m := range s.outbound {
+		if m.CreatedAt.Before(before) && m.Seq <= s.acked[m.ISPB] {
+			deleted++
+			continue
+		}
+		keep = append(keep, m)
+	}
+	s.outbound = keep
+	keepIn := s.inbound[:0]
+	for _, m := range s.inbound {
+		if m.CreatedAt.Before(before) {
+			deleted++
+			continue
+		}
+		keepIn = append(keepIn, m)
+	}
+	s.inbound = keepIn
+	return deleted, nil
 }
 
 func (s *Store) Ack(_ context.Context, ispb string, seq int64) error {
@@ -204,4 +230,78 @@ func (s *Store) GetReported(_ context.Context, id string) (pix.ReportedTransacti
 		return pix.ReportedTransaction{}, pix.ErrReportedNotFound
 	}
 	return t, nil
+}
+
+// --- Inspection (control API) ---
+
+var _ pix.Inspector = (*Store)(nil)
+
+func (s *Store) ListPayments(_ context.Context, f pix.PaymentFilter) ([]pix.Payment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []pix.Payment
+	for _, p := range s.payments {
+		if (f.Status == "" || p.Status == f.Status) && (f.Kind == "" || p.Kind == f.Kind) &&
+			(f.Participant == "" || p.PayerISPB == f.Participant || p.PayeeISPB == f.Participant) {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	if limit := pix.ClampLimit(f.Limit); len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *Store) ListMessages(_ context.Context, f pix.MessageFilter) ([]pix.StoredMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []pix.StoredMessage
+	add := func(msgs []spi.Message, direction string) {
+		for _, m := range msgs {
+			if (f.Direction == "" || f.Direction == direction) && (f.Participant == "" || m.ISPB == f.Participant) {
+				out = append(out, pix.StoredMessage{Seq: m.Seq, ResourceID: m.ResourceID, Participant: m.ISPB, Direction: direction,
+					CreatedAt: m.CreatedAt, Body: string(m.Body)})
+			}
+		}
+	}
+	add(s.inbound, "in")
+	add(s.outbound, "out")
+	sort.Slice(out, func(i, j int) bool { return out[i].Seq > out[j].Seq })
+	if limit := pix.ClampLimit(f.Limit); len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *Store) ListAccounts(_ context.Context) ([]pix.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]pix.Account, 0, len(s.accounts))
+	for _, a := range s.accounts {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ISPB != out[j].ISPB {
+			return out[i].ISPB < out[j].ISPB
+		}
+		return out[i].Number < out[j].Number
+	})
+	return out, nil
+}
+
+// Reset keeps the accounts and the sequence of messages, so a stream token a client still holds stays meaningful.
+func (s *Store) Reset(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inbound, s.outbound = nil, nil
+	s.acked = map[string]int64{}
+	s.payments = nil
+	s.reported = nil
+	return nil
 }

@@ -95,3 +95,48 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		t.Fatalf("schema_migrations rows = %d, %v; want 1", n, err)
 	}
 }
+
+// DeleteAll and ListEntries serve the control API.
+func TestRepositoryControlOperations(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepo(t)
+
+	other := entry("b@bcb.gov.br")
+	other.Account.Participant = "87654321"
+	for i, e := range []dict.Entry{entry("c@bcb.gov.br"), entry("a@bcb.gov.br"), other} {
+		if err := repo.Create(ctx, e, []string{reqA, reqB, "c946d533-7f22-42a5-9a9b-e87cd55c0f4d"}[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := repo.ListEntries(ctx, "", 0)
+	if err != nil || len(all) != 3 || all[0].Key != "a@bcb.gov.br" || all[1].Key != "b@bcb.gov.br" || all[2].Key != "c@bcb.gov.br" {
+		t.Fatalf("all = %v, %v; want the 3 entries ordered by key", keys(all), err)
+	}
+	mine, _ := repo.ListEntries(ctx, "12345678", 0)
+	if len(mine) != 2 {
+		t.Fatalf("participant filter = %v", keys(mine))
+	}
+	if two, _ := repo.ListEntries(ctx, "", 2); len(two) != 2 {
+		t.Fatalf("limit = %v", keys(two))
+	}
+
+	if err := repo.DeleteAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := repo.ListEntries(ctx, "", 0); len(left) != 0 {
+		t.Fatalf("entries left: %v", keys(left))
+	}
+	// The RequestIds are free again.
+	if err := repo.Create(ctx, entry("a@bcb.gov.br"), reqA); err != nil {
+		t.Fatalf("create after DeleteAll: %v", err)
+	}
+}
+
+func keys(es []dict.Entry) []string {
+	out := make([]string, len(es))
+	for i, e := range es {
+		out[i] = e.Key
+	}
+	return out
+}

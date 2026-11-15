@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pixfake/mock/spi/internal/pix"
+	"pixfake/mock/spi/internal/spi"
 )
 
 func payment(e2e string) pix.Payment {
@@ -260,6 +261,136 @@ func RunReports(t *testing.T, newStore func(t *testing.T) pix.ReportStore) {
 		s := newStore(t)
 		if _, err := s.GetReported(ctx, "E9900000120261114120000000000009"); !errors.Is(err, pix.ErrReportedNotFound) {
 			t.Fatalf("get = %v", err)
+		}
+	})
+}
+
+// Backend is everything the control API reads and clears.
+type Backend interface {
+	spi.Store
+	pix.Storage
+	pix.AccountStore
+	pix.Inspector
+}
+
+// RunInspector executes the inspection cases. newStore must return an empty store for each call.
+func RunInspector(t *testing.T, newStore func(t *testing.T) Backend) {
+	ctx := context.Background()
+	at := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+
+	t.Run("list payments newest first, filtered and limited", func(t *testing.T) {
+		s := newStore(t)
+		mk := func(id, kind, status, payer, payee string, minutes int) pix.Payment {
+			p := payment(id)
+			p.ID, p.Kind, p.Status, p.PayerISPB, p.PayeeISPB = id, kind, status, payer, payee
+			p.CreatedAt = at.Add(time.Duration(minutes) * time.Minute)
+			return p
+		}
+		for _, p := range []pix.Payment{
+			mk("E9900000120261114120000000000001", pix.KindPayment, pix.StatusSettled, "99000001", "99000002", 1),
+			mk("E9900000120261114120000000000002", pix.KindPayment, pix.StatusPending, "99000001", "99000003", 2),
+			mk("D9900000320261114120000000000003", pix.KindReturn, pix.StatusSettled, "99000003", "99000001", 3),
+		} {
+			if _, _, err := s.CreatePayment(ctx, p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ids := func(f pix.PaymentFilter) []string {
+			ps, err := s.ListPayments(ctx, f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := make([]string, len(ps))
+			for i, p := range ps {
+				out[i] = p.ID[len(p.ID)-1:]
+			}
+			return out
+		}
+		check := func(name string, got []string, want ...string) {
+			t.Helper()
+			if len(got) != len(want) {
+				t.Fatalf("%s = %v, want %v", name, got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("%s = %v, want %v", name, got, want)
+				}
+			}
+		}
+		check("all", ids(pix.PaymentFilter{}), "3", "2", "1")
+		check("settled", ids(pix.PaymentFilter{Status: pix.StatusSettled}), "3", "1")
+		check("returns", ids(pix.PaymentFilter{Kind: pix.KindReturn}), "3")
+		check("participant 99000003 (payer or payee)", ids(pix.PaymentFilter{Participant: "99000003"}), "3", "2")
+		check("limit", ids(pix.PaymentFilter{Limit: 2}), "3", "2")
+	})
+
+	t.Run("list messages newest first with the body", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.AddInbound(ctx, []spi.Message{{ResourceID: "in1", ISPB: "11111111", Body: []byte("<a/>"), CreatedAt: at}})
+		_ = s.AddOutbound(ctx, spi.Message{ResourceID: "out1", ISPB: "11111111", Body: []byte("<b/>"), CreatedAt: at})
+		_ = s.AddOutbound(ctx, spi.Message{ResourceID: "out2", ISPB: "22222222", Body: []byte("<c/>"), CreatedAt: at})
+
+		all, err := s.ListMessages(ctx, pix.MessageFilter{})
+		if err != nil || len(all) != 3 || all[0].ResourceID != "out2" || all[2].ResourceID != "in1" || all[2].Body != "<a/>" || all[2].Direction != "in" {
+			t.Fatalf("all = %+v, %v", all, err)
+		}
+		mine, _ := s.ListMessages(ctx, pix.MessageFilter{Participant: "11111111"})
+		if len(mine) != 2 {
+			t.Fatalf("participant filter = %d", len(mine))
+		}
+		out, _ := s.ListMessages(ctx, pix.MessageFilter{Direction: "out", Limit: 1})
+		if len(out) != 1 || out[0].ResourceID != "out2" || out[0].Direction != "out" {
+			t.Fatalf("direction and limit = %+v", out)
+		}
+	})
+
+	t.Run("list accounts ordered", func(t *testing.T) {
+		s := newStore(t)
+		for _, a := range []pix.Account{account("00000002"), account("00000001")} {
+			_, _ = s.CreateAccount(ctx, a)
+		}
+		other := account("00000000")
+		other.ISPB = "99000003"
+		_, _ = s.CreateAccount(ctx, other)
+		got, err := s.ListAccounts(ctx)
+		if err != nil || len(got) != 3 || got[0].Number != "00000001" || got[1].Number != "00000002" || got[2].ISPB != "99000003" {
+			t.Fatalf("accounts = %+v, %v", got, err)
+		}
+	})
+
+	t.Run("reset clears the state and keeps the accounts and the message sequence", func(t *testing.T) {
+		s := newStore(t)
+		_, _ = s.CreateAccount(ctx, account("00456789"))
+		_, _, _ = s.CreatePayment(ctx, payment("E9900000120261114120000000000001"))
+		_, _ = s.AddReported(ctx, pix.ReportedTransaction{ID: "E9900000120261114120000000000002", EndToEndID: "E9900000120261114120000000000002",
+			Scenario: "BOK1", Initiation: "MANU", AmountCents: 1, SettledAt: at, PayerISPB: "99000001", PayeeISPB: "99000001",
+			PayerAccount: "1", PayeeAccount: "2", PayerAccountType: "CACC", PayeeAccountType: "CACC", ReportedBy: "99000001", ReportedAt: at})
+		_ = s.AddOutbound(ctx, spi.Message{ResourceID: "o1", ISPB: "11111111", Body: []byte("x"), CreatedAt: at})
+		before, _ := s.ReadAfter(ctx, "11111111", 0, 1)
+		_ = s.Ack(ctx, "11111111", before[0].Seq)
+
+		if err := s.Reset(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if ps, _ := s.ListPayments(ctx, pix.PaymentFilter{}); len(ps) != 0 {
+			t.Fatalf("payments left: %d", len(ps))
+		}
+		if ms, _ := s.ListMessages(ctx, pix.MessageFilter{}); len(ms) != 0 {
+			t.Fatalf("messages left: %d", len(ms))
+		}
+		if _, err := s.GetReported(ctx, "E9900000120261114120000000000002"); !errors.Is(err, pix.ErrReportedNotFound) {
+			t.Fatalf("reported transaction left: %v", err)
+		}
+		if acked, _ := s.Acked(ctx, "11111111"); acked != 0 {
+			t.Fatalf("acked = %d after the reset", acked)
+		}
+		if as, _ := s.ListAccounts(ctx); len(as) != 1 {
+			t.Fatalf("accounts = %d; a reset keeps them", len(as))
+		}
+		_ = s.AddOutbound(ctx, spi.Message{ResourceID: "o2", ISPB: "11111111", Body: []byte("y"), CreatedAt: at})
+		after, _ := s.ReadAfter(ctx, "11111111", 0, 1)
+		if len(after) != 1 || after[0].Seq <= before[0].Seq {
+			t.Fatalf("sequence went back: %d after %d", after[0].Seq, before[0].Seq)
 		}
 	})
 }

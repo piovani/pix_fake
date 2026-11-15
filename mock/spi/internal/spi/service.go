@@ -145,6 +145,24 @@ func (s *Service) CloseStream(ctx context.Context, ispb, token string) error {
 	return s.store.Ack(ctx, ispb, pos)
 }
 
+// RunRetention deletes, every interval until ctx is done, the messages older than keep that nobody needs any more
+// (see Store.PurgeMessages). Without it the message table only grows.
+func (s *Service) RunRetention(ctx context.Context, every, keep time.Duration, onPurge func(deleted int64, err error)) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			deleted, err := s.store.PurgeMessages(ctx, s.now().Add(-keep))
+			if onPurge != nil {
+				onPurge(deleted, err)
+			}
+		}
+	}
+}
+
 // notifier wakes the reads waiting for messages of a participant.
 type notifier struct {
 	mu    sync.Mutex

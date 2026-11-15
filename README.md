@@ -89,7 +89,7 @@ the real DICT is a base URL change. Errors use `application/problem+xml`.
 **Identifying the institution:** there is no mTLS. Every request carries `X-Participant-ISPB`, which is also used for
 simple authorization (only the participant that owns an entry can update or delete it).
 
-**Test data:** `make seed` loads 21 keys across the wallet and two other banks, covering every key type, so lookups
+**Test data:** `make seed` loads 29 keys across the wallet and two other banks, covering every key type, so lookups
 already work for tests.
 
 **Contract (Get entry).** The schemas come from [`mock/dict/docs/openapi.json`](mock/dict/docs/openapi.json).
@@ -200,9 +200,12 @@ Bacen documentation is the source of truth for every contract in this project. L
 ```
 pix_fake/
 ├── README.md
-├── Makefile                 # make test, make e2e
+├── Makefile                 # make setup, test, lint, e2e, check, reset...
+├── docker-compose.yml       # PostgreSQL + both mocks, with the seed data (make setup)
+├── .github/workflows/ci.yml # lint, unit, PostgreSQL, closing test, containers
 ├── docs/
 │   ├── architecture.md      # diagrams and flows
+│   ├── integration-guide.md # how to build a participant against the mocks
 │   └── roadmap.md           # plan: phases, status, backlog, open decisions
 ├── e2e/                     # closing test: both mocks together, over HTTP and XML
 ├── scripts/e2e.sh           # starts both mocks on Postgres and runs the closing test
@@ -214,13 +217,23 @@ pix_fake/
 ## Trying both mocks together
 
 ```sh
-make test   # unit and HTTP tests of both mocks, no database needed
-make e2e    # needs Docker: both mocks on PostgreSQL, seed data loaded, then the closing test
+make setup   # builds and starts PostgreSQL and both mocks, with the seed data (needs Docker)
+make check   # the closing test against it
+make reset   # both mocks back to their seed data
+make down    # stop (the data stays)
 ```
 
+DICT at `http://localhost:8080`, SPI at `http://localhost:8081`. Other targets: `make test` (unit and HTTP tests, no database),
+`make test-integration` (also on PostgreSQL), `make lint`, `make e2e` (the closing test on its own databases, as CI runs it),
+`make logs`, `make status`.
+
 The closing test plays the wallet and a bank: it looks a seeded key up in the DICT, pays it through the SPI and gets the
-settled confirmation, gets rejections (closed and blocked accounts, timeout), returns a payment, reports a payment between
-two customers of the wallet, and receives a payment from another bank.
+settled confirmation, gets rejections (closed and blocked accounts, eight more reasons, timeout), returns a payment,
+reports a payment between two customers of the wallet, and receives a payment from another bank.
+
+To build the wallet against the mocks, read the [integration guide](docs/integration-guide.md): the order of the calls,
+the messages, how to read what the SPI sends, what each rejection means, and the control API that makes a bank pay or
+return to the wallet, shows the state and breaks things on purpose (`429`, `503`, slow answers).
 
 ## License
 

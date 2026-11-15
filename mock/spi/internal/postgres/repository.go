@@ -4,6 +4,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -69,6 +70,14 @@ func (r *Repository) Acked(ctx context.Context, ispb string) (int64, error) {
 		return 0, nil
 	}
 	return acked, err
+}
+
+func (r *Repository) PurgeMessages(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		DELETE FROM messages m
+		WHERE m.created_at < $1
+		  AND (m.direction = 'in' OR m.seq <= COALESCE((SELECT c.acked FROM cursors c WHERE c.ispb = m.ispb), 0))`, before)
+	return tag.RowsAffected(), err
 }
 
 func (r *Repository) Ack(ctx context.Context, ispb string, seq int64) error {

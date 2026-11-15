@@ -405,3 +405,49 @@ func TestReturnIDHelper(t *testing.T) {
 		}
 	}
 }
+
+// --- Idempotency window (24 hours) ---
+
+func TestRepeatedOrderIsIdempotentOnlyForTwentyFourHours(t *testing.T) {
+	e := newRulesEnv(t)
+	e.sendOrder(order{})
+	e.readStatuses(wallet)
+
+	// 13 hours later the EndToEndId would already be too old for a new order, yet the same order still gets its answer.
+	e.advance(13 * time.Hour)
+	e.sendOrder(order{})
+	sts := e.readStatuses(wallet)
+	if len(sts) != 1 || sts[0].Status != iso.StatusSettledPayer {
+		t.Fatalf("after 13 hours: %+v; want the original ACSC again", sts)
+	}
+
+	// After 24 hours it is judged like a new order, and its EndToEndId is too old.
+	e.advance(12 * time.Hour)
+	e.sendOrder(order{})
+	sts = e.readStatuses(wallet)
+	if len(sts) != 1 || sts[0].Status != iso.StatusRejected || sts[0].ReasonCode() != "FF08" {
+		t.Fatalf("after 25 hours: %+v; want RJCT FF08", sts)
+	}
+	if p := e.payment(e2eA); p.Status != pix.StatusSettled {
+		t.Fatalf("the original payment changed to %s", p.Status)
+	}
+}
+
+func TestRepeatedReturnIsIdempotentOnlyForTwentyFourHours(t *testing.T) {
+	e := paidToWallet(t)
+	req := returnReq{sender: wallet, destinatario: alfa}
+	e.sendReturn(req)
+	e.readStatuses(wallet)
+
+	e.advance(13 * time.Hour)
+	e.sendReturn(req)
+	if sts := e.readStatuses(wallet); len(sts) != 1 || sts[0].Status != iso.StatusSettledPayer {
+		t.Fatalf("after 13 hours: %+v; want the original ACSC again", sts)
+	}
+
+	e.advance(12 * time.Hour)
+	e.sendReturn(req)
+	if sts := e.readStatuses(wallet); len(sts) != 1 || sts[0].ReasonCode() != "FF08" {
+		t.Fatalf("after 25 hours: %+v; want RJCT FF08", sts)
+	}
+}

@@ -25,3 +25,7 @@ func TestAccountStore(t *testing.T) {
 func TestReportStore(t *testing.T) {
 	pixtest.RunReports(t, func(*testing.T) pix.ReportStore { return memstore.New() })
 }
+
+func TestInspector(t *testing.T) {
+	pixtest.RunInspector(t, func(*testing.T) pixtest.Backend { return memstore.New() })
+}

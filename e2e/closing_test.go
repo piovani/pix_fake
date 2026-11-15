@@ -361,6 +361,17 @@ func TestPixEndToEnd(t *testing.T) {
 		e.expect(e.waitForStatus(wallet, e2e), e2e, "RJCT", "AC06")
 	})
 
+	t.Run("each test account rejects with its own reason", func(t *testing.T) {
+		// Test accounts 00900004 to 00900011: the holder's CPF is the key, and the account rejects every payment.
+		for _, c := range []struct{ cpf, code string }{
+			{"10293847541", "DS04"}, {"56473829164", "FRAD"}, {"91827364564", "AM02"}, {"37281946546", "AG03"},
+			{"64528193728", "ED05"}, {"82910476340", "AB09"}, {"45197286300", "AC14"}, {"73640812913", "CH11"},
+		} {
+			e2e, _ := e.payKey(ana, c.cpf, "5.00")
+			e.expect(e.waitForStatus(wallet, e2e), e2e, "RJCT", c.code)
+		}
+	})
+
 	t.Run("an unknown key is not found in the DICT", func(t *testing.T) {
 		code, _, problem := e.lookup(wallet, anaCPF, id("E", wallet), "00000000191")
 		if code != http.StatusNotFound {

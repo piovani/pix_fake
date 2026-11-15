@@ -17,8 +17,8 @@ import (
 // The content is stored without validation, as the real API does at this point.
 func (s *Server) send(w http.ResponseWriter, r *http.Request) error {
 	ispb := r.PathValue("ispb")
-	if !spi.ValidISPB(ispb) {
-		return errInvalidISPB
+	if err := s.checkISPB(ispb); err != nil {
+		return err
 	}
 	if r.Header.Get("Content-Length") == "" && len(r.TransferEncoding) == 0 {
 		return errLengthRequired

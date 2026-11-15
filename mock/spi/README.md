@@ -38,6 +38,8 @@ The ICOM interface, as in the Interfaces manual 1.12. Go, `net/http` from the st
 | `DELETE /api/v1/out/{ispb}/stream/{token}` | Closes the stream and marks what it delivered as read (`200`; `410` if the token is malformed or older than what was already acknowledged) |
 | `GET /api/v1/in/catalog`, `/out/catalog` | Message versions of the catalog package `spi.5.13.2` |
 
+A path `{ispb}` that is not a registered participant is a `403`; a malformed one is a `400`.
+
 - A message not closed with `DELETE` is delivered again by the next stream, with the same `ResourceId`.
 - A stream keeps no state: the token in `PI-Pull-Next` is the position in the participant's queue, and `DELETE` saves
   that position. So closing twice is harmless (`200`), and a closed token can still be read from.
@@ -131,18 +133,46 @@ make test-integration  # also the Postgres repository and end-to-end tests
 ```
 
 Settings: `SPI_ADDR` (`:8081`), `SPI_DATABASE_URL`, `SPI_POLL_WAIT` (`5s`), `SPI_TIMEOUT` (`40s`, how long a payment waits for
-the receiving participant; shorten it to test timeouts).
+the receiving participant; shorten it to test timeouts), `SPI_RETENTION` (`168h`, how long messages that were read, and the
+ones participants sent, are kept before they are deleted; an unread message stays however old it is) and `SPI_CONTROL`
+(on; `off` removes the control API).
+
+The whole environment (both mocks and their databases) starts with `make setup` at the repository root, from the
+[`Dockerfile`](Dockerfile) of this mock; see the [integration guide](../../docs/integration-guide.md).
+
+### Control API and simulated failures
+
+Not part of the Bacen contract: JSON under `/mock`, to help test a participant. On by default; `SPI_CONTROL=off` removes it.
+
+| | |
+|-|-|
+| `GET /mock/accounts` | the test accounts, with status and how each answers a payment (`scenario`) |
+| `GET /mock/payments[?status=&kind=&participant=&limit=]`, `GET /mock/payments/{id}` | payments and returns, newest first |
+| `GET /mock/reports/{id}` | a transaction reported with a `trck.002` |
+| `GET /mock/messages[?participant=&direction=in\|out&limit=]` | the messages, with their XML |
+| `POST /mock/inbound/payments` | a **simulated bank pays** an account of another participant (the wallet, usually) |
+| `POST /mock/inbound/returns` | a simulated bank **returns** a payment it received |
+| `POST /mock/reset` | clears messages, payments and reports (the accounts stay); also clears the faults |
+| `POST /mock/faults`, `GET`, `DELETE /mock/faults[/{id}]` | make the API answer `429` or `503` (with `Retry-After`), or answer late |
+
+The inbound endpoints build the message a real bank would send and feed it through the same path (validation,
+forwarding, settlement), so the participant under test sees exactly what it would see in production. `from` must be a
+simulated bank; a payment to the wallet stays `PENDING` until the wallet answers. Examples are in the
+[integration guide](../../docs/integration-guide.md#the-control-api).
 
 ### Simplifications
 
-- No mTLS, certificates or signatures; any well-formed ISPB in the path is accepted (it is not checked against a list
-  of participants yet).
+- No mTLS, certificates or signatures. The `{ispb}` in the path must be a registered participant (`403` otherwise, as the
+  real SPI does for an institution it does not know); who is calling is not otherwise authenticated.
 - One port and one queue per participant: the primary and secondary channels are not separated.
 - Parallel streams of the same participant may receive the same messages (the real SPI splits them). The participant
   deduplicates by `ResourceId`, as the manual already requires.
 - The order is processed inside the sender's `POST`, not after it. No balances: the Conta PI of the participants is not
   tracked, so `AM04` never happens. A message id (`MsgId`) is not checked for repetition.
-- No limit of 6 streams per participant, no token-bucket rate limit (`429`), no check of the `Host` header.
+- No limit of 6 streams per participant, no token-bucket rate limit of its own (`429` only when a test asks for it), no
+  check of the `Host` header.
+- Idempotency of `pacs.008` and `pacs.004` lasts 24 hours, as in the catalog: inside that window a repeated order gets the
+  outcome it already has; after it, the order is judged as a new one (and its `EndToEndId` is by then too old to pass).
 - The input/output catalog split follows the example in the Interfaces manual, updated to the versions of the package.
 
 ## Seed data
@@ -165,9 +195,19 @@ found in the DICT can be paid in the SPI. A test reads the DICT seed file and fa
 | Banco Alfa | `99000002` | `0001` / `00900001` | `CACC` | Eduardo Teixeira (`24681357928`) | **closed** | rejects with `AC07` |
 | Banco Alfa | `99000002` | `0001` / `00900002` | `SVGS` | Fernanda Alves (`13579246828`) | **blocked** | rejects with `AC06` |
 | Banco Beta | `99000003` | `0001` / `00900003` | `TRAN` | Gustavo Pires (`86420975310`) | active | **never answers**: the SPI rejects with `AB03` after 40 s |
+| Banco Alfa | `99000002` | `0001` / `00900004` | `CACC` | Helena Moraes (`10293847541`) | active | rejects with `DS04` |
+| Banco Beta | `99000003` | `0001` / `00900005` | `SVGS` | Igor Batista (`56473829164`) | active | rejects with `FRAD` |
+| Banco Alfa | `99000002` | `0001` / `00900006` | `TRAN` | Julia Nogueira (`91827364564`) | active | rejects with `AM02` |
+| Banco Beta | `99000003` | `0001` / `00900007` | `SVGS` | Kleber Duarte (`37281946546`) | active | rejects with `AG03` |
+| Banco Alfa | `99000002` | `0001` / `00900008` | `CACC` | Larissa Prado (`64528193728`) | active | rejects with `ED05` |
+| Banco Beta | `99000003` | `0001` / `00900009` | `TRAN` | Marcos Vieira (`82910476340`) | active | rejects with `AB09` |
+| Banco Alfa | `99000002` | `0001` / `00900010` | `CACC` | Natalia Freitas (`45197286300`) | active | rejects with `AC14` |
+| Banco Beta | `99000003` | `0001` / `00900011` | `SVGS` | Otavio Ramos (`73640812913`) | active | rejects with `CH11` |
 
-The last three are the test accounts of the [receiving participant decision](#receiving-participant-decision). They have
-DICT keys (CPF and phone) too, so the whole path can be exercised: look the key up, then pay it.
+The last eleven (`00900001` to `00900011`) are the test accounts of the
+[receiving participant decision](#receiving-participant-decision). They have DICT keys too (the CPF, and a phone for the
+first three), so the whole path can be exercised: look the key up, then pay it. The eight that reject with a reason cover
+the codes a receiving participant generates (`pix.RejectCodes`); the reason and its text are in the `pacs.002`.
 
 The simulated banks read these accounts to decide how to answer, see
 [Receiving participant](#receiving-participant-decision).
@@ -236,6 +276,7 @@ settles. The seed banks do not exist, so (implemented in `pix.AccountResponder`)
 | Seeded test account `00900001` (Banco Alfa), closed | `RJCT` `AC07` |
 | Seeded test account `00900002` (Banco Alfa), blocked | `RJCT` `AC06` |
 | Seeded test account `00900003` (Banco Beta), never answers | no answer; the SPI rejects with `AB03` after 40 s |
+| Seeded test accounts `00900004` to `00900011` | `RJCT` with `DS04`, `FRAD`, `AM02`, `AG03`, `ED05`, `AB09`, `AC14` or `CH11` (see the seed table) |
 | Account exists but the creditor document differs from its owner | `RJCT` `BE01` |
 | Any other seeded account | `ACSP` |
 

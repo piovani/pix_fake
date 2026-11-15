@@ -50,3 +50,9 @@ func TestReportStore(t *testing.T) {
 		return postgres.NewRepository(pgtest.NewPool(t))
 	})
 }
+
+func TestInspector(t *testing.T) {
+	pixtest.RunInspector(t, func(t *testing.T) pixtest.Backend {
+		return postgres.NewRepository(pgtest.NewPool(t))
+	})
+}

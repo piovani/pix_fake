@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pixfake/mock/spi/internal/config"
+	"pixfake/mock/spi/internal/control"
+	"pixfake/mock/spi/internal/fault"
 	"pixfake/mock/spi/internal/httpapi"
 	"pixfake/mock/spi/internal/pix"
 	"pixfake/mock/spi/internal/postgres"
@@ -48,13 +50,26 @@ func run(log *slog.Logger) error {
 
 	repo := postgres.NewRepository(pool)
 	svc := spi.NewService(repo, cfg.PollWait)
-	proc := pix.NewProcessor(svc, repo, pix.DefaultParticipants(), pix.AccountResponder{Accounts: repo}, log)
+	participants := pix.DefaultParticipants()
+	proc := pix.NewProcessor(svc, repo, participants, pix.AccountResponder{Accounts: repo}, log)
 	proc.Timeout = cfg.Timeout
 	svc.SetHandler(proc)
 	go proc.RunExpiry(ctx, min(time.Second, cfg.Timeout/2))
+	go svc.RunRetention(ctx, time.Hour, cfg.Retention, func(deleted int64, err error) {
+		if err != nil {
+			log.Error("delete old messages", "error", err)
+		} else if deleted > 0 {
+			log.Info("deleted old messages", "count", deleted)
+		}
+	})
+	faults := &fault.Set{}
+	api := httpapi.New(svc, log, pool.Ping).WithParticipants(participants.Known).WithFaults(faults)
+	if cfg.Control {
+		api.WithControl(control.New(svc, repo, participants, faults).Handler())
+	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.New(svc, log, pool.Ping).Handler(),
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// A read waits for messages (long polling), so the write timeout must exceed the wait.

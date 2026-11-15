@@ -3,6 +3,7 @@ package memstore
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"pixfake/mock/dict/internal/dict"
@@ -76,6 +77,32 @@ func (s *Store) Delete(_ context.Context, key string) error {
 	}
 	delete(s.entries, key)
 	return nil
+}
+
+// DeleteAll removes every entry (control API).
+func (s *Store) DeleteAll(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entries = map[string]dict.Entry{}
+	s.requestID = map[string]string{}
+	return nil
+}
+
+// ListEntries returns the entries, those of one participant when it is not empty, ordered by key (control API).
+func (s *Store) ListEntries(_ context.Context, participant string, limit int) ([]dict.Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []dict.Entry
+	for _, e := range s.entries {
+		if participant == "" || e.Account.Participant == participant {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (s *Store) Existing(_ context.Context, keys []string) (map[string]bool, error) {

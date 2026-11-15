@@ -52,11 +52,16 @@ func (r *Repository) GetByRequestID(ctx context.Context, participant, requestID 
 }
 
 func (r *Repository) queryOne(ctx context.Context, sql string, args ...any) (dict.Entry, error) {
+	return scanEntry(r.pool.QueryRow(ctx, sql, args...))
+}
+
+// scanEntry reads one entry from a row of selectColumns; no row is dict.ErrNotFound.
+func scanEntry(row pgx.Row) (dict.Entry, error) {
 	var (
 		e                           dict.Entry
 		keyType, accType, ownerType string
 	)
-	err := r.pool.QueryRow(ctx, sql, args...).Scan(
+	err := row.Scan(
 		&e.Key, &keyType, &e.Account.Participant, &e.Account.Branch, &e.Account.AccountNumber, &accType,
 		&e.Account.OpeningDate, &ownerType, &e.Owner.TaxID, &e.Owner.Name, &e.Owner.TradeName,
 		&e.CreationDate, &e.KeyOwnershipDate)
@@ -97,6 +102,34 @@ func (r *Repository) Delete(ctx context.Context, key string) error {
 		return dict.ErrNotFound
 	}
 	return nil
+}
+
+// DeleteAll removes every entry (control API).
+func (r *Repository) DeleteAll(ctx context.Context) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM entries`)
+	return err
+}
+
+// ListEntries returns the entries, those of one participant when it is not empty, ordered by key (control API).
+func (r *Repository) ListEntries(ctx context.Context, participant string, limit int) ([]dict.Entry, error) {
+	if limit <= 0 {
+		limit = 1 << 30
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+selectColumns+` FROM entries WHERE ($1 = '' OR participant = $1) ORDER BY key LIMIT $2`,
+		participant, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []dict.Entry
+	for rows.Next() {
+		e, err := scanEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) Existing(ctx context.Context, keys []string) (map[string]bool, error) {

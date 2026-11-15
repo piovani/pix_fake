@@ -24,7 +24,7 @@ flowchart LR
 | 2 | SPI mock: instant payment settlement | **Done** (payments, returns, reports, rejections, timeout; closing test `make e2e`) |
 | 3 | Digital wallet and Pix integration layer | **Next** |
 | 4 | MED 2: funds recovery | **Later** |
-| - | Environment and quality (cross-cutting) | In progress: seeds, root `make test` and `make e2e` done; `make setup` pending |
+| - | Environment and quality (cross-cutting) | Mostly done: `make setup`, containers, CI workflow, DICT contract tests, failure simulation, control API; specification tracking pending |
 
 ## Principles
 
@@ -55,7 +55,7 @@ The Pix key directory, following the Bacen DICT API v2.13.0. See [`mock/dict`](.
 - [x] Book transfer rule: a lookup of a key held by the requesting participant is refused with
   `EntryCannotBeQueriedForBookTransfer`, as in the real DICT
 - [x] PostgreSQL with embedded migrations
-- [x] Seed data: 21 keys across the wallet and two other fictional banks, every key type, including three test accounts for the SPI scenarios (`make seed`, idempotent)
+- [x] Seed data: 29 keys across the wallet and two other fictional banks, every key type, including eleven test accounts for the SPI scenarios (`make seed`, idempotent)
 - [x] Unit, Postgres repository and end-to-end tests; per-test database schemas so packages run in parallel
 - [x] README with the spec version and date, the implemented and pending endpoints, and the mock's simplifications
 
@@ -169,17 +169,22 @@ Can start before Phase 3 and grows with each mock.
 
 - [x] **Root `make test` and `make e2e`.** `make test` runs the tests of both mocks; `make e2e` runs the closing test on
   PostgreSQL ([`scripts/e2e.sh`](../scripts/e2e.sh)).
-- [ ] **Root `make setup`.** One command that starts Postgres and every mock, applies the migrations and loads the seed
-  data, leaving Pix ready for testing. `scripts/e2e.sh` already does most of it, for a test run.
-- [ ] **Containers for the mocks** *(proposed)*. A Dockerfile per mock and one root compose file. Today compose only
-  starts Postgres and the mock runs with `go run`.
-- [ ] **Continuous integration** *(proposed)*: lint, unit tests and integration tests with a Postgres service.
-- [ ] **Contract tests** *(proposed)*: validate mock requests and responses against the official OpenAPI documents, to
-  catch drift from the specification.
-- [ ] **Failure simulation** *(proposed)*: on demand `429` and `503` from the DICT and the SPI, to test the wallet's
-  resilience.
+- [x] **Root `make setup`.** One command that builds and starts PostgreSQL and both mocks, with the migrations applied and the
+  seed data loaded ([`docker-compose.yml`](../docker-compose.yml)); also `down`, `reset`, `logs`, `status` and `check` (the
+  closing test against the running environment).
+- [x] **Containers for the mocks.** A `Dockerfile` per mock (multi-stage, runs as a normal user, seeds at start) and the
+  root compose file. The compose files inside each mock remain, for `make run` there; they share ports with the root one.
+- [x] **Continuous integration.** [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): lint, unit tests, tests on
+  PostgreSQL, the closing test and the containers, each one a `make` target. *Written but not run on GitHub yet: the same
+  targets were run locally.*
+- [x] **Contract tests.** The DICT mock is checked against `openapi.json` (examples, requests and answers, status codes);
+  the SPI mock writes every message it produces against the official XSDs. See the READMEs.
+- [x] **Failure simulation.** `429`, `503` and slow answers on demand in both mocks, through the control API.
+- [x] **Control API and test accounts.** Make a simulated bank pay or return to the participant, look at payments and
+  messages, clear the state; eleven test accounts that are closed, blocked, never answer or reject with a given reason.
+- [x] **Integration guide.** [`integration-guide.md`](integration-guide.md): the flows, messages, reading the SPI, errors, test data.
 - [ ] **Specification tracking** *(proposed)*: re-check the Bacen specifications from time to time and record version
-  and date when a mock is updated.
+  and date when a mock is updated. (The SPI package and the DICT file were checked on 2026-11-14.)
 
 ## Phase 4: MED 2, funds recovery (Later)
 
@@ -235,6 +240,5 @@ Listed so they are not forgotten. None is agreed.
 | The wallet's real ISPB (the seed uses the placeholder `99000001`) | Seed data, wallet configuration |
 | Wallet technology stack and repository layout | Phase 3 |
 | Whether users need portability, that is, claims | Backlog |
-| Whether the DICT and SPI mocks share one Postgres instance and compose file (today each has its own: ports 5432 and 5433) | `make setup` |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |
 | Where continuous integration runs | Environment and quality |

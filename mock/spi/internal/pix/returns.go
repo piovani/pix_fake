@@ -46,7 +46,7 @@ func (p *Processor) handlePacs004(ctx context.Context, sender string, m spi.Mess
 		}
 
 		// The SPI is idempotent by RtrId: a repeated return gets the outcome that already exists.
-		if existing, err := p.payments.GetPayment(ctx, r.RtrID); err == nil {
+		if existing, err := p.payments.GetPayment(ctx, r.RtrID); err == nil && p.insideIdempotencyWindow(existing) {
 			p.resendOutcome(ctx, existing)
 			continue
 		}

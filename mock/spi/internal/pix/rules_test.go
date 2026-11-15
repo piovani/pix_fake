@@ -49,6 +49,14 @@ func TestAccountRules(t *testing.T) {
 		{"another CPF than the holder", toAccount(alfa, "00456789", "16899535009"), "BE01"},
 		{"closed wins over the CPF mismatch", toAccount(alfa, seed.ClosedAccount, "16899535009"), "AC07"},
 	}
+	// Each test account that carries a reason rejects with exactly that reason, whatever the CPF sent.
+	for _, f := range seed.ForcedRejections {
+		tests = append(tests, struct {
+			name   string
+			o      order
+			reason string
+		}{"forced " + f.Code, toAccount(f.ISPB, f.Number, f.TaxID), f.Code})
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newRulesEnv(t)
@@ -200,4 +208,32 @@ func (brokenAccounts) CreateAccount(context.Context, pix.Account) (bool, error) 
 }
 func (brokenAccounts) GetAccount(context.Context, string, string) (pix.Account, error) {
 	return pix.Account{}, errors.New("down")
+}
+
+func TestForcedRejectionWinsOverTheCPFCheck(t *testing.T) {
+	e := newRulesEnv(t)
+	e.sendOrder(toAccount(seed.ForcedRejections[0].ISPB, seed.ForcedRejections[0].Number, "16899535009")) // not the holder's CPF
+	if p := e.payment(e2eA); p.ReasonCode != seed.ForcedRejections[0].Code {
+		t.Fatalf("reason = %s; the forced reason must win over BE01", p.ReasonCode)
+	}
+}
+
+func TestForcedRejectionCodesAreKnown(t *testing.T) {
+	for _, f := range seed.ForcedRejections {
+		if _, ok := pix.RejectCodes[f.Code]; !ok {
+			t.Errorf("%s uses %s, which is not in pix.RejectCodes", f.Number, f.Code)
+		}
+	}
+	for code := range pix.RejectCodes {
+		found := false
+		for _, f := range seed.ForcedRejections {
+			found = found || f.Code == code
+		}
+		if !found {
+			t.Errorf("no seeded account forces %s", code)
+		}
+	}
+	if _, ok := pix.RejectCode(pix.RejectScenario("DS04")); !ok {
+		t.Error("RejectCode cannot read what RejectScenario wrote")
+	}
 }

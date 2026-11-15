@@ -41,6 +41,7 @@ func TestSeedAccountsRejectsBadDataBeforeWritingAnything(t *testing.T) {
 		"holder name": func(a *pix.Account) { a.HolderName = "" },
 		"status":      func(a *pix.Account) { a.Status = "GONE" },
 		"scenario":    func(a *pix.Account) { a.Scenario = "SLOW" },
+		"reject code": func(a *pix.Account) { a.Scenario = pix.RejectScenario("ZZZZ") },
 	}
 	for name, mutate := range bad {
 		t.Run(name, func(t *testing.T) {

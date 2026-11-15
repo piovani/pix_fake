@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"pixfake/mock/dict/internal/dict"
+	"pixfake/mock/dict/internal/fault"
 )
 
 const (
@@ -29,11 +30,25 @@ type Server struct {
 	log    *slog.Logger
 	health func(context.Context) error
 	now    func() time.Time
+	faults *fault.Set
+	extra  http.Handler // the control API, mounted under /mock/
 }
 
 // New creates the server. health is called on GET /healthz (it may be nil).
 func New(svc *dict.Service, log *slog.Logger, health func(context.Context) error) *Server {
 	return &Server{svc: svc, log: log, health: health, now: time.Now}
+}
+
+// WithFaults makes the API apply the fault rules (429, 503, delays) that a test adds through the control API.
+func (s *Server) WithFaults(f *fault.Set) *Server {
+	s.faults = f
+	return s
+}
+
+// WithControl mounts the control API (everything under /mock/). It is not part of the Bacen contract.
+func (s *Server) WithControl(h http.Handler) *Server {
+	s.extra = h
+	return s
 }
 
 // handlerFunc returns the status and success body, or an error.
@@ -50,7 +65,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, &dict.Error{Kind: dict.KindNotFound, Detail: "Resource does not exist"})
 	})
-	return s.recoverer(s.withCorrelationID(mux))
+	if s.extra != nil {
+		mux.Handle("/mock/", s.extra)
+	}
+	var h http.Handler = mux
+	if s.faults != nil {
+		h = s.faults.Middleware(h, []string{"/mock/", "/healthz"}, func(w http.ResponseWriter, r *http.Request, status int) {
+			kind := kindServiceUnavailable
+			if status == http.StatusTooManyRequests {
+				kind = kindTooManyRequests
+			}
+			s.writeError(w, r, &dict.Error{Kind: kind, Detail: "Simulated failure (control API)"})
+		})
+	}
+	return s.recoverer(s.withCorrelationID(h))
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {

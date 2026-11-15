@@ -1,0 +1,73 @@
+# Continuous integration. Every job runs a `make` target, so a failure here is reproduced with the same command locally.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: gofmt and go vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mock/dict/go.mod
+      - run: make lint
+
+  unit:
+    name: unit and HTTP tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mock/dict/go.mod
+      # The tests of the SPI check the messages it writes against the official XSDs with xmllint.
+      - run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - run: make test
+
+  integration:
+    name: tests on PostgreSQL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mock/dict/go.mod
+      - run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - run: make test-integration
+
+  closing:
+    name: closing test, both mocks together
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mock/dict/go.mod
+      - run: make e2e
+
+  containers:
+    name: containers and compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: e2e/go.mod
+      - run: make setup
+      - run: make check
+      - if: failure()
+        run: docker compose logs --tail=200
+      - if: always()
+        run: make down
