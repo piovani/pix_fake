@@ -203,3 +203,63 @@ func RunAccounts(t *testing.T, newStore func(t *testing.T) pix.AccountStore) {
 		}
 	})
 }
+
+// RunReports executes the reported transaction cases. newStore must return an empty store for each call.
+func RunReports(t *testing.T, newStore func(t *testing.T) pix.ReportStore) {
+	ctx := context.Background()
+	at := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	report := func(id string) pix.ReportedTransaction {
+		return pix.ReportedTransaction{
+			ID: id, EndToEndID: "E9900000120261114120000000000001", Scenario: "BOK1", Initiation: "DICT", AmountCents: 2590, SettledAt: at,
+			PayerISPB: "99000001", PayerTaxID: "52998224725", PayerBranch: "0001", PayerAccount: "00123456", PayerAccountType: "CACC",
+			PayeeISPB: "99000001", PayeeTaxID: "11144477735", PayeeBranch: "0001", PayeeAccount: "00234567", PayeeAccountType: "SVGS", PayeeKey: "11144477735",
+			ReportedBy: "99000001", ReportedAt: at.Add(time.Minute),
+		}
+	}
+	norm := func(r pix.ReportedTransaction) pix.ReportedTransaction {
+		r.SettledAt, r.ReportedAt = r.SettledAt.UTC(), r.ReportedAt.UTC()
+		return r
+	}
+
+	t.Run("add and get", func(t *testing.T) {
+		s := newStore(t)
+		want := report("E9900000120261114120000000000001")
+		added, err := s.AddReported(ctx, want)
+		if err != nil || !added {
+			t.Fatalf("add = %v, %v", added, err)
+		}
+		got, err := s.GetReported(ctx, want.ID)
+		if err != nil || norm(got) != norm(want) {
+			t.Fatalf("get = %+v, %v\nwant %+v", got, err, want)
+		}
+	})
+
+	t.Run("adding twice keeps the first", func(t *testing.T) {
+		s := newStore(t)
+		_, _ = s.AddReported(ctx, report("E9900000120261114120000000000001"))
+		other := report("E9900000120261114120000000000001")
+		other.AmountCents = 1
+		if added, err := s.AddReported(ctx, other); err != nil || added {
+			t.Fatalf("second add = %v, %v; want added == false", added, err)
+		}
+		if got, _ := s.GetReported(ctx, other.ID); got.AmountCents != 2590 {
+			t.Fatalf("amount = %d; the first report must stay", got.AmountCents)
+		}
+	})
+
+	t.Run("a return and its payment are reported separately", func(t *testing.T) {
+		s := newStore(t)
+		_, _ = s.AddReported(ctx, report("E9900000120261114120000000000001"))
+		ret := report("D9900000120261114120000000000001")
+		if added, err := s.AddReported(ctx, ret); err != nil || !added {
+			t.Fatalf("add return = %v, %v", added, err)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.GetReported(ctx, "E9900000120261114120000000000009"); !errors.Is(err, pix.ErrReportedNotFound) {
+			t.Fatalf("get = %v", err)
+		}
+	})
+}

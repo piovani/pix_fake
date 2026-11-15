@@ -3,8 +3,8 @@
 Mock of the Central Bank of Brazil (Bacen) **SPI**, the Instant Payment System that settles Pix payments between
 participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange, the
 payment cycle `pacs.008` to `pacs.002`, the account rules of the simulated banks, the 40-second timeout, the `admi.002`
-error notification and returns (`pacs.004`) are implemented; the report of transactions settled outside the SPI
-(`trck.002`) is not yet.
+error notification, returns (`pacs.004`) and the report of transactions settled outside the SPI (`trck.002`, answered
+with a `camt.025`) are implemented. What is left is the closing end-to-end test.
 
 ## What works today
 
@@ -80,6 +80,26 @@ and `ACCC` to the receiver of the return. The `pacs.002` of a return carries the
 - **Reason:** only `MD06` (the receiver asked for the money back). `BE08` and `FR01` belong to the MED and `SL02` to Pix
   Saque and Troco, which are out of scope; the SPI answers them with `CH16`.
 - A malformed `RtrId` or `EndToEndId` gets an `admi.002`, as with payments.
+
+### Report of transactions settled outside the SPI (`trck.002`)
+
+A participant reports the Pix transactions it settled in its own systems, such as a payment between two customers of the
+same institution (a book transfer), so the funds can be traced. The SPI records each one and answers with a `camt.025`
+addressed to the sender: one receipt per transaction, `ACPT` or `RJCT` with a reason, referencing the `trck.002` it
+answers. A rejected transaction can be fixed and sent again; nothing is recorded for it.
+
+- **Rejected** (the other transactions of the same message are still recorded): `FF08` the transaction settled more than
+  30 days ago (or its date is in the future), `AM01` zero amount, `RC09`/`RC10` the participant is not registered or
+  the payer's is not the sender, `AG01` an external transfer (see below), `AM18` no transactions or more than 500, `DT02`
+  invalid message date, and `ED05` for any other invalid content, or for a transaction that was settled through the SPI.
+- **Idempotent.** Reporting a transaction again is accepted and changes nothing; the first report stays.
+- **Scenarios.** `BOK1` is a payment inside one participant. `BOK2`, between different participants that settle through
+  the same one, is rejected with `AG01`: every participant of the mock settles for itself, so a payment between two of
+  them is an external transfer and has to go through the SPI.
+- **Returns** are reported too: the `InstrId` carries the `RtrId`, the initiation is `MANU`, and the receipt references
+  the `RtrId`.
+- A malformed `MsgId`, `EndToEndId` or `InstrId` gets an `admi.002`, as elsewhere.
+- Simplification: the real message goes through the secondary channel; the mock has one.
 
 ### Running
 
@@ -216,5 +236,4 @@ Notes:
 
 ## Next steps
 
-Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): the report of transactions settled
-outside the SPI (`trck.002`) and the closing end-to-end test.
+Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): the closing end-to-end test.

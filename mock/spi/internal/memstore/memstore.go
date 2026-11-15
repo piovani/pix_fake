@@ -18,6 +18,7 @@ type Store struct {
 	acked    map[string]int64
 	payments map[string]pix.Payment
 	accounts map[string]pix.Account
+	reported map[string]pix.ReportedTransaction
 }
 
 func New() *Store {
@@ -176,4 +177,31 @@ func (s *Store) GetAccount(_ context.Context, ispb, number string) (pix.Account,
 		return pix.Account{}, pix.ErrAccountNotFound
 	}
 	return a, nil
+}
+
+// --- Reported transactions ---
+
+var _ pix.ReportStore = (*Store)(nil)
+
+func (s *Store) AddReported(_ context.Context, t pix.ReportedTransaction) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reported == nil {
+		s.reported = map[string]pix.ReportedTransaction{}
+	}
+	if _, ok := s.reported[t.ID]; ok {
+		return false, nil
+	}
+	s.reported[t.ID] = t
+	return true, nil
+}
+
+func (s *Store) GetReported(_ context.Context, id string) (pix.ReportedTransaction, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.reported[id]
+	if !ok {
+		return pix.ReportedTransaction{}, pix.ErrReportedNotFound
+	}
+	return t, nil
 }

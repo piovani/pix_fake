@@ -32,10 +32,10 @@ func newServer(t *testing.T) (*httptest.Server, *spi.Service) {
 	return start(t, postgres.NewRepository(pool), pool.Ping)
 }
 
-// backend is what the SPI stores: messages, payments and accounts. The in-memory store and Postgres both do.
+// backend is what the SPI stores: messages, payments, reports and accounts. The in-memory store and Postgres both do.
 type backend interface {
 	spi.Store
-	pix.PaymentStore
+	pix.Storage
 	pix.AccountStore
 }
 
@@ -256,6 +256,22 @@ func runPaymentCycle(t *testing.T, url string) {
 	post(t, url, wallet, pacs008(t, wallet, account(t, "00234567"), idBook))
 	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusRejected || st.ReasonCode() != "AG12" {
 		t.Fatalf("book transfer: %+v; want RJCT AG12", st)
+	}
+
+	// The wallet settles a payment between two of its customers in its own ledger and reports it with a trck.002:
+	// the SPI records it and answers with a camt.025.
+	idReported := e2eID(wallet, "BOOKREPORT1")
+	tx := iso.NewTrackedTx(idReported, "25.90", iso.FormatTime(time.Now().Add(-5*time.Minute)))
+	tx.SetDebtor("52998224725", wallet, "0001", "00123456", "CACC")
+	tx.SetCreditor("11144477735", wallet, "0001", "00234567", "SVGS", "")
+	report, err := iso.NewTrck002(wallet, pix.SPIISPB, "M"+wallet+"reportABCDEFGHIJKLMNOPQ", iso.FormatTime(time.Now()), tx).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, url, wallet, report)
+	receipt, err := iso.ParseCamt025([]byte(readOne(t, url, wallet)))
+	if err != nil || len(receipt.Receipts()) != 1 || receipt.Receipts()[0].Status() != iso.ReceiptAccepted || receipt.Receipts()[0].Ref() != idReported {
+		t.Fatalf("receipt for the report: %+v, %v; want ACPT for %s", receipt, err, idReported)
 	}
 
 	// The receiving bank rejects a payment to a closed account.

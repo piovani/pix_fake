@@ -44,3 +44,9 @@ func TestAccountStore(t *testing.T) {
 		return postgres.NewRepository(pgtest.NewPool(t))
 	})
 }
+
+func TestReportStore(t *testing.T) {
+	pixtest.RunReports(t, func(t *testing.T) pix.ReportStore {
+		return postgres.NewRepository(pgtest.NewPool(t))
+	})
+}

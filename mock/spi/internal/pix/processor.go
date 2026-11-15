@@ -16,6 +16,7 @@ import (
 //	pacs.008 (payer's participant)  -> validate, store, forward to the receiver
 //	pacs.004 (receiving participant of an earlier payment, returning it) -> same cycle, see returns.go
 //	pacs.002 (receiver, ACSP/RJCT)  -> settle or reject
+//	trck.002 (any participant, transactions it settled itself) -> record, answer with a camt.025 (see reports.go)
 //
 // When the receiver is simulated the mock answers for it, so the whole cycle runs inside one call.
 // A payment that the receiver does not answer within Timeout is rejected by the SPI (see ExpirePending).
@@ -26,6 +27,7 @@ type Processor struct {
 
 	svc          *spi.Service
 	payments     PaymentStore
+	reports      ReportStore
 	participants Participants
 	responder    Responder
 	log          *slog.Logger
@@ -37,11 +39,11 @@ var _ spi.Handler = (*Processor)(nil)
 // DefaultTimeout is the time limit of a payment on the primary channel (Manual de Tempos do Pix).
 const DefaultTimeout = 40 * time.Second
 
-// NewProcessor creates the processor. responder decides for the simulated participants.
-func NewProcessor(svc *spi.Service, payments PaymentStore, participants Participants, responder Responder, log *slog.Logger) *Processor {
+// NewProcessor creates the processor. store keeps payments and reports; responder decides for the simulated participants.
+func NewProcessor(svc *spi.Service, store Storage, participants Participants, responder Responder, log *slog.Logger) *Processor {
 	return &Processor{
 		Timeout: DefaultTimeout,
-		svc:     svc, payments: payments, participants: participants, responder: responder, log: log, now: time.Now,
+		svc:     svc, payments: store, reports: store, participants: participants, responder: responder, log: log, now: time.Now,
 	}
 }
 
@@ -59,6 +61,8 @@ func (p *Processor) Handle(ctx context.Context, sender string, m spi.Message) {
 		p.handlePacs008(ctx, sender, m)
 	case iso.Pacs004ID:
 		p.handlePacs004(ctx, sender, m)
+	case iso.Trck002ID:
+		p.handleTrck002(ctx, sender, m)
 	case iso.Pacs002ID:
 		p.handlePacs002(ctx, sender, m)
 	default:

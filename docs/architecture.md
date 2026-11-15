@@ -27,6 +27,7 @@ flowchart LR
     SPI -- "pacs.002 (status report)" --> PixInt
     SPI -. "pacs.008 (incoming payment)" .-> PixInt
     PixInt -. "report of internal transactions (TRCK.002)" .-> SPI
+    SPI -. "receipt (CAMT.025)" .-> PixInt
 ```
 
 Replacing the mocks with the real DICT and SPI is the long-term goal: the Pix integration layer should only depend on the Bacen contracts, never on mock internals. The DICT mock uses the same base path (`/api/v2`) as the real service, so the switch is a base URL change.
@@ -133,8 +134,10 @@ from an outbound transfer:
 - **It must still be reported to Bacen**, afterwards. Institutions send the transactions settled outside the SPI under
   art. 2-A of Instrução Normativa BCB nº 32/2020, using the `TRCK.002` message from the SPI message catalog. The
   maximum delay to send is 30 days after settlement, and a service-level indicator expects 99% of the messages to be
-  created within 300 seconds of the transaction. The channel and the fields of the message are to be confirmed when the
-  SPI specification is read (Phase 2).
+  created within 300 seconds of the transaction. The SPI answers with a `camt.025`, one receipt per reported
+  transaction (accepted, or rejected with a reason), and the participant must fix and resend what was rejected. The
+  report goes through the secondary channel in the real system; the mock accepts it on its single port. The fields are
+  in the SPI mock's [data contract](../mock/spi/docs/catalog/data-contract.md#trck002-report-of-transactions-settled-outside-the-spi).
 
 ```mermaid
 sequenceDiagram
@@ -142,7 +145,7 @@ sequenceDiagram
     actor U as Wallet user (payer)
     participant W as Wallet
     participant P as Pix integration layer
-    participant B as Bacen reporting (SPI mock, planned)
+    participant B as Bacen reporting (SPI mock)
 
     U->>W: Pay key "ana.souza@example.com", R$ 10.00
     W->>P: Initiate payment
@@ -152,8 +155,8 @@ sequenceDiagram
     W->>W: Debit payer and credit payee in the ledger (limit: 40 s)
     W-->>U: Receipt
     P-->>B: Report the transaction (TRCK.002), within 30 days of settlement
+    B-->>P: Receipt (CAMT.025): accepted, or rejected with a reason
 ```
 
-Sources: Manual de Tempos do Pix, version 7.0 (sections 1.3, 1.4 and 4.5.1), and the DICT API v2.13.0 error table.
-I did not read the Instrução Normativa itself or the SPI message catalog, so the exact content of the report is still
-open.
+Sources: Manual de Tempos do Pix, version 7.0 (sections 1.3, 1.4 and 4.5.1), the DICT API v2.13.0 error table, and the
+SPI message catalog 5.13 (`trck.002` and `camt.025`). I did not read the Instrução Normativa itself.

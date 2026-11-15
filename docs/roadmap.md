@@ -21,7 +21,7 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 5 of the build done) |
+| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 6 of the build done) |
 | 3 | Digital wallet and Pix integration layer | **Planned** |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
@@ -92,7 +92,7 @@ payment can be made end to end without the wallet.
 
 - [ ] **Confirm the newest message package** on the Bacen `comunicacaodados` page (the one saved is `spi.5.13.2`).
 - [x] **Fix the data contract** for `pacs.008` and `pacs.002`, from the catalog XLSX files:
-  [`data-contract.md`](../mock/spi/docs/catalog/data-contract.md). `pacs.004` and `trck.002` are read in their slices.
+  [`data-contract.md`](../mock/spi/docs/catalog/data-contract.md). `pacs.004`, `trck.002` and `camt.025` have their own sections.
 - [x] **XML validation: by hand (decided).** Go has no XSD validator in the standard library, so the mock validates the
   fields it uses in code and checks itself with contract tests against the XSDs and the sample messages in the package,
   instead of binding `libxml2`.
@@ -118,8 +118,10 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
    90-day limit (`DT05`), a return of a return (`AG13`) and that the sender received the payment; the participant that
    receives the return checks the amount (`AM09`) and that the account is active. Only reason `MD06`; partial returns
    are allowed.
-6. [ ] **Report of transactions settled outside the SPI.** Message `trck.002` (`trck.002.spi.1.1`, art. 2-A of
-   IN BCB 32/2020, at most 30 days after settlement), on the secondary channel.
+6. [x] **Report of transactions settled outside the SPI.** Message `trck.002` (`trck.002.spi.1.1`, art. 2-A of
+   IN BCB 32/2020, at most 30 days after settlement). The SPI records each transaction and answers with a `camt.025`,
+   one receipt per transaction (`ACPT` or `RJCT` with a reason). The real message travels on the secondary channel;
+   the mock has a single one.
 7. [ ] **Closing.** End-to-end test of the "Done when" below and the README listing implemented and pending messages.
 
 **Done when:** a script or end-to-end test resolves a seeded key in the DICT, sends a `pacs.008` to the SPI and receives
@@ -230,6 +232,5 @@ Listed so they are not forgotten. None is agreed.
 | Wallet technology stack and repository layout | Phase 3 |
 | Whether users need portability, that is, claims | Backlog |
 | Whether the SPI mock shares the DICT's Postgres instance and compose file | Phase 2, `make setup` |
-| How transactions settled outside the SPI are reported (channel and fields of `TRCK.002`), from the SPI specification | Phase 2, Phase 3 |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |
 | Where continuous integration runs | Environment and quality |
