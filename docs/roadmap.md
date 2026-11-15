@@ -21,7 +21,7 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; build not started) |
+| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; step 1 of the build done) |
 | 3 | Digital wallet and Pix integration layer | **Planned** |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
@@ -101,9 +101,9 @@ payment can be made end to end without the wallet.
 
 Each slice works on its own and has tests (unit, repository on a real Postgres, end-to-end over HTTP).
 
-1. [ ] **HTTP skeleton and storage.** `POST /api/v1/in/{ispb}/msgs`, the output stream with long polling
+1. [x] **HTTP skeleton and storage.** `POST /api/v1/in/{ispb}/msgs`, the output stream with long polling
    (`PI-Pull-Next`, `200`/`204`, `DELETE`), the catalog endpoints, `problem+xml` errors, gzip, `PI-ResourceId`.
-   PostgreSQL with its own migrations.
+   PostgreSQL with its own migrations. The Postgres repository and end-to-end tests are written but were not run yet (`make test-integration` in `mock/spi`).
 2. [ ] **`pacs.008` to `pacs.002`, the happy path.** Validate against `pacs.008.spi.1.16`, idempotent by `EndToEndId`.
    Two phases: the SPI blocks the payer's balance and forwards the order to the receiver, who answers `ACSP`; the SPI
    settles and sends `ACSC` to the payer's participant and `ACCC` to the receiver's.

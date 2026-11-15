@@ -9,7 +9,7 @@ The real Pix ecosystem is only reachable by regulated participants. To develop a
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | **DICT mock**: Pix key directory | Implemented: entries and keys, with seed data ([`mock/dict`](mock/dict/README.md)) |
-| 2 | **SPI mock**: instant payment settlement | Planned |
+| 2 | **SPI mock**: instant payment settlement | In progress (message exchange done) |
 | 3 | Digital wallet + Pix integration layer | Planned |
 
 Mocks are built in this order, DICT first, then SPI. Each mock lives under `mock/` and has its own README. The full plan, with what comes next and what was left out on purpose, is in the [roadmap](docs/roadmap.md).
@@ -205,7 +205,7 @@ pix_fake/
 │   └── roadmap.md           # plan: phases, status, backlog, open decisions
 └── mock/
     ├── dict/                # DICT mock (Go + Postgres), see its README
-    └── spi/                 # SPI mock (planned)
+    └── spi/                 # SPI mock (in progress)
 ```
 
 ## License

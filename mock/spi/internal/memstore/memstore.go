@@ -1,0 +1,98 @@
+// Package memstore is an in-memory spi.Store, used only in tests.
+package memstore
+
+import (
+	"context"
+	"sync"
+
+	"pixfake/mock/spi/internal/spi"
+)
+
+type stream struct {
+	ispb   string
+	cursor int64
+}
+
+type Store struct {
+	mu       sync.Mutex
+	seq      int64
+	inbound  []spi.Message
+	outbound []spi.Message
+	streams  map[string]stream
+	acked    map[string]int64
+}
+
+func New() *Store {
+	return &Store{streams: map[string]stream{}, acked: map[string]int64{}}
+}
+
+// Inbound returns the messages received from participants, for assertions in tests.
+func (s *Store) Inbound() []spi.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]spi.Message(nil), s.inbound...)
+}
+
+func (s *Store) AddInbound(_ context.Context, msgs []spi.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range msgs {
+		s.seq++
+		m.Seq = s.seq
+		s.inbound = append(s.inbound, m)
+	}
+	return nil
+}
+
+func (s *Store) AddOutbound(_ context.Context, m spi.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seq++
+	m.Seq = s.seq
+	s.outbound = append(s.outbound, m)
+	return nil
+}
+
+func (s *Store) StartStream(_ context.Context, ispb, token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streams[token] = stream{ispb: ispb, cursor: s.acked[ispb]}
+	return nil
+}
+
+func (s *Store) Read(_ context.Context, ispb, token, newToken string, limit int) ([]spi.Message, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.streams[token]
+	if !ok || st.ispb != ispb {
+		return nil, "", spi.ErrStreamGone
+	}
+	var msgs []spi.Message
+	for _, m := range s.outbound {
+		if m.ISPB == ispb && m.Seq > st.cursor {
+			msgs = append(msgs, m)
+			if len(msgs) == limit {
+				break
+			}
+		}
+	}
+	if len(msgs) == 0 {
+		return nil, token, nil
+	}
+	s.streams[newToken] = stream{ispb: ispb, cursor: msgs[len(msgs)-1].Seq}
+	return msgs, newToken, nil
+}
+
+func (s *Store) Ack(_ context.Context, ispb, token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.streams[token]
+	if !ok || st.ispb != ispb {
+		return spi.ErrStreamGone
+	}
+	delete(s.streams, token)
+	if st.cursor > s.acked[ispb] {
+		s.acked[ispb] = st.cursor
+	}
+	return nil
+}

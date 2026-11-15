@@ -1,8 +1,45 @@
 # SPI mock
 
 Mock of the Central Bank of Brazil (Bacen) **SPI**, the Instant Payment System that settles Pix payments between
-participants. **Status: planned** (phase 2 of the [roadmap](../../docs/roadmap.md)). No code yet; this folder holds the
-specification the mock will be built from.
+participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange
+(step 1) is implemented; payment messages (`pacs.008`, `pacs.002`, `pacs.004`, `trck.002`) are not yet.
+
+## What works today
+
+The ICOM interface, as in the Interfaces manual 1.12. Go, `net/http` from the standard library, PostgreSQL.
+
+| Endpoint | Behavior |
+|----------|----------|
+| `POST /api/v1/in/{ispb}/msgs` | Stores one message (`application/xml; charset=utf-8`) or up to 10 (`multipart/mixed`), gzip accepted. Answers `201` with `PI-ResourceId` (32 characters, one per message, comma separated). The content is not validated, as in the real API at this point |
+| `GET /api/v1/out/{ispb}/stream/start` | Opens a read stream and reads from it. `Accept: multipart/mixed` returns up to 10 messages per response, with `PI-ResourceId` on each part |
+| `GET /api/v1/out/{ispb}/stream/{token}` | Reads the next messages: `200` with messages, or `204` after waiting (long polling, `SPI_POLL_WAIT`, default 5 s). `PI-Pull-Next` carries the path of the next read |
+| `DELETE /api/v1/out/{ispb}/stream/{token}` | Closes the stream and marks what it delivered as read (`200`; `410` if unknown or already closed) |
+| `GET /api/v1/in/catalog`, `/out/catalog` | Message versions of the catalog package `spi.5.13.2` |
+
+- A message not closed with `DELETE` is delivered again by the next stream, with the same `ResourceId`.
+- Errors are `application/problem+xml` (RFC 7807): `400`, `404`, `405`, `406`, `410`, `411`, `413`, `415`, `503`.
+- Nothing produces messages for the participants yet. `Service.Deliver` queues one; the `pacs.008` flow (step 2 of the
+  roadmap) will use it.
+
+### Running
+
+```sh
+make run               # starts Postgres (docker compose, port 5433) and the mock on :8081
+make test              # unit and HTTP tests, no database
+make test-integration  # also the Postgres repository and end-to-end tests
+```
+
+Settings: `SPI_ADDR` (`:8081`), `SPI_DATABASE_URL`, `SPI_POLL_WAIT`.
+
+### Simplifications
+
+- No mTLS, certificates or signatures; any well-formed ISPB in the path is accepted (it is not checked against a list
+  of participants yet).
+- One port and one queue per participant: the primary and secondary channels are not separated.
+- Parallel streams of the same participant may receive the same messages (the real SPI splits them). The participant
+  deduplicates by `ResourceId`, as the manual already requires.
+- No limit of 6 streams per participant, no token-bucket rate limit (`429`), no check of the `Host` header.
+- The input/output catalog split follows the example in the Interfaces manual, updated to the versions of the package.
 
 ## Specification source (decision)
 
