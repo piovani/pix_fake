@@ -91,10 +91,10 @@ payment can be made end to end without the wallet.
 ### Before building
 
 - [ ] **Confirm the newest message package** on the Bacen `comunicacaodados` page (the one saved is `spi.5.13.2`).
-- [ ] **Fix the data contract.** From `xlsx/PACS008.xlsx` and `PACS002.xlsx`, list the mandatory fields and validation
-  rules the mock enforces.
-- [ ] **Choose how to validate XML** *(proposed)*. Go has no XSD validator in the standard library: validate the fields
-  the mock uses by hand and check them with contract tests against the XSDs and the sample messages in the package,
+- [x] **Fix the data contract** for `pacs.008` and `pacs.002`, from the catalog XLSX files:
+  [`data-contract.md`](../mock/spi/docs/catalog/data-contract.md). `pacs.004` and `trck.002` are read in their slices.
+- [x] **XML validation: by hand (decided).** Go has no XSD validator in the standard library, so the mock validates the
+  fields it uses in code and checks itself with contract tests against the XSDs and the sample messages in the package,
   instead of binding `libxml2`.
 
 ### Build, in order
@@ -106,7 +106,7 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
    PostgreSQL with its own migrations.
 2. [ ] **`pacs.008` to `pacs.002`, the happy path.** Validate against `pacs.008.spi.1.16`, idempotent by `EndToEndId`.
    Two phases: the SPI blocks the payer's balance and forwards the order to the receiver, who answers `ACSP`; the SPI
-   settles and sends `ACCC` to both.
+   settles and sends `ACSC` to the payer's participant and `ACCC` to the receiver's.
 3. [ ] **Receiving participant rules and rejections.** Creditor-account rules, `RJCT` with reason codes, the 40-second
    timeout (`AB03`, shortened by configuration in tests), `admi.002` for wrong channel or invalid messages.
 4. [ ] **Seed.** Same institutions and accounts as the DICT seed, plus the test accounts `00900001` to `00900003` and

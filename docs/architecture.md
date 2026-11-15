@@ -64,7 +64,7 @@ sequenceDiagram
         P->>W: Confirm recipient data
         W->>W: Reserve balance
         P->>S: pacs.008 (credit transfer, same EndToEndId)
-        S-->>P: pacs.002 (ACCC = settled / RJCT = rejected)
+        S-->>P: pacs.002 (ACSC = settled / RJCT = rejected)
         P->>W: Settle or release reservation
         W-->>U: Receipt
     else key not found
@@ -87,6 +87,7 @@ sequenceDiagram
     P->>W: Validate recipient account
     W->>W: Credit balance
     P-->>S: pacs.002 (ACSP = accept / RJCT = reject)
+    S->>P: pacs.002 (ACCC = settled)
 ```
 
 The DICT is not involved in an inbound transfer: the payer's institution already resolved the key.

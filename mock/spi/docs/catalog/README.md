@@ -78,10 +78,10 @@ Read from the XSDs and sample messages.
   secondary one. Later messages of the same payment must use the same channel; the wrong channel produces an
   `admi.002`.
 - **Idempotency key** of `pacs.008` is the `EndToEndId`.
-- **Status and reason codes** accepted by `pacs.002` include `ACCC`, `ACSC`, `ACSP` and `RJCT`. In the sample messages the receiving participant answers the SPI with
-  `ACSP` (accept), the SPI confirms settlement with `ACCC`, and an error comes as `RJCT` with a reason, and rejection reasons
-  such as `AB03`, `AC03`, `AC06`, `AC07`, `AG03`, `AM02`, `AM04`, `BE01`, `DS04`, `FRAD`, `MD01`, `RR04`, `SL02`. The
-  meaning of each code is in `xlsx/PACS002.xlsx`.
+- **Status and reason codes** of `pacs.002`: `ACSP` (receiving participant accepts), `ACSC` (SPI tells the payer's
+  participant the payment is settled), `ACCC` (SPI tells the receiver's participant) and `RJCT` (rejected, with a reason).
+  The meaning of every code, and who generates it, is in the `Tabela de Domínios` sheet of `PACS002.xlsx`; the data
+  contract summarizes it.
 - **Discrepancy in the Interfaces manual v1.12.** Its catalog example lists `pacs.008.spi.1.4` on input and `1.3` on
   output, and `pacs.002.spi.1.3`. The package has `pacs.008` 1.16 and `pacs.002` 1.18, so that example is out of date.
   The mock should read versions from the package, not from the manual.

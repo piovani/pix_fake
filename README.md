@@ -178,7 +178,7 @@ Messages to mock:
 
 `EndToEndId` is the unique payment identifier: `E` + payer ISPB (8) + date/time `yyyyMMddHHmm` (12) + 11 alphanumeric characters = 32 characters.
 
-The `pacs.002` response carries the status of the transaction (for example `ACCC` for settled and `RJCT` for rejected, with a reason code).
+The `pacs.002` response carries the status of the transaction (`ACSC` to the payer's participant and `ACCC` to the receiver's once the payment is settled, or `RJCT` with a reason code).
 
 **Comparison with FedNow:** [FedNow](https://www.frbservices.org/financial-services/fednow), the instant payment service of the US Federal Reserve, also exchanges **ISO 20022** messages (`pacs.008` for the credit transfer, `pacs.002` for the status report, `pacs.004` for returns). The message families are the same as in the SPI, but the schemas, versions and business rules differ. This project mocks only the Pix contracts; FedNow is mentioned as a reference for how other instant payment systems use the same standard.
 
