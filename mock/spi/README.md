@@ -207,8 +207,8 @@ Sources:
 
 - **Message catalog: collected.** Catálogo de Serviços do SFN Volume VI **5.13** and package `spi.5.13.2.zip` (XSD,
   XLSX, samples), downloaded on 2026-11-14 and kept in [`docs/catalog/`](docs/catalog/README.md), together with the
-  Manual de Padrões para Iniciação do Pix 2.10.0 and the secondary channel guide. Confirm on the Bacen
-  `comunicacaodados` page that no newer package exists before building.
+  Manual de Padrões para Iniciação do Pix 2.10.0 and the secondary channel guide. Confirmed on the Bacen
+  `comunicacaodados` page on 2026-11-14 as the newest package (details in the catalog README).
 - **Manual versions of Fluxos and Tempos.** Read from the documents: Fluxos is **2.1** (version 2.2 takes effect on
   2027-02-01) and Tempos is **7.0**. The table above still says "version not read".
 - **Content review.** The Interfaces manual was read. The SPI delivery model is **pull**: the participant sends with

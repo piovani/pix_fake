@@ -61,8 +61,9 @@ The Pix key directory, following the Bacen DICT API v2.13.0. See [`mock/dict`](.
 
 Small follow-ups:
 
-- [ ] Validate the format of `PI-EndToEndId` in the DICT against the SPI pattern, so both sides agree: `E` + ISPB (8) +
-  `yyyyMMddHHmm` (12 digits) + 11 alphanumeric characters (32 in total, from the `pacs.008` XSD)
+- [x] Validate the format of `PI-EndToEndId` in the DICT against the SPI pattern, so both sides agree: `E` + ISPB (8) +
+  `yyyyMMddHHmm` (12 digits) + 11 alphanumeric characters (32 in total, from the `pacs.008` XSD). The OpenAPI file only
+  says "string", so the mock is deliberately stricter here
 - [ ] Confirm the wallet's real ISPB (the seed uses the placeholder `99000001`)
 
 ## Phase 2: SPI mock (Done)
@@ -90,7 +91,7 @@ payment can be made end to end without the wallet.
 
 ### Before building
 
-- [ ] **Confirm the newest message package** on the Bacen `comunicacaodados` page (the one saved is `spi.5.13.2`).
+- [x] **Confirm the newest message package** on the Bacen `comunicacaodados` page: `spi.5.13.2` (2026-10-02) is the newest, checked 2026-11-14.
 - [x] **Fix the data contract** for `pacs.008` and `pacs.002`, from the catalog XLSX files:
   [`data-contract.md`](../mock/spi/docs/catalog/data-contract.md). `pacs.004`, `trck.002` and `camt.025` have their own sections.
 - [x] **XML validation: by hand (decided).** Go has no XSD validator in the standard library, so the mock validates the
@@ -132,8 +133,7 @@ an internal transaction is accepted. Query and cancellation messages (`camt.*`) 
 
 ### Still open from Phase 1 (DICT follow-ups)
 
-Listed in Phase 1: validate the `PI-EndToEndId` pattern in the DICT and confirm the wallet's real ISPB. Neither blocks the
-SPI, which already checks the `EndToEndId` it receives.
+Listed in Phase 1: confirm the wallet's real ISPB. It does not block the SPI. (The `PI-EndToEndId` pattern is validated.)
 
 ## Phase 3: Wallet and Pix integration layer (Next)
 

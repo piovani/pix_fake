@@ -210,7 +210,7 @@ func TestProblems(t *testing.T) {
 	})
 
 	t.Run("unknown key held by nobody is still a 404 for the same participant", func(t *testing.T) {
-		sameParticipant := map[string]string{"PI-RequestingParticipant": "12345678", "PI-PayerId": "11122233300", "PI-EndToEndId": "E1"}
+		sameParticipant := map[string]string{"PI-RequestingParticipant": "12345678", "PI-PayerId": "11122233300", "PI-EndToEndId": "E1234567820240101120000000000001"}
 		do(t, h, "GET", base+"/entries/mail@mail.com", "", sameParticipant).wantStatus(t, http.StatusNotFound)
 	})
 
@@ -241,6 +241,19 @@ func TestProblems(t *testing.T) {
 		res := do(t, h, "GET", base+"/entries/+5561988880000", "", nil)
 		res.wantStatus(t, http.StatusBadRequest)
 		res.wantContains(t, "PI-RequestingParticipant", "PI-PayerId", "PI-EndToEndId")
+	})
+
+	t.Run("lookup with a malformed EndToEndId", func(t *testing.T) {
+		for _, bad := range []string{
+			"", "E1", "e1234567820240101120000000000001", "X1234567820240101120000000000001",
+			"E12345678202401011200000000000010", // 33 characters
+			"E1234567820240101126000000000001",  // minute 60
+		} {
+			headers := map[string]string{"PI-RequestingParticipant": "87654321", "PI-PayerId": "11122233300", "PI-EndToEndId": bad}
+			res := do(t, h, "GET", base+"/entries/+5561988880000", "", headers)
+			res.wantStatus(t, http.StatusBadRequest)
+			res.wantContains(t, "<property>PI-EndToEndId</property>")
+		}
 	})
 
 	t.Run("unknown route", func(t *testing.T) {

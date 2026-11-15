@@ -166,7 +166,11 @@ Unimplemented paths return `404 problem+xml`.
   different parameters return `RequestIdAlreadyUsed`. `SLRY` accounts return `AccountTypeInvalid`.
 - `updateEntry` only changes account data, `Name` and `TradeName`; allowed `Reason` depends on the key type.
 - `getEntry` requires the `PI-RequestingParticipant`, `PI-PayerId` and `PI-EndToEndId` headers and honors
-  `IncludeStatistics`. It refuses keys held by the requesting participant (book transfer, see above).
+  `IncludeStatistics`. It refuses keys held by the requesting participant (book transfer, see above). The OpenAPI file
+  only calls `PI-EndToEndId` a string that corresponds to the `EndToEndId` of the `pacs.008`; the mock is stricter and
+  checks the shape that the SPI schema requires (`E` + ISPB (8) + `yyyyMMddHHmm` (12) + 11 alphanumeric characters), so a
+  participant that builds the identifier wrong finds out at the lookup and not at the payment. The date is not checked
+  here (the SPI checks it against its clock).
 - `checkKeys` accepts 1 to 200 keys and keeps their order.
 - Errors use `application/problem+xml` (RFC 7807) with `violations` for invalid fields.
 

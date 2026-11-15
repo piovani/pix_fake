@@ -9,7 +9,13 @@ import (
 	"pixfake/mock/dict/internal/dict"
 )
 
-var payerIDRe = regexp.MustCompile(`^([0-9]{11}|[A-Z0-9]{12}[0-9]{2})$`)
+var (
+	payerIDRe = regexp.MustCompile(`^([0-9]{11}|[A-Z0-9]{12}[0-9]{2})$`)
+	// endToEndRe is the EndToEndId of the pacs.008 (the SPI schema): E + ISPB (8) + yyyyMMddHHmm (12) + 11 alphanumeric.
+	// The DICT spec only calls the header a string that "corresponds to the EndToEndId of the pacs.008"; the mock
+	// checks the shape, so a participant that builds the identifier wrong finds out at the lookup and not at the payment.
+	endToEndRe = regexp.MustCompile(`^E[0-9A-Z]{8}[0-9]{4}[0-1][0-9][0-3][0-9][0-2][0-9][0-5][0-9][a-zA-Z0-9]{11}$`)
+)
 
 func (s *Server) newHeader(r *http.Request) header {
 	return header{ResponseTime: isoTime(s.now()), CorrelationID: correlationID(r.Context())}
@@ -43,8 +49,9 @@ func (s *Server) getEntry(r *http.Request, _ string) (int, any, error) {
 		v = append(v, dict.Violation{Property: "PI-PayerId", Value: payer,
 			Reason: "Header is required and must be a CPF or CNPJ"})
 	}
-	if r.Header.Get("PI-EndToEndId") == "" {
-		v = append(v, dict.Violation{Property: "PI-EndToEndId", Reason: "Header is required"})
+	if e2e := r.Header.Get("PI-EndToEndId"); !endToEndRe.MatchString(e2e) {
+		v = append(v, dict.Violation{Property: "PI-EndToEndId", Value: e2e,
+			Reason: "Header is required and must be an EndToEndId: E + ISPB (8) + yyyyMMddHHmm (12) + 11 alphanumeric characters"})
 	}
 	includeStats := false
 	if raw := r.URL.Query().Get("IncludeStatistics"); raw != "" {

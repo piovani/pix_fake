@@ -43,8 +43,14 @@ Sources:
 - https://www.bcb.gov.br/content/estabilidadefinanceira/pix/Guia_Implementacao_Canal_Secundario_Transmissao_Mensagens.pdf
 
 The `zip` URL was found by following the catalog's own reference (it points to the `comunicacaodados` page, which is
-rendered by JavaScript and cannot be read without a browser) and probing the neighbouring file names. The page itself
-is the place to confirm that no newer package exists.
+rendered by JavaScript and cannot be read without a browser) and probing the neighbouring file names.
+
+**Checked on the page itself on 2026-11-14:** it lists the SPI message definitions `5.12.1` (2026-03-27) and `5.13.2`
+(2026-10-02), the latter being the newest, so the package here is current. It also lists Volume VI `5.13`, the Manual das
+Interfaces de Comunicação `1.12` (2025-12-23) and the Manual de Segurança do SFN Volume II `6.01` (2026-11-09; not
+collected, security is out of scope). Catalog 5.13 went to production for the SPI on 2026-10-25. The page also offers a
+Dicionário de Domínios (2026-10-09) and a Relação de Códigos de Erros (2026-09-04), not collected: the domain tables
+inside the XLSX files cover what the mock uses.
 
 ## Messages in the package
 
