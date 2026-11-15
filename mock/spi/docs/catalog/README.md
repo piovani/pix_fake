@@ -78,7 +78,8 @@ Read from the XSDs and sample messages.
   secondary one. Later messages of the same payment must use the same channel; the wrong channel produces an
   `admi.002`.
 - **Idempotency key** of `pacs.008` is the `EndToEndId`.
-- **Status and reason codes** accepted by `pacs.002` include `ACCC`, `ACSC`, `ACSP` and `RJCT`, and rejection reasons
+- **Status and reason codes** accepted by `pacs.002` include `ACCC`, `ACSC`, `ACSP` and `RJCT`. In the sample messages the receiving participant answers the SPI with
+  `ACSP` (accept), the SPI confirms settlement with `ACCC`, and an error comes as `RJCT` with a reason, and rejection reasons
   such as `AB03`, `AC03`, `AC06`, `AC07`, `AG03`, `AM02`, `AM04`, `BE01`, `DS04`, `FRAD`, `MD01`, `RR04`, `SL02`. The
   meaning of each code is in `xlsx/PACS002.xlsx`.
 - **Discrepancy in the Interfaces manual v1.12.** Its catalog example lists `pacs.008.spi.1.4` on input and `1.3` on

@@ -47,8 +47,39 @@ Sources:
   `POST /api/v1/in/{ispb}/msgs` and reads with long polling on `GET /api/v1/out/{ispb}/stream/start`, following the
   `PI-Pull-Next` header. The ISPB is in the path, so the `X-Participant-ISPB` header planned in the roadmap is not
   needed for the SPI. The Fluxos and Tempos manuals were read only where needed (settlement flow, return, time limits).
-- **Open decision.** The other banks of the seed do not exist, so the mock has to answer on behalf of the receiving
-  participant (the step that accepts or rejects before settlement). See the forced outcomes item in the roadmap.
+- **Receiving participant: decided**, see the section below.
+
+## Receiving participant (decision)
+
+In the settlement flow, the receiving participant validates the creditor account and answers the SPI before the payment
+settles. The seed banks do not exist, so:
+
+- **Banco Alfa (`99000002`) and Banco Beta (`99000003`) are simulated by the mock.** When a `pacs.008` is addressed to
+  them, the mock answers with a `pacs.002` on their behalf.
+- **The wallet (`99000001`) is a real participant.** The order goes to its stream (`/api/v1/out/99000001/...`) and the
+  wallet must answer. If it does not, the SPI rejects at the 40-second limit with `AB03`.
+- **Accept by default.** The simulated bank answers `ACSP`, the SPI settles and sends `ACCC` to both participants.
+- **Rejections are chosen by the creditor account**, evaluated in this order, so a test picks the outcome by picking
+  whom to pay:
+
+| Creditor account in the `pacs.008` | Answer |
+|------------------------------------|--------|
+| Not in the seed | `RJCT` `AC03` (invalid account) |
+| Seeded test account `00900001` (Banco Alfa), closed | `RJCT` `AC07` |
+| Seeded test account `00900002` (Banco Alfa), blocked | `RJCT` `AC06` |
+| Seeded test account `00900003` (Banco Beta), never answers | no answer; the SPI rejects with `AB03` after 40 s |
+| Account exists but the creditor document differs from its owner | `RJCT` `BE01` |
+| Any other seeded account | `ACSP` |
+
+Notes:
+
+- The test accounts are new seed data and do not exist yet. They need DICT keys too, so the whole path (lookup, then
+  payment) can be exercised; add them to both seeds together.
+- The reason codes are in the `pacs.002.spi.1.18` schema. The ISO meanings above are the standard ones; the catalog
+  does not define them, so confirm against the SPI behavior when it is available.
+- The timeout case uses the real 40 seconds, with a configuration to shorten it in tests.
+- Not covered: rejection for insufficient balance (the wallet checks the payer before sending) and liquidity
+  management of the participants' Conta PI, which stays out of scope.
 
 ## Next steps
 

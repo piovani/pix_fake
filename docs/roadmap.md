@@ -79,14 +79,17 @@ payment can be made end to end without the wallet.
   `ResourceId`. Errors use `application/problem+xml` (RFC 7807). Also `GET /api/v1/in/catalog` and `/out/catalog`.
 - [ ] **Institution identification.** The `{ispb}` in the path; no `X-Participant-ISPB` header, certificates or
   signatures.
-- [ ] **Receiving participant.** The seed banks do not exist, so the mock answers for the receiving participant (the
-  step that accepts or rejects before settlement). Decide the rule; it is the base for forced outcomes below.
+- [x] **Receiving participant (decided).** The mock answers for the simulated banks (Banco Alfa and Banco Beta): it
+  accepts by default and rejects according to the creditor account, so tests choose the outcome by choosing whom to
+  pay. The wallet is a real participant and answers for itself through its stream. Rules in the
+  [SPI README](../mock/spi/README.md#receiving-participant-decision).
 - [ ] **Channels and time limits.** `PAGPRI` and `PAGFRD` use the primary channel (40 s limit, then the SPI rejects);
   `PAGAGD` uses the secondary channel (45 min). A message on the wrong channel yields an `admi.002`.
 - [ ] **`pacs.008` (credit transfer).** Accept and validate payment orders against `pacs.008.spi.1.16`: `EndToEndId`
   format, ISPBs, amount, accounts. Idempotent by `EndToEndId`. Two phases: the SPI blocks the payer's balance and
   forwards the order to the receiver, who answers; only then does the SPI settle and confirm to both.
-- [ ] **`pacs.002` (status report).** (`pacs.002.spi.1.18`) Answer with settled (`ACSC`) or rejected (`RJCT`) and a
+- [ ] **`pacs.002` (status report).** (`pacs.002.spi.1.18`) The receiving participant accepts with `ACSP` or rejects with `RJCT`; the SPI
+  confirms settlement to both with `ACCC`, or rejects with `RJCT` and a
   reason code (`AB03`, `AM04`, `AC03`, `MD01` and others, listed in the catalog), to the participants involved.
 - [ ] **`pacs.004` (return).** (`pacs.004.spi.1.5`) Refunds of settled payments. The receiving participant
   checks the 90-day limit, the amount and that the account is active.
@@ -94,8 +97,8 @@ payment can be made end to end without the wallet.
   payments settled internally (message `TRCK.002`, art. 2-A of IN BCB 32/2020, at most 30 days after settlement).
   Schema `trck.002.spi.1.1`; the bucket for `trck.002` is on the secondary channel.
 - [ ] **Settlement model.** Simple and in line with the README: no real reserve accounts or liquidity management.
-- [ ] **Forced outcomes** *(proposed)*. A deterministic way for tests to trigger rejections (closed account,
-  insufficient funds) and timeouts, so the wallet's error paths can be exercised.
+- [ ] **Forced outcomes.** Implement the creditor-account rules decided above (closed account, blocked account,
+  unknown account, document mismatch) and the timeout, so the wallet's error paths can be exercised.
 - [ ] **Storage and seed.** PostgreSQL with its own migrations; seed with the same institutions and accounts as the DICT
   seed, so the seeded keys can actually be paid.
 - [ ] **Tests and docs.** Unit, repository and end-to-end tests; README listing implemented and pending messages.
