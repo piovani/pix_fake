@@ -89,7 +89,7 @@ the real DICT is a base URL change. Errors use `application/problem+xml`.
 **Identifying the institution:** there is no mTLS. Every request carries `X-Participant-ISPB`, which is also used for
 simple authorization (only the participant that owns an entry can update or delete it).
 
-**Test data:** `make seed` loads 15 keys across the wallet and two other banks, covering every key type, so lookups
+**Test data:** `make seed` loads 21 keys across the wallet and two other banks, covering every key type, so lookups
 already work for tests.
 
 **Contract (Get entry).** The schemas come from [`mock/dict/docs/openapi.json`](mock/dict/docs/openapi.json).

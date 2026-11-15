@@ -38,3 +38,9 @@ func TestPaymentStore(t *testing.T) {
 		return postgres.NewRepository(pgtest.NewPool(t))
 	})
 }
+
+func TestAccountStore(t *testing.T) {
+	pixtest.RunAccounts(t, func(t *testing.T) pix.AccountStore {
+		return postgres.NewRepository(pgtest.NewPool(t))
+	})
+}

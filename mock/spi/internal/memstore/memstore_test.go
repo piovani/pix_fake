@@ -17,3 +17,7 @@ func TestStore(t *testing.T) {
 func TestPaymentStore(t *testing.T) {
 	pixtest.Run(t, func(*testing.T) pix.PaymentStore { return memstore.New() })
 }
+
+func TestAccountStore(t *testing.T) {
+	pixtest.RunAccounts(t, func(*testing.T) pix.AccountStore { return memstore.New() })
+}

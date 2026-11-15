@@ -1,9 +1,12 @@
 DATABASE_URL ?= postgres://spi:spi@localhost:5433/spi?sslmode=disable
 
-.PHONY: run test test-integration lint db-up db-down
+.PHONY: run seed test test-integration lint db-up db-down
 
 run: db-up ## start the mock on :8081
 	SPI_DATABASE_URL=$(DATABASE_URL) go run ./cmd/spi
+
+seed: db-up ## load the test accounts into the database (idempotent)
+	SPI_DATABASE_URL=$(DATABASE_URL) go run ./cmd/seed
 
 test: ## unit tests (no database needed)
 	go test -race ./...

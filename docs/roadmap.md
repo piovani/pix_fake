@@ -21,7 +21,7 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 and 2 of the build done) |
+| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 3 of the build done) |
 | 3 | Digital wallet and Pix integration layer | **Planned** |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
@@ -55,7 +55,7 @@ The Pix key directory, following the Bacen DICT API v2.13.0. See [`mock/dict`](.
 - [x] Book transfer rule: a lookup of a key held by the requesting participant is refused with
   `EntryCannotBeQueriedForBookTransfer`, as in the real DICT
 - [x] PostgreSQL with embedded migrations
-- [x] Seed data: 15 keys across the wallet and two other fictional banks, every key type (`make seed`, idempotent)
+- [x] Seed data: 21 keys across the wallet and two other fictional banks, every key type, including three test accounts for the SPI scenarios (`make seed`, idempotent)
 - [x] Unit, Postgres repository and end-to-end tests; per-test database schemas so packages run in parallel
 - [x] README with the spec version and date, the implemented and pending endpoints, and the mock's simplifications
 
@@ -108,8 +108,9 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
    Two phases: the SPI forwards the order to the receiver, who answers `ACSP`; the SPI settles and sends `ACSC` to the
    payer's participant and `ACCC` to the receiver's. No balance blocking (no liquidity management). Simulated banks
    accept every order for now; the rules come in step 4.
-3. [ ] **Seed.** Same institutions and accounts as the DICT seed, plus the test accounts `00900001` to `00900003` and
-   their DICT keys, added to both seeds together. It comes before the rejection rules, which look the accounts up.
+3. [x] **Seed.** Same institutions and accounts as the DICT seed, plus the test accounts `00900001` to `00900003` and
+   their DICT keys, added to both seeds together (`make seed` in each mock; a test fails if the two seeds differ). It
+   comes before the rejection rules, which look the accounts up. The SPI seed is stored but not used yet.
 4. [ ] **Receiving participant rules and rejections.** Creditor-account rules, `RJCT` with reason codes, the 40-second
    timeout (`AB03`, shortened by configuration in tests), `admi.002` for wrong channel or invalid messages.
 5. [ ] **`pacs.004` (return).** `pacs.004.spi.1.5`: the receiving participant checks the 90-day limit, the amount and

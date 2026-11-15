@@ -18,6 +18,13 @@ const (
 	BetaISPB   = "99000003" // Banco Beta (another bank)
 )
 
+// Test accounts of the SPI payment scenarios. The SPI mock seed uses the same numbers.
+const (
+	ClosedAccount  = "00900001" // Banco Alfa: closed, the SPI mock rejects payments to it with AC07
+	BlockedAccount = "00900002" // Banco Alfa: blocked, rejected with AC06
+	SilentAccount  = "00900003" // Banco Beta: never answers, the SPI times out with AB03
+)
+
 var opened = time.Date(2020, 3, 10, 3, 0, 0, 0, time.UTC) // 00:00 in BRT
 
 type holder struct {
@@ -52,6 +59,12 @@ func Entries() []dict.Entry {
 	daniela := natural(BetaISPB, "00567890", dict.AccountTransact, "16899535009", "Daniela Rocha")
 	mercadinho := legal(BetaISPB, "00678901", dict.AccountChecking, "45678912000155", "Mercadinho do Zé ME", "Mercadinho do Ze")
 
+	// Accounts that make the SPI mock answer a payment in a fixed way (see mock/spi): closed, blocked,
+	// and one whose bank never answers. They exist in the SPI seed with the same numbers and owners.
+	eduardo := natural(AlfaISPB, ClosedAccount, dict.AccountChecking, "24681357928", "Eduardo Teixeira")
+	fernanda := natural(AlfaISPB, BlockedAccount, dict.AccountSavings, "13579246828", "Fernanda Alves")
+	gustavo := natural(BetaISPB, SilentAccount, dict.AccountTransact, "86420975310", "Gustavo Pires")
+
 	return []dict.Entry{
 		// Wallet
 		ana.key(dict.KeyCPF, "52998224725"),
@@ -71,5 +84,12 @@ func Entries() []dict.Entry {
 		daniela.key(dict.KeyEmail, "daniela.rocha@example.com"),
 		mercadinho.key(dict.KeyCNPJ, "45678912000155"),
 		mercadinho.key(dict.KeyPhone, "+5531999990004"),
+		// Test accounts for the SPI payment scenarios
+		eduardo.key(dict.KeyCPF, "24681357928"),
+		eduardo.key(dict.KeyPhone, "+5521999990005"),
+		fernanda.key(dict.KeyCPF, "13579246828"),
+		fernanda.key(dict.KeyPhone, "+5521999990006"),
+		gustavo.key(dict.KeyCPF, "86420975310"),
+		gustavo.key(dict.KeyPhone, "+5531999990007"),
 	}
 }

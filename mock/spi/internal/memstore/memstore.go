@@ -23,6 +23,7 @@ type Store struct {
 	streams  map[string]stream
 	acked    map[string]int64
 	payments map[string]pix.Payment
+	accounts map[string]pix.Account
 }
 
 func New() *Store {
@@ -143,4 +144,32 @@ func (s *Store) FinalizePayment(_ context.Context, endToEndID, status, reasonCod
 	}
 	s.payments[endToEndID] = p
 	return p, true, nil
+}
+
+// --- Accounts ---
+
+var _ pix.AccountStore = (*Store)(nil)
+
+func (s *Store) CreateAccount(_ context.Context, a pix.Account) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.accounts == nil {
+		s.accounts = map[string]pix.Account{}
+	}
+	id := a.ISPB + "/" + a.Number
+	if _, ok := s.accounts[id]; ok {
+		return false, nil
+	}
+	s.accounts[id] = a
+	return true, nil
+}
+
+func (s *Store) GetAccount(_ context.Context, ispb, number string) (pix.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.accounts[ispb+"/"+number]
+	if !ok {
+		return pix.Account{}, pix.ErrAccountNotFound
+	}
+	return a, nil
 }

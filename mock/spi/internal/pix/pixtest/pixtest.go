@@ -97,3 +97,62 @@ func Run(t *testing.T, newStore func(t *testing.T) pix.PaymentStore) {
 		}
 	})
 }
+
+func account(number string) pix.Account {
+	return pix.Account{
+		ISPB: "99000002", Branch: "0001", Number: number, Type: "CACC", HolderTaxID: "39053344705", HolderName: "Carlos Mendes",
+		Status: pix.AccountActive, Scenario: pix.ScenarioNormal,
+	}
+}
+
+// RunAccounts executes the account cases. newStore must return an empty store for each call.
+func RunAccounts(t *testing.T, newStore func(t *testing.T) pix.AccountStore) {
+	ctx := context.Background()
+
+	t.Run("create and get", func(t *testing.T) {
+		s := newStore(t)
+		want := account("00456789")
+		created, err := s.CreateAccount(ctx, want)
+		if err != nil || !created {
+			t.Fatalf("create = %v, %v", created, err)
+		}
+		got, err := s.GetAccount(ctx, "99000002", "00456789")
+		if err != nil || got != want {
+			t.Fatalf("get = %+v, %v; want %+v", got, err, want)
+		}
+	})
+
+	t.Run("create twice keeps the first", func(t *testing.T) {
+		s := newStore(t)
+		_, _ = s.CreateAccount(ctx, account("00456789"))
+		other := account("00456789")
+		other.Status = pix.AccountClosed
+		if created, err := s.CreateAccount(ctx, other); err != nil || created {
+			t.Fatalf("second create = %v, %v; want created == false", created, err)
+		}
+		if got, _ := s.GetAccount(ctx, "99000002", "00456789"); got.Status != pix.AccountActive {
+			t.Fatalf("status = %s; the existing account must not change", got.Status)
+		}
+	})
+
+	t.Run("the number is per participant", func(t *testing.T) {
+		s := newStore(t)
+		_, _ = s.CreateAccount(ctx, account("00456789"))
+		other := account("00456789")
+		other.ISPB = "99000003"
+		if created, err := s.CreateAccount(ctx, other); err != nil || !created {
+			t.Fatalf("same number at another participant = %v, %v; want created", created, err)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		s := newStore(t)
+		_, _ = s.CreateAccount(ctx, account("00456789"))
+		if _, err := s.GetAccount(ctx, "99000002", "99999999"); !errors.Is(err, pix.ErrAccountNotFound) {
+			t.Fatalf("unknown number = %v", err)
+		}
+		if _, err := s.GetAccount(ctx, "99000003", "00456789"); !errors.Is(err, pix.ErrAccountNotFound) {
+			t.Fatalf("another participant = %v", err)
+		}
+	})
+}

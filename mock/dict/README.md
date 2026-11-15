@@ -53,6 +53,13 @@ so tests can rely on them.
 | Banco Alfa | `99000002` | Carlos Mendes (CPF `39053344705`) | `0001` / `00456789`, `CACC` | CPF `39053344705`, PHONE `+5521999990003`, EVP `2b9d4e17-a3c8-4f65-8d02-7e1c6a0b5d93` |
 | Banco Beta | `99000003` | Daniela Rocha (CPF `16899535009`) | `0001` / `00567890`, `TRAN` | CPF `16899535009`, EMAIL `daniela.rocha@example.com` |
 | Banco Beta | `99000003` | Mercadinho do Zé ME (CNPJ `45678912000155`) | `0001` / `00678901`, `CACC` | CNPJ `45678912000155`, PHONE `+5531999990004` |
+| Banco Alfa | `99000002` | Eduardo Teixeira (CPF `24681357928`) | `0001` / `00900001`, `CACC` | CPF `24681357928`, PHONE `+5521999990005` |
+| Banco Alfa | `99000002` | Fernanda Alves (CPF `13579246828`) | `0001` / `00900002`, `SVGS` | CPF `13579246828`, PHONE `+5521999990006` |
+| Banco Beta | `99000003` | Gustavo Pires (CPF `86420975310`) | `0001` / `00900003`, `TRAN` | CPF `86420975310`, PHONE `+5531999990007` |
+
+The last three accounts exist for the [SPI mock](../spi/README.md#seed-data): a payment to `00900001` is rejected as
+closed, to `00900002` as blocked, and `00900003` never answers (timeout). They are in both seeds with the same numbers
+and owners.
 
 It covers every key type, natural and legal persons, and payments across institutions (wallet to Banco Alfa or
 Beta, and back). Ana and Bruno are both wallet customers, so a payment between them is a book transfer that never
