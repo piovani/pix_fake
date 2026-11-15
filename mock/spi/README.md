@@ -2,9 +2,9 @@
 
 Mock of the Central Bank of Brazil (Bacen) **SPI**, the Instant Payment System that settles Pix payments between
 participants. **Status: in progress** (phase 2 of the [roadmap](../../docs/roadmap.md)). The message exchange, the
-payment cycle `pacs.008` to `pacs.002`, the account rules of the simulated banks, the 40-second timeout and the `admi.002`
-error notification are implemented; returns (`pacs.004`) and the report of transactions settled outside the SPI
-(`trck.002`) are not yet.
+payment cycle `pacs.008` to `pacs.002`, the account rules of the simulated banks, the 40-second timeout, the `admi.002`
+error notification and returns (`pacs.004`) are implemented; the report of transactions settled outside the SPI
+(`trck.002`) is not yet.
 
 ## What works today
 
@@ -59,6 +59,27 @@ sequenceDiagram
   referencing the `PI-ResourceId` it was given: invalid XML, a message type the mock does not support, and a malformed
   `EndToEndId` (a `pacs.002` needs a valid one to answer with). The message is still stored.
 - Several transactions in one `pacs.008` are processed one by one, with one `pacs.002` each.
+
+### Returns (`pacs.004`)
+
+The participant that received a settled payment sends the money back with a `pacs.004`. It goes through the same
+cycle as a payment (same table, same confirmation and timeout), in the opposite direction: the SPI forwards it to the
+participant of the original payer, which accepts (`ACSP`) or rejects it, and then settles with `ACSC` to the sender
+and `ACCC` to the receiver of the return. The `pacs.002` of a return carries the `RtrId` as the instruction
+(`OrgnlInstrId`) and the `EndToEndId` of the original payment.
+
+- **Rejected by the SPI** (the sender gets `RJCT`; nothing is stored): the checks shared with payments (`AM01`, `AM18`,
+  `AGNT`, `RC10`, `FF08` for the `RtrId` date, `CH16`), `AG12` both participants are the same, `DT05` the payment
+  settled more than 90 days ago, `AG13` a return of a return, and `CH16` when the original payment does not exist,
+  did not settle, or the sender did not receive it.
+- **Rejected by the participant that receives it** (a simulated bank decides for itself; the wallet answers through
+  its stream): `AM09` when the returns add up to more than the original payment (rejected returns do not count, so
+  the rest can still be returned), plus the account rules of payments (`AC03`, `AC07`, `AC06`, `BE01`, silent account)
+  applied to the original payer's account.
+- **Partial returns** are allowed: several returns of one payment, each with its own `RtrId`.
+- **Reason:** only `MD06` (the receiver asked for the money back). `BE08` and `FR01` belong to the MED and `SL02` to Pix
+  Saque and Troco, which are out of scope; the SPI answers them with `CH16`.
+- A malformed `RtrId` or `EndToEndId` gets an `admi.002`, as with payments.
 
 ### Running
 
@@ -195,5 +216,5 @@ Notes:
 
 ## Next steps
 
-Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): the return (`pacs.004`), the report of
-transactions settled outside the SPI (`trck.002`) and the closing end-to-end test.
+Follow phase 2 of the [roadmap](../../docs/roadmap.md#phase-2-spi-mock-next): the report of transactions settled
+outside the SPI (`trck.002`) and the closing end-to-end test.

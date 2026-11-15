@@ -66,6 +66,38 @@ func TestPacs002RoundTrip(t *testing.T) {
 	}
 }
 
+func buildPacs004() *iso.Pacs004 {
+	r := iso.NewReturn("D9900000220261114120000000000001", "E9900000120261114120000000000001", "10.50", "MD06", "99000002", "99000001")
+	r.OrgnlTxRef.RmtInf = &struct {
+		Ustrd string `xml:"Ustrd"`
+	}{Ustrd: "refund"}
+	return iso.NewPacs004("99000002", "00038166", "M99000002abcdefghijklmnopqrstuvw", "2026-11-14T12:00:00.000Z", r)
+}
+
+func TestPacs004RoundTrip(t *testing.T) {
+	body, err := buildPacs004().Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := iso.ParsePacs004(body)
+	if err != nil || len(got.Returns()) != 1 {
+		t.Fatalf("parse: %v", err)
+	}
+	r := got.Returns()[0]
+	if r.RtrID != "D9900000220261114120000000000001" || r.OrgnlEndToEnd != "E9900000120261114120000000000001" || r.Amount.Value != "10.50" ||
+		r.Reason() != "MD06" || r.Info() != "refund" || r.OrgnlTxRef.DbtrAgt.ISPB() != "99000002" || r.OrgnlTxRef.CdtrAgt.ISPB() != "99000001" ||
+		r.Priority != "HIGH" || r.ChrgBr != "SLEV" || got.Group().SttlmInf.Method != "CLRG" {
+		t.Fatalf("return not preserved: %+v", r)
+	}
+}
+
+func TestForReturnKeepsTheEndToEndId(t *testing.T) {
+	st := iso.NewTxStatus("E9900000120261114120000000000001", iso.StatusSettledPayer).ForReturn("D9900000220261114120000000000001")
+	if st.OrgnlInstrID != "D9900000220261114120000000000001" || st.OrgnlEndToEnd != "E9900000120261114120000000000001" {
+		t.Fatalf("status = %+v", st)
+	}
+}
+
 func TestAdmi002RoundTrip(t *testing.T) {
 	body, err := iso.NewAdmi002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:00.000Z",
 		"UEkBbgR78VqKK/uvuq9O0r9bqXyBH9Ur", "XML inválido", "Document", "could not read the XML").Marshal()
@@ -122,6 +154,14 @@ func TestOfficialSamples(t *testing.T) {
 			t.Errorf("%s: transactions changed after marshal and parse (err %v)", filepath.Base(f), err)
 		}
 	}
+	files, _ = filepath.Glob(filepath.Join(pkg, "exemplos", "pacs004", "*.xml"))
+	for _, f := range files {
+		body, _ := os.ReadFile(f)
+		m, err := iso.ParsePacs004(body)
+		if err != nil || len(m.Returns()) == 0 || m.Returns()[0].RtrID == "" || m.Returns()[0].Reason() == "" {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+		}
+	}
 	files, _ = filepath.Glob(filepath.Join(pkg, "exemplos", "pacs002", "*.xml"))
 	for _, f := range files {
 		body, _ := os.ReadFile(f)
@@ -145,6 +185,7 @@ func TestGeneratedMessagesValidateAgainstXSD(t *testing.T) {
 	rejected := iso.NewTxStatus("E9900000120261114120000000000001", iso.StatusRejected).WithReason("AC03", "no such account")
 	p002rj, _ := iso.NewPacs002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:05.000Z", rejected).Marshal()
 
+	p004, _ := buildPacs004().Marshal()
 	admi, _ := iso.NewAdmi002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:05.000Z",
 		"UEkBbgR78VqKK/uvuq9O0r9bqXyBH9Ur", "XML inválido", "Document", "could not read the XML").Marshal()
 
@@ -153,6 +194,7 @@ func TestGeneratedMessagesValidateAgainstXSD(t *testing.T) {
 		body []byte
 	}{
 		"admi.002":          {"admi.002.spi.1.5.xsd", admi},
+		"pacs.004":          {"pacs.004.spi.1.5.xsd", p004},
 		"pacs.008":          {"pacs.008.spi.1.16.xsd", p008},
 		"pacs.002 settled":  {"pacs.002.spi.1.18.xsd", p002ok},
 		"pacs.002 rejected": {"pacs.002.spi.1.18.xsd", p002rj},

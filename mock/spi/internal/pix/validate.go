@@ -22,6 +22,8 @@ const (
 	reasonWrongAgent      = "AGNT"
 	reasonNotSupported    = "AG03"
 	reasonBadDate         = "DT02"
+	reasonPastDeadline    = "DT05"
+	reasonReturnOfReturn  = "AG13"
 )
 
 // endToEndTolerance is how far the date inside the EndToEndId may be from the processing time.

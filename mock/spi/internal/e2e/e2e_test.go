@@ -153,6 +153,16 @@ func account(t *testing.T, number string) pix.Account {
 	return pix.Account{}
 }
 
+func pacs004(t *testing.T, sender, to, e2e, rtrID string) []byte {
+	t.Helper()
+	r := iso.NewReturn(rtrID, e2e, "25.90", "MD06", sender, to)
+	body, err := iso.NewPacs004(sender, pix.SPIISPB, "M"+sender+"abcdefghijklmnopqrstuvw", iso.FormatTime(time.Now()), r).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
 func pacs002(t *testing.T, from, id, status string) []byte {
 	t.Helper()
 	body, err := iso.NewPacs002(from, pix.SPIISPB, "M"+from+"abcdefghijklmnopqrstuvw", iso.FormatTime(time.Now()), iso.NewTxStatus(id, status)).Marshal()
@@ -215,6 +225,30 @@ func runPaymentCycle(t *testing.T, url string) {
 	}
 	if st := status(t, readOne(t, url, alfa)); st.Status != iso.StatusSettledPayer || st.OrgnlEndToEnd != idIn {
 		t.Fatalf("payer confirmation: %+v; want ACSC", st)
+	}
+
+	// Banco Beta returns the payment it received from the wallet: the wallet gets the pacs.004, accepts it,
+	// and the return settles for both. (Beta's stream still holds the confirmation of the payment itself.)
+	if st := status(t, readOne(t, url, beta)); st.Status != iso.StatusSettledReceiver || st.OrgnlEndToEnd != idOut {
+		t.Fatalf("confirmation of the payment to Beta: %+v; want ACCC", st)
+	}
+	idRet := "D" + beta + time.Now().UTC().Format("200601021504") + "RETURN00001"
+	post(t, url, beta, pacs004(t, beta, wallet, idOut, idRet))
+	fwdReturn, err := iso.ParsePacs004([]byte(readOne(t, url, wallet)))
+	if err != nil || fwdReturn.Returns()[0].RtrID != idRet || fwdReturn.Returns()[0].OrgnlEndToEnd != idOut {
+		t.Fatalf("forwarded return: %v", err)
+	}
+	accept, err := iso.NewPacs002(wallet, pix.SPIISPB, "M"+wallet+"abcdefghijklmnopqrstuvw", iso.FormatTime(time.Now()),
+		iso.NewTxStatus(idOut, iso.StatusAcceptedByReceiver).ForReturn(idRet)).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, url, wallet, accept)
+	if st := status(t, readOne(t, url, wallet)); st.Status != iso.StatusSettledReceiver || st.OrgnlInstrID != idRet || st.OrgnlEndToEnd != idOut {
+		t.Fatalf("return confirmation to the wallet: %+v; want ACCC for %s", st, idRet)
+	}
+	if st := status(t, readOne(t, url, beta)); st.Status != iso.StatusSettledPayer || st.OrgnlInstrID != idRet {
+		t.Fatalf("return confirmation to the sender: %+v; want ACSC", st)
 	}
 
 	// A payment between two customers of the wallet is a book transfer: the SPI refuses it.

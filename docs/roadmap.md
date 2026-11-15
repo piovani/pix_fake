@@ -21,7 +21,7 @@ flowchart LR
 | Phase | Component | Status |
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
-| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 4 of the build done) |
+| 2 | SPI mock: instant payment settlement | **Next** (specification and design decided; steps 1 to 5 of the build done) |
 | 3 | Digital wallet and Pix integration layer | **Planned** |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | In progress: seed done, `make setup` pending |
@@ -114,8 +114,10 @@ Each slice works on its own and has tests (unit, repository on a real Postgres, 
 4. [x] **Receiving participant rules and rejections.** Creditor-account rules (`AC03`, `AC07`, `AC06`, `BE01`, and a
    silent account), the 40-second timeout (`AB03`, `SPI_TIMEOUT` shortens it), `admi.002` for invalid XML, unsupported
    messages and a malformed `EndToEndId`. The "wrong channel" `admi.002` is not built: the mock has a single channel.
-5. [ ] **`pacs.004` (return).** `pacs.004.spi.1.5`: the receiving participant checks the 90-day limit, the amount and
-   that the account is active.
+5. [x] **`pacs.004` (return).** `pacs.004.spi.1.5`, same cycle as a payment in the opposite direction. The SPI checks the
+   90-day limit (`DT05`), a return of a return (`AG13`) and that the sender received the payment; the participant that
+   receives the return checks the amount (`AM09`) and that the account is active. Only reason `MD06`; partial returns
+   are allowed.
 6. [ ] **Report of transactions settled outside the SPI.** Message `trck.002` (`trck.002.spi.1.1`, art. 2-A of
    IN BCB 32/2020, at most 30 days after settlement), on the secondary channel.
 7. [ ] **Closing.** End-to-end test of the "Done when" below and the README listing implemented and pending messages.

@@ -168,18 +168,21 @@ func TestRunExpiryRejectsInTheBackground(t *testing.T) {
 	o.e2e = id
 	e.sendOrder(o)
 
+	// The payment is marked rejected just before the notification is queued, so wait for the message.
+	var sts []iso.TxStatus
 	deadline := time.Now().Add(5 * time.Second)
-	for e.payment(id).Status == pix.StatusPending {
+	for len(sts) == 0 {
 		if time.Now().After(deadline) {
-			t.Fatal("the payment was not rejected in the background")
+			t.Fatalf("the payment was not rejected in the background (status %s)", e.payment(id).Status)
 		}
 		time.Sleep(10 * time.Millisecond)
+		sts = e.readStatuses(wallet)
 	}
-	if p := e.payment(id); p.ReasonCode != "AB03" {
-		t.Fatalf("payment = %+v; want AB03", p)
+	if len(sts) != 1 || sts[0].Status != iso.StatusRejected || sts[0].ReasonCode() != "AB03" {
+		t.Fatalf("statuses = %+v; want RJCT AB03", sts)
 	}
-	if sts := e.readStatuses(wallet); len(sts) != 1 || sts[0].ReasonCode() != "AB03" {
-		t.Fatalf("statuses = %+v", sts)
+	if p := e.payment(id); p.Status != pix.StatusRejected || p.ReasonCode != "AB03" {
+		t.Fatalf("payment = %+v; want rejected with AB03", p)
 	}
 }
 

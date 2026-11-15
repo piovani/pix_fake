@@ -14,7 +14,7 @@ import (
 func payment(e2e string) pix.Payment {
 	at := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
 	return pix.Payment{
-		EndToEndID: e2e, Status: pix.StatusPending, AmountCents: 12345, Purpose: "IPAY", Initiation: "DICT", Priority: "PAGPRI",
+		ID: e2e, Kind: pix.KindPayment, EndToEndID: e2e, Status: pix.StatusPending, AmountCents: 12345, Purpose: "IPAY", Initiation: "DICT", Priority: "PAGPRI",
 		Info:      "lunch",
 		PayerISPB: "99000001", PayerName: "Ana Souza", PayerTaxID: "52998224725", PayerBranch: "0001", PayerAccount: "00123456", PayerAccountType: "CACC",
 		PayeeISPB: "99000002", PayeeTaxID: "39053344705", PayeeBranch: "0001", PayeeAccount: "00456789", PayeeAccountType: "CACC", PayeeKey: "39053344705",
@@ -93,15 +93,41 @@ func Run(t *testing.T, newStore func(t *testing.T) pix.PaymentStore) {
 		for _, p := range []pix.Payment{old, recent, done} {
 			_, _, _ = s.CreatePayment(ctx, p)
 		}
-		_, _, _ = s.FinalizePayment(ctx, done.EndToEndID, pix.StatusSettled, "", "", old.CreatedAt)
+		_, _, _ = s.FinalizePayment(ctx, done.ID, pix.StatusSettled, "", "", old.CreatedAt)
 
 		ids, err := s.PendingBefore(ctx, old.CreatedAt.Add(30*time.Second))
-		if err != nil || len(ids) != 1 || ids[0] != old.EndToEndID {
+		if err != nil || len(ids) != 1 || ids[0] != old.ID {
 			t.Fatalf("pending before = %v, %v; want only the old pending payment", ids, err)
 		}
 		ids, _ = s.PendingBefore(ctx, old.CreatedAt.Add(time.Hour))
 		if len(ids) != 2 {
 			t.Fatalf("pending before an hour later = %v; want both pending payments", ids)
+		}
+	})
+
+	t.Run("returns of a payment", func(t *testing.T) {
+		s := newStore(t)
+		_, _, _ = s.CreatePayment(ctx, payment(e2e))
+		ret := func(id, of string, status string) pix.Payment {
+			r := payment(of)
+			r.ID, r.Kind, r.ReturnReason, r.Status = id, pix.KindReturn, "MD06", status
+			return r
+		}
+		_, _, _ = s.CreatePayment(ctx, ret("D9900000220261114120000000000001", e2e, pix.StatusPending))
+		_, _, _ = s.CreatePayment(ctx, ret("D9900000220261114120000000000002", e2e, pix.StatusPending))
+		_, _, _ = s.CreatePayment(ctx, ret("D9900000220261114120000000000003", "E9900000120261114120000000000009", pix.StatusPending)) // another payment
+
+		got, err := s.ReturnsOf(ctx, e2e)
+		if err != nil || len(got) != 2 {
+			t.Fatalf("returns of %s = %d, %v; want the 2 returns of that payment, not the payment itself or others", e2e, len(got), err)
+		}
+		for _, r := range got {
+			if r.Kind != pix.KindReturn || r.EndToEndID != e2e || r.ReturnReason != "MD06" {
+				t.Fatalf("return = %+v", r)
+			}
+		}
+		if none, _ := s.ReturnsOf(ctx, "E9900000120261114120000000000007"); len(none) != 0 {
+			t.Fatalf("returns of an unknown payment = %d", len(none))
 		}
 	})
 

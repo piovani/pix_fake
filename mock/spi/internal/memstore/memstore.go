@@ -91,21 +91,33 @@ func (s *Store) CreatePayment(_ context.Context, p pix.Payment) (pix.Payment, bo
 	if s.payments == nil {
 		s.payments = map[string]pix.Payment{}
 	}
-	if existing, ok := s.payments[p.EndToEndID]; ok {
+	if existing, ok := s.payments[p.ID]; ok {
 		return existing, false, nil
 	}
-	s.payments[p.EndToEndID] = p
+	s.payments[p.ID] = p
 	return p, true, nil
 }
 
-func (s *Store) GetPayment(_ context.Context, endToEndID string) (pix.Payment, error) {
+func (s *Store) GetPayment(_ context.Context, id string) (pix.Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, ok := s.payments[endToEndID]
+	p, ok := s.payments[id]
 	if !ok {
 		return pix.Payment{}, pix.ErrPaymentNotFound
 	}
 	return p, nil
+}
+
+func (s *Store) ReturnsOf(_ context.Context, endToEndID string) ([]pix.Payment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []pix.Payment
+	for _, p := range s.payments {
+		if p.Kind == pix.KindReturn && p.EndToEndID == endToEndID {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) PendingBefore(_ context.Context, t time.Time) ([]string, error) {
@@ -120,10 +132,10 @@ func (s *Store) PendingBefore(_ context.Context, t time.Time) ([]string, error) 
 	return ids, nil
 }
 
-func (s *Store) FinalizePayment(_ context.Context, endToEndID, status, reasonCode, reasonDetail string, at time.Time) (pix.Payment, bool, error) {
+func (s *Store) FinalizePayment(_ context.Context, id, status, reasonCode, reasonDetail string, at time.Time) (pix.Payment, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, ok := s.payments[endToEndID]
+	p, ok := s.payments[id]
 	if !ok {
 		return pix.Payment{}, false, pix.ErrPaymentNotFound
 	}
@@ -134,7 +146,7 @@ func (s *Store) FinalizePayment(_ context.Context, endToEndID, status, reasonCod
 	if status == pix.StatusSettled {
 		p.SettledAt = at
 	}
-	s.payments[endToEndID] = p
+	s.payments[id] = p
 	return p, true, nil
 }
 

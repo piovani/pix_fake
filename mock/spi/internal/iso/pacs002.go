@@ -92,6 +92,13 @@ func NewTxStatus(e2e, status string) TxStatus {
 	return TxStatus{OrgnlInstrID: e2e, OrgnlEndToEnd: e2e, Status: status}
 }
 
+// ForReturn makes the status refer to a return: the instruction is the return's RtrId, while the
+// EndToEndId stays that of the original payment.
+func (t TxStatus) ForReturn(rtrID string) TxStatus {
+	t.OrgnlInstrID = rtrID
+	return t
+}
+
 // WithReason adds a reason code and optional detail (at most 105 characters).
 func (t TxStatus) WithReason(code, detail string) TxStatus {
 	if len(detail) > 105 {

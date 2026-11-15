@@ -151,3 +151,27 @@ Sent by the SPI to the sender of a message it cannot process. The mock builds it
 
 The mock sends it for invalid XML, a message type it does not support, and a `pacs.008` whose `EndToEndId` is malformed
 (a `pacs.002` cannot be built without a valid one).
+
+## `pacs.004`: return
+
+Schema `pacs.004.spi.1.5`. Sent by the participant that **received** a payment, to send money back to the payer.
+`DbtrAgt` is the participant that sends it (it holds the account that is debited) and `CdtrAgt` the one that receives
+the money: respectively the receiving and the paying participant of the original payment.
+
+| Field (XML tag) | Rule |
+|-----------------|------|
+| `idOperacao` (`TxInf/RtrId`) | 32 characters: `D` + ISPB of the sender (8) + `yyyyMMddHHmm` UTC (12) + 11 alphanumeric. Date within 12 hours of processing (`FF08`). Identifies the return; unique |
+| `idFimAFim` (`OrgnlEndToEndId`) | `EndToEndId` of the original `pacs.008` |
+| `valor` (`RtrdIntrBkSttlmAmt`) | `Ccy="BRL"`, up to 18 digits, 2 decimals. Zero: `AM01` |
+| `prioridadePagamento` (`SttlmPrty`) | `HIGH` (the mock does not support `NORM`) |
+| `participanteTarifado` (`ChrgBr`) | `SLEV` |
+| `codigoDevolucao` (`RtrRsnInf/Rsn/Cd`) | `MD06` in the mock. `BE08`, `FR01` (MED) and `SL02` (Pix Saque/Troco) are out of scope |
+| `motivoDevolucao` (`RtrRsnInf/AddtlInf`) | Optional, up to 105 characters |
+| `informacoesEntreUsuarios` (`OrgnlTxRef/RmtInf/Ustrd`) | Optional, up to 140 characters |
+
+The group header has `MsgId`, `CreDtTm`, `NbOfTxs` and `SttlmMtd` (`CLRG`), like `pacs.008` without the priority.
+
+Rejections of a return: by the SPI, `AG12` (same participant), `AG13` (return of a return), `DT05` (more than 90 days
+after settlement); by the participant that receives it, `AM09` (the returns add up to more than the original payment),
+`AM02`, `SL02`, and the account reasons of payments. The `pacs.002` answering a return uses the `RtrId` as
+`OrgnlInstrId` and the `EndToEndId` of the original payment as `OrgnlEndToEndId`.

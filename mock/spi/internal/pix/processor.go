@@ -14,6 +14,7 @@ import (
 // Processor handles the payment messages participants send to the SPI.
 //
 //	pacs.008 (payer's participant)  -> validate, store, forward to the receiver
+//	pacs.004 (receiving participant of an earlier payment, returning it) -> same cycle, see returns.go
 //	pacs.002 (receiver, ACSP/RJCT)  -> settle or reject
 //
 // When the receiver is simulated the mock answers for it, so the whole cycle runs inside one call.
@@ -56,6 +57,8 @@ func (p *Processor) Handle(ctx context.Context, sender string, m spi.Message) {
 	switch hdr.MsgDefIdr {
 	case iso.Pacs008ID:
 		p.handlePacs008(ctx, sender, m)
+	case iso.Pacs004ID:
+		p.handlePacs004(ctx, sender, m)
 	case iso.Pacs002ID:
 		p.handlePacs002(ctx, sender, m)
 	default:
@@ -89,7 +92,7 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 			rj = p.checkTransaction(tx, sender)
 		}
 		if rj != nil {
-			p.sendRejection(ctx, sender, e2e, rj.code, rj.detail)
+			p.sendRejection(ctx, sender, e2e, e2e, rj.code, rj.detail)
 			continue
 		}
 
@@ -103,7 +106,12 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 			p.resendOutcome(ctx, existing)
 			continue
 		}
-		p.forward(ctx, pay, tx)
+		body, err := iso.NewPacs008(SPIISPB, pay.PayeeISPB, newMsgID(), iso.FormatTime(p.now()), "HIGH", "PAGPRI", tx).Marshal()
+		if err != nil {
+			p.log.Error("encode pacs.008", "end_to_end_id", e2e, "error", err)
+			continue
+		}
+		p.forward(ctx, pay, body)
 	}
 }
 
@@ -111,6 +119,8 @@ func (p *Processor) newPayment(tx iso.CreditTransfer) Payment {
 	cents, _ := ParseAmount(tx.Amount.Value)
 	acceptedAt, _ := iso.ParseTime(tx.AcceptedAt)
 	pay := Payment{
+		ID:               tx.PmtID.EndToEnd,
+		Kind:             KindPayment,
 		EndToEndID:       tx.PmtID.EndToEnd,
 		Status:           StatusPending,
 		AmountCents:      cents,
@@ -138,24 +148,26 @@ func (p *Processor) newPayment(tx iso.CreditTransfer) Payment {
 	return pay
 }
 
-// forward sends the order to the receiving participant, or asks the responder when it is simulated.
-func (p *Processor) forward(ctx context.Context, pay Payment, tx iso.CreditTransfer) {
+// forward delivers body (the order as the receiving participant gets it) to the receiving participant,
+// or lets the mock answer when that participant is simulated.
+func (p *Processor) forward(ctx context.Context, pay Payment, body []byte) {
 	if p.participants.Simulated(pay.PayeeISPB) {
-		if d := p.responder.Decide(ctx, pay); !d.NoAnswer {
-			p.finalize(ctx, pay.EndToEndID, d)
+		if d := p.decide(ctx, pay); !d.NoAnswer {
+			p.finalize(ctx, pay.ID, d)
 		}
 		return
 	}
-	now := iso.FormatTime(p.now())
-	out := iso.NewPacs008(SPIISPB, pay.PayeeISPB, newMsgID(), now, "HIGH", "PAGPRI", tx)
-	body, err := out.Marshal()
-	if err != nil {
-		p.log.Error("encode pacs.008", "end_to_end_id", pay.EndToEndID, "error", err)
-		return
-	}
 	if _, err := p.svc.Deliver(ctx, pay.PayeeISPB, body); err != nil {
-		p.log.Error("deliver pacs.008", "end_to_end_id", pay.EndToEndID, "error", err)
+		p.log.Error("deliver order", "id", pay.ID, "error", err)
 	}
+}
+
+// decide is how a simulated receiving participant answers.
+func (p *Processor) decide(ctx context.Context, pay Payment) Decision {
+	if pay.Kind == KindReturn {
+		return p.decideReturn(ctx, pay)
+	}
+	return p.responder.Decide(ctx, pay)
 }
 
 func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Message) {
@@ -165,40 +177,40 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 		return
 	}
 	for _, st := range msg.Statuses() {
-		e2e := st.OrgnlEndToEnd
-		pay, err := p.payments.GetPayment(ctx, e2e)
+		id := st.OrgnlInstrID // the EndToEndId of a payment, the RtrId of a return
+		pay, err := p.payments.GetPayment(ctx, id)
 		if err != nil {
-			p.log.Warn("status for an unknown payment ignored", "sender", sender, "end_to_end_id", e2e)
+			p.log.Warn("status for an unknown payment ignored", "sender", sender, "id", id)
 			continue
 		}
 		if pay.PayeeISPB != sender {
-			p.log.Warn("status from a participant that is not the receiver ignored", "sender", sender, "end_to_end_id", e2e)
+			p.log.Warn("status from a participant that is not the receiver ignored", "sender", sender, "id", id)
 			continue
 		}
 		switch st.Status {
 		case iso.StatusAcceptedByReceiver:
-			p.finalize(ctx, e2e, Decision{Accept: true})
+			p.finalize(ctx, id, Decision{Accept: true})
 		case iso.StatusRejected:
 			code := st.ReasonCode()
 			if code == "" {
 				code = "DS04"
 			}
-			p.finalize(ctx, e2e, Decision{ReasonCode: code})
+			p.finalize(ctx, id, Decision{ReasonCode: code})
 		default:
-			p.log.Warn("status not supported from a participant", "sender", sender, "end_to_end_id", e2e, "status", st.Status)
+			p.log.Warn("status not supported from a participant", "sender", sender, "id", id, "status", st.Status)
 		}
 	}
 }
 
 // finalize applies the receiver's answer: settle and confirm to both sides, or reject.
-func (p *Processor) finalize(ctx context.Context, e2e string, d Decision) {
+func (p *Processor) finalize(ctx context.Context, id string, d Decision) {
 	status := StatusRejected
 	if d.Accept {
 		status = StatusSettled
 	}
-	pay, changed, err := p.payments.FinalizePayment(ctx, e2e, status, d.ReasonCode, d.Detail, p.now())
+	pay, changed, err := p.payments.FinalizePayment(ctx, id, status, d.ReasonCode, d.Detail, p.now())
 	if err != nil {
-		p.log.Error("finalize payment", "end_to_end_id", e2e, "status", status, "error", err)
+		p.log.Error("finalize payment", "id", id, "status", status, "error", err)
 		return
 	}
 	if !changed {
@@ -207,7 +219,7 @@ func (p *Processor) finalize(ctx context.Context, e2e string, d Decision) {
 	if d.Accept {
 		p.sendSettled(ctx, pay)
 	} else {
-		p.sendRejection(ctx, pay.PayerISPB, e2e, d.ReasonCode, d.Detail)
+		p.sendRejection(ctx, pay.PayerISPB, pay.ID, pay.EndToEndID, d.ReasonCode, d.Detail)
 	}
 }
 
@@ -254,31 +266,38 @@ func (p *Processor) sendError(ctx context.Context, to string, m spi.Message, rea
 	}
 }
 
-// sendSettled tells the payer's participant (ACSC) and the receiver's (ACCC) that the payment settled.
+// statusOf builds the status of a payment or return: the instruction is its ID, the EndToEndId that of the payment.
+func statusOf(instrID, e2e, status string) iso.TxStatus {
+	st := iso.NewTxStatus(e2e, status)
+	st.OrgnlInstrID = instrID
+	return st
+}
+
+// sendSettled tells the payer's participant (ACSC) and the receiver's (ACCC) that the transfer settled.
 func (p *Processor) sendSettled(ctx context.Context, pay Payment) {
 	at := pay.SettledAt
 	for _, to := range []struct{ ispb, status string }{
 		{pay.PayerISPB, iso.StatusSettledPayer},
 		{pay.PayeeISPB, iso.StatusSettledReceiver},
 	} {
-		st := iso.NewTxStatus(pay.EndToEndID, to.status).WithSettlement(iso.FormatTime(at), at.UTC().Format(iso.DateLayout))
+		st := statusOf(pay.ID, pay.EndToEndID, to.status).WithSettlement(iso.FormatTime(at), at.UTC().Format(iso.DateLayout))
 		p.sendStatus(ctx, to.ispb, st)
 	}
 }
 
-func (p *Processor) sendRejection(ctx context.Context, to, e2e, code, detail string) {
-	p.sendStatus(ctx, to, iso.NewTxStatus(e2e, iso.StatusRejected).WithReason(code, detail))
+func (p *Processor) sendRejection(ctx context.Context, to, instrID, e2e, code, detail string) {
+	p.sendStatus(ctx, to, statusOf(instrID, e2e, iso.StatusRejected).WithReason(code, detail))
 }
 
 // resendOutcome answers a repeated order with the outcome it already has.
 func (p *Processor) resendOutcome(ctx context.Context, pay Payment) {
 	switch pay.Status {
 	case StatusSettled:
-		st := iso.NewTxStatus(pay.EndToEndID, iso.StatusSettledPayer).
+		st := statusOf(pay.ID, pay.EndToEndID, iso.StatusSettledPayer).
 			WithSettlement(iso.FormatTime(pay.SettledAt), pay.SettledAt.UTC().Format(iso.DateLayout))
 		p.sendStatus(ctx, pay.PayerISPB, st)
 	case StatusRejected:
-		p.sendRejection(ctx, pay.PayerISPB, pay.EndToEndID, pay.ReasonCode, pay.ReasonDetail)
+		p.sendRejection(ctx, pay.PayerISPB, pay.ID, pay.EndToEndID, pay.ReasonCode, pay.ReasonDetail)
 	}
 }
 
@@ -286,11 +305,11 @@ func (p *Processor) sendStatus(ctx context.Context, to string, st iso.TxStatus) 
 	now := iso.FormatTime(p.now())
 	body, err := iso.NewPacs002(SPIISPB, to, newMsgID(), now, st).Marshal()
 	if err != nil {
-		p.log.Error("encode pacs.002", "end_to_end_id", st.OrgnlEndToEnd, "error", err)
+		p.log.Error("encode pacs.002", "id", st.OrgnlInstrID, "error", err)
 		return
 	}
 	if _, err := p.svc.Deliver(ctx, to, body); err != nil {
-		p.log.Error("deliver pacs.002", "end_to_end_id", st.OrgnlEndToEnd, "error", err)
+		p.log.Error("deliver pacs.002", "id", st.OrgnlInstrID, "error", err)
 	}
 }
 
