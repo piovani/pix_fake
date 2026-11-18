@@ -1,4 +1,4 @@
-MODULES := mock/dict mock/spi e2e
+MODULES := mock/dict mock/spi e2e wallet
 DICT_URL ?= http://localhost:8080
 SPI_URL  ?= http://localhost:8081
 
@@ -7,8 +7,8 @@ SPI_URL  ?= http://localhost:8081
 up: setup ## start everything: both mocks (make setup) and the wallet's own database
 	$(MAKE) -C wallet up
 
-test: ## unit and HTTP tests of both mocks (no database needed)
-	@for m in mock/dict mock/spi; do echo "==> $$m"; (cd $$m && go test -race ./...) || exit 1; done
+test: ## unit and HTTP tests of both mocks and of the wallet (no database needed)
+	@for m in mock/dict mock/spi wallet; do echo "==> $$m"; (cd $$m && go test -race ./...) || exit 1; done
 
 test-integration: ## all tests of both mocks, including those on PostgreSQL (needs Docker; stop make setup first, they share ports)
 	@for m in mock/dict mock/spi; do echo "==> $$m"; (cd $$m && $(MAKE) test-integration) || exit 1; done

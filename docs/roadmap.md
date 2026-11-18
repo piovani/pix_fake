@@ -140,6 +140,22 @@ Listed in Phase 1: confirm the wallet's real ISPB. It does not block the SPI. (T
 **Goal:** wallet users can register keys, pay, receive and see their history, talking to the mocks only through the
 Bacen contracts.
 
+### Decision: the stack of the wallet
+
+- **Go and gRPC.** The public contract is in `wallet/api/proto` (package `wallet.v1`, versioned by package). `make proto`
+  in `wallet/` generates the Go code into `wallet/gen`, which is committed so clients can use it. Toward Bacen the wallet
+  still speaks HTTP and XML, as the contracts require; gRPC is only the wallet's own API.
+- **Modular monolith, to be split into microservices later.** Modules under `wallet/internal`: `ledger` (accounts, balances),
+  `payment` (flows and status), `pix` (the integration layer), with `grpcapi` as the adapter. A module uses another only through its
+  exported API and never its tables, which is what makes the later split possible.
+- **Two processes from the same module:** the gRPC API (`cmd/api`) and the worker (`cmd/worker`), started next to each
+  other. The worker consumes the SPI output stream and handles timeouts and retries.
+- **Ledger:** a simple balance per account with reservation, not double-entry. Money is an integer number of centavos.
+- **No authentication for now.** Calls to the API are accepted as they come; revisit before anything leaves local development.
+- **ISPB:** keeps the placeholder `99000001` (the same as the mocks' seed) until the real one is known.
+- **Not decided yet:** the Postgres access library and the migration tool, the HTTP/XML client for Bacen, and the
+  proto contract for keys, payments and the statement (the current one is a one-call draft).
+
 ### Decision: the wallet is independent of the mocks
 
 The wallet is the project's real challenge and the mocks are auxiliary, so it lives in this repository next to
@@ -161,7 +177,9 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
 
 - [x] **Repository layout: decided.** `wallet/` next to `mock/` in this repository, fully independent of the mocks
   (see the [decision](#decision-the-wallet-is-independent-of-the-mocks)). Base created: its own PostgreSQL, compose file and Makefile.
-- [ ] **Decide the stack** (open decision below).
+- [x] **Stack: decided.** Go, gRPC, modular monolith, simple balance with reservation (see the
+  [decisions](#decision-the-stack-of-the-wallet)). Base built: module, gRPC contract with `make proto`, the API and the worker as
+  two processes, the empty modules.
 - [ ] **Wallet core:** accounts, balances and a ledger, with balance reservation while a payment is in flight.
 - [ ] **Pix integration layer (participant side):**
   - [ ] DICT client for the five implemented operations
@@ -258,8 +276,9 @@ Listed so they are not forgotten. None is agreed.
 
 | Decision | Needed for |
 |----------|------------|
-| The wallet's real ISPB (the seed uses the placeholder `99000001`) | Seed data, wallet configuration |
-| Wallet technology stack (the layout is decided: `wallet/`, independent of the mocks) | Phase 3 |
+| The wallet's real ISPB (the placeholder `99000001` stays for now) | Seed data, wallet configuration |
+| Postgres access library and migration tool for the wallet | Wallet core |
+| Proto contract for keys, payments and the statement | Features |
 | Whether users need portability, that is, claims | Backlog |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |
 | Where continuous integration runs | Environment and quality |

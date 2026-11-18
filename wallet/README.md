@@ -3,8 +3,8 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: not started.** The stack is not chosen yet (see the [roadmap](../docs/roadmap.md#phase-3-wallet-and-pix-integration-layer-next)),
-> so there is no wallet code. What exists is the independent base below.
+> **Status: base only.** Stack decided (Go, gRPC, modular monolith; see the [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)).
+> There is the gRPC server, the worker and the empty modules, but no feature yet.
 
 ## Independence from the mocks
 
@@ -21,10 +21,42 @@ Inside the same repository, the wallet is a separate system:
 - **Configuration only.** The mocks' URLs are in `.env` (`DICT_BASE_URL`, `SPI_BASE_URL`). Switching to the real
   endpoints is changing them.
 
+## Layout
+
+```
+wallet/
+├── api/proto/wallet/v1/   # the gRPC contract
+├── gen/                   # generated Go code (make proto), committed for the clients
+├── cmd/api/               # process 1: the gRPC API
+├── cmd/worker/            # process 2: the SPI stream consumer, started next to the API
+└── internal/
+    ├── ledger/            # module: accounts, simple balance with reservation
+    ├── payment/           # module: payment flows and status
+    ├── pix/               # module: DICT and SPI clients (the integration layer)
+    ├── grpcapi/           # adapter: gRPC services
+    └── platform/config/   # environment configuration
+```
+
+Modules use each other only through their exported API, never each other's tables, so the monolith can be split into
+services later.
+
 ## Running the base
 
 ```sh
 make up          # from the repository root: both mocks and the wallet's database, everything
+```
+
+Generate the gRPC code after changing a `.proto`, from `wallet/`:
+
+```sh
+make proto       # needs protoc, protoc-gen-go and protoc-gen-go-grpc
+```
+
+Run the two processes (each in its own terminal, after `make up`):
+
+```sh
+go run ./cmd/api       # gRPC on :9090, with the standard health service
+go run ./cmd/worker
 ```
 
 Or only the wallet's side, from `wallet/`: `cp .env.example .env` and `make up` (PostgreSQL on `:5434`). To stop it or to
@@ -41,3 +73,4 @@ The mocks alone are `make setup` at the root (DICT on `:8080`, SPI on `:8081`). 
 | 8081 | SPI mock |
 | 5432, 5433 | PostgreSQL of the DICT and SPI mocks |
 | 5434 | PostgreSQL of the wallet |
+| 9090 | gRPC API of the wallet |
