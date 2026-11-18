@@ -140,7 +140,28 @@ Listed in Phase 1: confirm the wallet's real ISPB. It does not block the SPI. (T
 **Goal:** wallet users can register keys, pay, receive and see their history, talking to the mocks only through the
 Bacen contracts.
 
-- [ ] **Decide the stack and repository layout** (open decision below).
+### Decision: the wallet is independent of the mocks
+
+The wallet is the project's real challenge and the mocks are auxiliary, so it lives in this repository next to
+`mock/` but shares nothing with them. See [`wallet/README.md`](../wallet/README.md).
+
+- **Code:** a module of its own under `wallet/`. It never imports, copies or reads code from `mock/`; it talks to the
+  mocks over HTTP and XML only. This is what keeps "switching to real endpoints is configuration only" true.
+- **Data:** its own PostgreSQL (`:5434`, volume `wallet-pgdata`), migrations and seed. No connection to the databases of
+  the mocks, in either direction.
+- **Infrastructure:** `wallet/docker-compose.yml` (project `pixwallet`) and `wallet/Makefile`. The root `make setup`
+  keeps starting only the mocks, and resetting one side never touches the other.
+- **Tests:** the wallet's unit, repository and end-to-end tests live under `wallet/`. The root `e2e/` stays the closing
+  test of the mocks.
+- **Configuration:** the mocks' URLs and the wallet's ISPB come from environment variables (`wallet/.env.example`).
+- **Why here and not in another repository:** one place for the documentation, the roadmap, `make setup` for the mocks
+  and a single CI, without publishing images or versioning the mocks separately. The independence above keeps the option
+  of moving `wallet/` to its own repository later at a low cost.
+
+
+- [x] **Repository layout: decided.** `wallet/` next to `mock/` in this repository, fully independent of the mocks
+  (see the [decision](#decision-the-wallet-is-independent-of-the-mocks)). Base created: its own PostgreSQL, compose file and Makefile.
+- [ ] **Decide the stack** (open decision below).
 - [ ] **Wallet core:** accounts, balances and a ledger, with balance reservation while a payment is in flight.
 - [ ] **Pix integration layer (participant side):**
   - [ ] DICT client for the five implemented operations
@@ -238,7 +259,7 @@ Listed so they are not forgotten. None is agreed.
 | Decision | Needed for |
 |----------|------------|
 | The wallet's real ISPB (the seed uses the placeholder `99000001`) | Seed data, wallet configuration |
-| Wallet technology stack and repository layout | Phase 3 |
+| Wallet technology stack (the layout is decided: `wallet/`, independent of the mocks) | Phase 3 |
 | Whether users need portability, that is, claims | Backlog |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |
 | Where continuous integration runs | Environment and quality |

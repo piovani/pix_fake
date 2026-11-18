@@ -2,7 +2,10 @@ MODULES := mock/dict mock/spi e2e
 DICT_URL ?= http://localhost:8080
 SPI_URL  ?= http://localhost:8081
 
-.PHONY: test test-integration lint e2e setup down reset logs status check
+.PHONY: up test test-integration lint e2e setup down reset logs status check
+
+up: setup ## start everything: both mocks (make setup) and the wallet's own database
+	$(MAKE) -C wallet up
 
 test: ## unit and HTTP tests of both mocks (no database needed)
 	@for m in mock/dict mock/spi; do echo "==> $$m"; (cd $$m && go test -race ./...) || exit 1; done

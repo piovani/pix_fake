@@ -10,9 +10,9 @@ The real Pix ecosystem is only reachable by regulated participants. To develop a
 |-------|-----------|--------|
 | 1 | **DICT mock**: Pix key directory | Implemented: entries and keys, with seed data ([`mock/dict`](mock/dict/README.md)) |
 | 2 | **SPI mock**: instant payment settlement | Implemented: payments, returns, reports of internal transactions ([`mock/spi`](mock/spi/README.md)) |
-| 3 | Digital wallet + Pix integration layer | Planned |
+| 3 | Digital wallet + Pix integration layer | Started: independent base in [`wallet/`](wallet/README.md), stack to be chosen |
 
-Mocks are built in this order, DICT first, then SPI. Each mock lives under `mock/` and has its own README. The full plan, with what comes next and what was left out on purpose, is in the [roadmap](docs/roadmap.md).
+Mocks are built in this order, DICT first, then SPI. Each mock lives under `mock/` and has its own README. The wallet lives under `wallet/` and is independent of them: its own code, database and infrastructure. The full plan, with what comes next and what was left out on purpose, is in the [roadmap](docs/roadmap.md).
 
 ### What the mocks do **not** do
 
@@ -209,9 +209,10 @@ pix_fake/
 │   └── roadmap.md           # plan: phases, status, backlog, open decisions
 ├── e2e/                     # closing test: both mocks together, over HTTP and XML
 ├── scripts/e2e.sh           # starts both mocks on Postgres and runs the closing test
-└── mock/
-    ├── dict/                # DICT mock (Go + Postgres), see its README
-    └── spi/                 # SPI mock (Go + Postgres), see its README
+├── mock/
+│   ├── dict/                # DICT mock (Go + Postgres), see its README
+│   └── spi/                 # SPI mock (Go + Postgres), see its README
+└── wallet/                  # the wallet: own code, database, compose and tests; shares nothing with mock/
 ```
 
 ## Trying both mocks together
