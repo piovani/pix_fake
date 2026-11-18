@@ -153,8 +153,12 @@ Bacen contracts.
 - **Ledger:** a simple balance per account with reservation, not double-entry. Money is an integer number of centavos.
 - **No authentication for now.** Calls to the API are accepted as they come; revisit before anything leaves local development.
 - **ISPB:** keeps the placeholder `99000001` (the same as the mocks' seed) until the real one is known.
-- **Not decided yet:** the Postgres access library and the migration tool, the HTTP/XML client for Bacen, and the
-  proto contract for keys, payments and the statement (the current one is a one-call draft).
+- **Database access: pgx, used directly** (`pgxpool`, no ORM and no code generator), so the SQL of the ledger is explicit, for
+  example the conditional `UPDATE ... WHERE available_cents >= $1` that makes reserving safe. Transactions go through a
+  helper in `platform/db` (`InTx`, over `pgx.BeginTxFunc`), so modules do not handle `pgx.Tx` lifecycle.
+- **Migrations: golang-migrate,** SQL files in `wallet/migrations` embedded in the binary. The API and the seed command apply them at start.
+- **Not decided yet:** the HTTP/XML client for Bacen, and the proto contract for keys, payments and the statement (the
+  current one has a single call).
 
 ### Decision: the wallet is independent of the mocks
 
@@ -180,7 +184,10 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
 - [x] **Stack: decided.** Go, gRPC, modular monolith, simple balance with reservation (see the
   [decisions](#decision-the-stack-of-the-wallet)). Base built: module, gRPC contract with `make proto`, the API and the worker as
   two processes, the empty modules.
-- [ ] **Wallet core:** accounts, balances and a ledger, with balance reservation while a payment is in flight.
+- [x] **Wallet core:** accounts, balances and a ledger, with balance reservation while a payment is in flight. Module
+  `wallet/internal/ledger`: open an account, credit (idempotent by reference), reserve (idempotent and atomic, refuses an
+  overdraft), settle and release, plus an append-only log of every movement. Tested on PostgreSQL, including concurrent
+  reservations. `GetBalance` is the first gRPC call. The statement, which reads the log, comes with the features.
 - [ ] **Pix integration layer (participant side):**
   - [ ] DICT client for the five implemented operations
   - [ ] SPI client
@@ -277,7 +284,6 @@ Listed so they are not forgotten. None is agreed.
 | Decision | Needed for |
 |----------|------------|
 | The wallet's real ISPB (the placeholder `99000001` stays for now) | Seed data, wallet configuration |
-| Postgres access library and migration tool for the wallet | Wallet core |
 | Proto contract for keys, payments and the statement | Features |
 | Whether users need portability, that is, claims | Backlog |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |

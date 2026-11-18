@@ -10,7 +10,7 @@ The real Pix ecosystem is only reachable by regulated participants. To develop a
 |-------|-----------|--------|
 | 1 | **DICT mock**: Pix key directory | Implemented: entries and keys, with seed data ([`mock/dict`](mock/dict/README.md)) |
 | 2 | **SPI mock**: instant payment settlement | Implemented: payments, returns, reports of internal transactions ([`mock/spi`](mock/spi/README.md)) |
-| 3 | Digital wallet + Pix integration layer | Started: Go + gRPC base in [`wallet/`](wallet/README.md), independent of the mocks; no feature yet |
+| 3 | Digital wallet + Pix integration layer | Started: [`wallet/`](wallet/README.md) in Go + gRPC, independent of the mocks; the ledger with reservation is done, the Pix features are next |
 
 Mocks are built in this order, DICT first, then SPI. Each mock lives under `mock/` and has its own README. The wallet lives under `wallet/` and is independent of them: its own code, database and infrastructure. The full plan, with what comes next and what was left out on purpose, is in the [roadmap](docs/roadmap.md).
 

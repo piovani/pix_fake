@@ -10,8 +10,8 @@ up: setup ## start everything: both mocks (make setup) and the wallet's own data
 test: ## unit and HTTP tests of both mocks and of the wallet (no database needed)
 	@for m in mock/dict mock/spi wallet; do echo "==> $$m"; (cd $$m && go test -race ./...) || exit 1; done
 
-test-integration: ## all tests of both mocks, including those on PostgreSQL (needs Docker; stop make setup first, they share ports)
-	@for m in mock/dict mock/spi; do echo "==> $$m"; (cd $$m && $(MAKE) test-integration) || exit 1; done
+test-integration: ## all tests of both mocks and the wallet, including those on PostgreSQL (needs Docker; stop make setup first, the mocks share ports with it)
+	@for m in mock/dict mock/spi wallet; do echo "==> $$m"; (cd $$m && $(MAKE) test-integration) || exit 1; done
 
 lint: ## gofmt and go vet on every module
 	@for m in $(MODULES); do echo "==> $$m"; (cd $$m && test -z "$$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above need formatting"; exit 1; }; go vet ./...) || exit 1; done

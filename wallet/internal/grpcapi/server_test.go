@@ -2,7 +2,9 @@ package grpcapi
 
 import (
 	"context"
+	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,12 +16,29 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	walletv1 "pixfake/wallet/gen/wallet/v1"
+	"pixfake/wallet/internal/ledger"
 )
 
-func dial(t *testing.T) *grpc.ClientConn {
+type fakeLedger struct {
+	balances map[string]ledger.Balance
+	err      error
+}
+
+func (f fakeLedger) Balance(_ context.Context, id string) (ledger.Balance, error) {
+	if f.err != nil {
+		return ledger.Balance{}, f.err
+	}
+	b, ok := f.balances[id]
+	if !ok {
+		return ledger.Balance{}, ledger.ErrAccountNotFound
+	}
+	return b, nil
+}
+
+func dial(t *testing.T, l Ledger) *grpc.ClientConn {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := New()
+	srv := New(l)
 	go srv.Serve(lis)
 	t.Cleanup(srv.Stop)
 
@@ -36,17 +55,37 @@ func dial(t *testing.T) *grpc.ClientConn {
 func TestHealthIsServing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	res, err := healthpb.NewHealthClient(dial(t)).Check(ctx, &healthpb.HealthCheckRequest{})
+	res, err := healthpb.NewHealthClient(dial(t, fakeLedger{})).Check(ctx, &healthpb.HealthCheckRequest{})
 	if err != nil || res.Status != healthpb.HealthCheckResponse_SERVING {
 		t.Fatalf("health: %v, %v", res, err)
 	}
 }
 
-func TestGetBalanceIsNotImplementedYet(t *testing.T) {
+func TestGetBalance(t *testing.T) {
+	l := fakeLedger{balances: map[string]ledger.Balance{"acc": {AvailableCents: 6000, ReservedCents: 4000}}}
+	client := walletv1.NewWalletServiceClient(dial(t, l))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := walletv1.NewWalletServiceClient(dial(t)).GetBalance(ctx, &walletv1.GetBalanceRequest{AccountId: "x"})
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("want Unimplemented, got %v", err)
+
+	res, err := client.GetBalance(ctx, &walletv1.GetBalanceRequest{AccountId: "acc"})
+	if err != nil || res.AvailableCents != 6000 || res.ReservedCents != 4000 {
+		t.Fatalf("balance: %v, %v", res, err)
+	}
+	if _, err := client.GetBalance(ctx, &walletv1.GetBalanceRequest{AccountId: "other"}); status.Code(err) != codes.NotFound {
+		t.Fatalf("unknown account: want NotFound, got %v", err)
+	}
+	if _, err := client.GetBalance(ctx, &walletv1.GetBalanceRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("no account: want InvalidArgument, got %v", err)
+	}
+}
+
+func TestGetBalanceHidesInternalErrors(t *testing.T) {
+	client := walletv1.NewWalletServiceClient(dial(t, fakeLedger{err: errors.New("connection refused to 10.0.0.5")}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.GetBalance(ctx, &walletv1.GetBalanceRequest{AccountId: "acc"})
+	if status.Code(err) != codes.Internal || strings.Contains(err.Error(), "10.0.0.5") {
+		t.Fatalf("want Internal without the cause, got %v", err)
 	}
 }

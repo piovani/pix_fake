@@ -10,18 +10,32 @@ import (
 	"syscall"
 
 	"pixfake/wallet/internal/grpcapi"
+	"pixfake/wallet/internal/ledger"
 	"pixfake/wallet/internal/platform/config"
+	"pixfake/wallet/internal/platform/db"
 )
 
 func main() {
 	cfg := config.Load()
+
+	if err := db.Migrate(cfg.DatabaseURL); err != nil {
+		slog.Error("migrate", "err", err)
+		os.Exit(1)
+	}
+	
+	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("connect to the database", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
 		slog.Error("listen", "addr", cfg.GRPCAddr, "err", err)
 		os.Exit(1)
 	}
-	srv := grpcapi.New()
+	srv := grpcapi.New(ledger.New(pool))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
