@@ -5,7 +5,7 @@ the SPI. It is the product of this project; the mocks next to it (`../mock`) onl
 
 > **Status: the core is done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
-> is tested on PostgreSQL. The Pix integration layer and the payment flows are next.
+> is tested on PostgreSQL. The DICT client (`internal/pix`) is in place; the SPI client and the payment flows are next.
 
 ## Independence from the mocks
 
@@ -71,6 +71,13 @@ start with an empty database: `docker compose down` or `docker compose down -v` 
 The mocks alone are `make setup` at the root (DICT on `:8080`, SPI on `:8081`). How to call them is in the
 [integration guide](../docs/integration-guide.md).
 
+## DICT client
+
+`internal/pix` has the client of the DICT API v2 (`NewDictClient(baseURL, ispb)`): `GetEntry`, `CreateEntry`, `UpdateEntry`,
+`DeleteEntry` and `CheckKeys`, plus `NewEndToEndID` and `NewRequestID`. Failures come back as `*APIError` that matches
+`ErrNotFound`, `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable` and others with `errors.Is`; `pix.Retryable`
+tells whether trying again can work. The client does not retry: that depends on the payment flow.
+
 ## Test accounts
 
 `make up` loads three accounts, with the same people, branch and account numbers as the wallet's accounts in the DICT
@@ -90,6 +97,7 @@ With the API running, `GetBalance` of Ana (for example with `grpcurl`, or a clie
 ```sh
 go test ./...           # unit tests; the ones that need PostgreSQL are skipped
 make test-integration   # all of them, on the wallet's PostgreSQL (needs Docker); each test gets its own schema
+WALLET_TEST_DICT_URL=http://localhost:8080/api/v2 go test ./internal/pix   # also the DICT client against the running mock (`make setup`)
 ```
 
 ## Ports

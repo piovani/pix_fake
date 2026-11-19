@@ -189,10 +189,13 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
   overdraft), settle and release, plus an append-only log of every movement. Tested on PostgreSQL, including concurrent
   reservations. `GetBalance` is the first gRPC call. The statement, which reads the log, comes with the features.
 - [ ] **Pix integration layer (participant side):**
-  - [ ] DICT client for the five implemented operations
+  - [x] DICT client for the five implemented operations (`wallet/internal/pix`: `GetEntry`, `CreateEntry`, `UpdateEntry`,
+    `DeleteEntry`, `CheckKeys`). Tested against a fake server; the tests against the running mock are written but were not
+    run yet (`WALLET_TEST_DICT_URL`, needs `make setup`)
   - [ ] SPI client
-  - [ ] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
-  - [ ] Mapping of Bacen errors to wallet behavior: `404`, `409`, `429`, `503`, rejected payments
+  - [x] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
+  - [ ] Mapping of Bacen errors to wallet behavior: `404`, `409`, `429`, `503` done for the DICT (`errors.Is` with `ErrNotFound`,
+    `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`); rejected payments come with the SPI
 - [ ] **Features:**
   - [ ] Register and remove a Pix key
   - [ ] Pay a key of another institution (outbound flow)
