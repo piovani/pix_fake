@@ -113,6 +113,9 @@ seed. Their IDs are fixed, so they can be used by hand:
 | `0a1b2c3d-0002-4000-8000-000000000002` | Bruno Lima | `0001` / `00234567` | R$ 500,00 |
 | `0a1b2c3d-0003-4000-8000-000000000003` | Padaria Pão Quente Ltda | `0001` / `00345678` | R$ 0,00 |
 
+The seed does not change accounts that already exist. A database created before account types existed keeps every account as
+`CACC`; to get Bruno's savings account, start from an empty one (`docker compose down -v` in `wallet/`, then `make up`).
+
 With the API running, `GetBalance` of Ana (for example with `grpcurl`, or a client generated from `gen/`) returns
 `available_cents: 100000`.
 
@@ -121,6 +124,7 @@ With the API running, `GetBalance` of Ana (for example with `grpcurl`, or a clie
 ```sh
 go test ./...           # unit tests; the ones that need PostgreSQL are skipped
 make test-integration   # all of them, on the wallet's PostgreSQL (needs Docker); each test gets its own schema
+make e2e                # from the repository root: the wallet's API and the DICT mock together, over gRPC (`wallet/e2e`)
 WALLET_TEST_DICT_URL=http://localhost:8080/api/v2 WALLET_TEST_SPI_URL=http://localhost:8081/api/v1 go test ./internal/pix   # also the DICT and SPI clients against the running mocks (`make setup`)
 ```
 

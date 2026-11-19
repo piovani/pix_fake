@@ -1,23 +1,32 @@
 #!/usr/bin/env bash
-# Runs the closing test: starts PostgreSQL for the DICT mock and the SPI mock, loads the seed data, starts both
-# mocks, runs e2e/closing_test.go against them and stops the mocks. Needs Docker and Go.
+# Runs the end-to-end tests: starts PostgreSQL for the DICT mock and the SPI mock, loads the seed data, starts both
+# mocks and runs e2e/closing_test.go against them (the mocks together). Then starts the wallet's API on a throwaway schema
+# of the wallet's PostgreSQL, pointed at those mocks, and runs wallet/e2e against it (the wallet's flows). Needs Docker
+# and Go.
 #
 #   make e2e
 #
-# The mocks listen on 18080 (DICT) and 18081 (SPI), so a mock you already have running on its usual port is
-# not touched. The SPI runs with a 2-second payment timeout, to try the timeout scenario without a 40-second wait.
-# The PostgreSQL containers are left running; stop them with `make db-down` in mock/dict and mock/spi.
+# The mocks listen on 18080 (DICT) and 18081 (SPI) and the wallet on 19090, so what you already have running on the
+# usual ports is not touched. The wallet leg uses its own schema in the wallet's database, dropped at the end, so the data
+# of `make up` stays. The SPI runs with a 2-second payment timeout, to try the timeout scenario without a 40-second wait.
+# The PostgreSQL containers are left running; stop them with `make db-down` in mock/dict and mock/spi, and
+# `docker compose down` in wallet/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DICT_PORT="${DICT_PORT:-18080}"
 SPI_PORT="${SPI_PORT:-18081}"
+WALLET_PORT="${WALLET_PORT:-19090}"
 TIMEOUT="${PIX_E2E_TIMEOUT:-2s}"
+SCHEMA=""
 
 WORK="$(mktemp -d)"
 pids=()
 cleanup() {
   for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done
+  if [ -n "$SCHEMA" ]; then
+    (cd "$ROOT/wallet" && docker compose exec -T postgres psql -q -U wallet -d wallet -c "DROP SCHEMA IF EXISTS $SCHEMA CASCADE") >/dev/null 2>&1 || true
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -35,10 +44,12 @@ wait_healthy() { # url name
 echo "==> starting PostgreSQL"
 (cd "$ROOT/mock/dict" && docker compose up -d --wait postgres)
 (cd "$ROOT/mock/spi" && docker compose up -d --wait postgres)
+(cd "$ROOT/wallet" && docker compose up -d --wait)
 
 echo "==> building"
 (cd "$ROOT/mock/dict" && go build -o "$WORK/dict" ./cmd/dict && go build -o "$WORK/dict-seed" ./cmd/seed)
 (cd "$ROOT/mock/spi" && go build -o "$WORK/spi" ./cmd/spi && go build -o "$WORK/spi-seed" ./cmd/seed)
+(cd "$ROOT/wallet" && go build -o "$WORK/wallet-api" ./cmd/api && go build -o "$WORK/wallet-seed" ./cmd/seed)
 
 echo "==> loading the seed data"
 "$WORK/dict-seed"
@@ -57,8 +68,27 @@ rc=0
 (cd "$ROOT/e2e" && DICT_URL="http://localhost:$DICT_PORT" SPI_URL="http://localhost:$SPI_PORT" PIX_E2E_TIMEOUT="$TIMEOUT" \
   go test -count=1 -v ./...) || rc=$?
 
+if [ "$rc" -eq 0 ]; then
+  echo "==> starting the wallet on a throwaway schema"
+  SCHEMA="e2e_$(date +%s)_$$"
+  (cd "$ROOT/wallet" && docker compose exec -T postgres psql -q -U wallet -d wallet -c "CREATE SCHEMA $SCHEMA")
+  export WALLET_DATABASE_URL="postgres://wallet:wallet@localhost:5434/wallet?sslmode=disable&search_path=$SCHEMA"
+  "$WORK/wallet-seed"
+  WALLET_GRPC_ADDR=":$WALLET_PORT" DICT_BASE_URL="http://localhost:$DICT_PORT/api/v2" SPI_BASE_URL="http://localhost:$SPI_PORT/api/v1" \
+    "$WORK/wallet-api" >"$WORK/wallet.log" 2>&1 &
+  pids+=("$!")
+  for _ in $(seq 1 50); do
+    if (exec 3<>"/dev/tcp/localhost/$WALLET_PORT") 2>/dev/null; then break; fi
+    sleep 0.2
+  done
+
+  echo "==> running the wallet end-to-end tests"
+  (cd "$ROOT/wallet" && WALLET_E2E_GRPC_ADDR="localhost:$WALLET_PORT" WALLET_E2E_DICT_URL="http://localhost:$DICT_PORT/api/v2" \
+    go test -count=1 -v ./e2e) || rc=$?
+fi
+
 if [ "$rc" -ne 0 ]; then
-  echo "==> the test failed; the mocks' logs:" >&2
-  tail -n 30 "$WORK/dict.log" "$WORK/spi.log" >&2 || true
+  echo "==> a test failed; the logs:" >&2
+  tail -n 30 "$WORK/dict.log" "$WORK/spi.log" "$WORK/wallet.log" >&2 2>/dev/null || true
 fi
 exit "$rc"

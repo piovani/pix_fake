@@ -204,11 +204,9 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
   reservations. `GetBalance` is the first gRPC call. The statement, which reads the log, comes with the features.
 - [ ] **Pix integration layer (participant side):**
   - [x] DICT client for the five implemented operations (`wallet/internal/pix`: `GetEntry`, `CreateEntry`, `UpdateEntry`,
-    `DeleteEntry`, `CheckKeys`). Tested against a fake server; the tests against the running mock are written but were not
-    run yet (`WALLET_TEST_DICT_URL`, needs `make setup`)
+    `DeleteEntry`, `CheckKeys`). Tested against a fake server and against the running mock (`WALLET_TEST_DICT_URL`, needs `make setup`)
   - [x] SPI client, first part (`wallet/internal/pix`): send messages, read and acknowledge the stream, build `pacs.008` and
-    `pacs.002`, read `pacs.008`, `pacs.002` and `admi.002`. Tested against a fake server; the tests against the running mock are
-    written but were not run yet (`WALLET_TEST_SPI_URL`)
+    `pacs.002`, read `pacs.008`, `pacs.002` and `admi.002`. Tested against a fake server and against the running mock (`WALLET_TEST_SPI_URL`)
   - [ ] SPI client, second part: returns (`pacs.004`) and the report of transactions settled outside the SPI (`trck.002`, `camt.025`)
   - [x] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
   - [ ] Mapping of Bacen errors to wallet behavior: `404`, `409`, `429`, `503` done for the DICT (`errors.Is` with `ErrNotFound`,
@@ -217,7 +215,9 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
 - [ ] **Features:**
   - [x] Register and remove a Pix key (module `pixkey`: `RegisterKey`, `ListKeys`, `RemoveKey`). Registering validates, registers in
     the DICT with the client's `request_id` and stores the wallet's own copy; removing asks the DICT first and counts a key it no
-    longer has as removed, so every call can be repeated after a failure. Written but not run on PostgreSQL yet (no Docker).
+    longer has as removed, so every call can be repeated after a failure. Tested on PostgreSQL and end to end through gRPC (`make e2e`,
+    [`wallet/e2e`](../wallet/e2e/keys_test.go)): the key shows up in the DICT for another bank, repeating a call is safe, and the
+    DICT failing (`503`, `429`) leaves nothing half done.
     Not built: a check that finds keys the DICT and the wallet's copy disagree on
   - [ ] Pay a key of another institution (outbound flow)
   - [ ] Pay a key of another wallet user (book transfer): recognize the wallet's own keys, settle in the ledger within
@@ -237,7 +237,7 @@ register and remove a key.
 
 Can start before Phase 3 and grows with each mock.
 
-- [x] **Root `make test` and `make e2e`.** `make test` runs the tests of both mocks; `make e2e` runs the closing test on
+- [x] **Root `make test` and `make e2e`.** `make test` runs the tests of both mocks and the wallet; `make e2e` runs the closing test of the mocks and the wallet's end-to-end tests (`wallet/e2e`, the real API on a throwaway schema), on
   PostgreSQL ([`scripts/e2e.sh`](../scripts/e2e.sh)).
 - [x] **Root `make setup`.** One command that builds and starts PostgreSQL and both mocks, with the migrations applied and the
   seed data loaded ([`docker-compose.yml`](../docker-compose.yml)); also `down`, `reset`, `logs`, `status` and `check` (the

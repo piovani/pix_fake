@@ -16,7 +16,7 @@ test-integration: ## all tests of both mocks and the wallet, including those on 
 lint: ## gofmt and go vet on every module
 	@for m in $(MODULES); do echo "==> $$m"; (cd $$m && test -z "$$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above need formatting"; exit 1; }; go vet ./...) || exit 1; done
 
-e2e: ## the closing test on its own PostgreSQL (needs Docker), see scripts/e2e.sh
+e2e: ## the closing test of the mocks and the wallet's end-to-end tests, on their own PostgreSQL (needs Docker; stop make setup first), see scripts/e2e.sh
 	./scripts/e2e.sh
 
 setup: ## build and start PostgreSQL and both mocks, with the seed data loaded (needs Docker)

@@ -208,7 +208,7 @@ pix_fake/
 │   ├── integration-guide.md # how to build a participant against the mocks
 │   └── roadmap.md           # plan: phases, status, backlog, open decisions
 ├── e2e/                     # closing test: both mocks together, over HTTP and XML
-├── scripts/e2e.sh           # starts both mocks on Postgres and runs the closing test
+├── scripts/e2e.sh           # starts both mocks and the wallet's API, runs the closing test and the wallet's e2e tests
 ├── mock/
 │   ├── dict/                # DICT mock (Go + Postgres), see its README
 │   └── spi/                 # SPI mock (Go + Postgres), see its README
@@ -225,7 +225,7 @@ make down    # stop (the data stays)
 ```
 
 DICT at `http://localhost:8080`, SPI at `http://localhost:8081`. Other targets: `make test` (unit and HTTP tests, no database),
-`make test-integration` (also on PostgreSQL), `make lint`, `make e2e` (the closing test on its own databases, as CI runs it),
+`make test-integration` (also on PostgreSQL), `make lint`, `make e2e` (the closing test and the wallet's end-to-end tests, on their own databases, as CI runs it; stop `make setup` first),
 `make logs`, `make status`.
 
 The closing test plays the wallet and a bank: it looks a seeded key up in the DICT, pays it through the SPI and gets the
