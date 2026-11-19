@@ -222,3 +222,28 @@ func TestConcurrentReservationsNeverSpendTheSameMoney(t *testing.T) {
 		t.Fatalf("balance: %+v", b)
 	}
 }
+
+func TestAccountReturnsItsData(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+
+	opened, err := l.Open(ctx, ledger.Account{Branch: "0001", Number: "777", HolderName: "Bruno", TaxID: "11144477735", Type: "SVGS"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.Account(ctx, opened.ID)
+	if err != nil || got.Number != "777" || got.HolderName != "Bruno" || got.TaxID != "11144477735" || got.Type != "SVGS" || got.OpenedAt.IsZero() {
+		t.Fatalf("account: %+v, %v", got, err)
+	}
+
+	plain, _ := l.Open(ctx, ledger.Account{Branch: "0001", Number: "778", HolderName: "Ana", TaxID: "52998224725"})
+	if plain.Type != "CACC" {
+		t.Fatalf("default type = %q", plain.Type)
+	}
+	if _, err := l.Account(ctx, "5c1f3a52-6b7d-4e0a-9c11-2d5a7b3e9f01"); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Fatalf("unknown account: %v", err)
+	}
+	if _, err := l.Account(ctx, "not-a-uuid"); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Fatalf("bad id: %v", err)
+	}
+}

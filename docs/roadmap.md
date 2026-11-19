@@ -146,7 +146,7 @@ Bacen contracts.
   in `wallet/` generates the Go code into `wallet/gen`, which is committed so clients can use it. Toward Bacen the wallet
   still speaks HTTP and XML, as the contracts require; gRPC is only the wallet's own API.
 - **Modular monolith, to be split into microservices later.** Modules under `wallet/internal`: `ledger` (accounts, balances),
-  `payment` (flows and status), `pix` (the integration layer), with `grpcapi` as the adapter. A module uses another only through its
+  `payment` (flows and status), `pix` (the integration layer, Bacen clients only), `pixkey` (the wallet's keys), with `grpcapi` as the adapter. A module uses another only through its
   exported API and never its tables, which is what makes the later split possible.
 - **Two processes from the same module:** the gRPC API (`cmd/api`) and the worker (`cmd/worker`), started next to each
   other. The worker consumes the SPI output stream and handles timeouts and retries.
@@ -215,7 +215,9 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`); rejected payments come with the SPI
 - [x] **Proto contract for keys, payments and the statement** (`account.proto`, `key.proto`, `payment.proto`).
 - [ ] **Features:**
-  - [ ] Register and remove a Pix key
+  - [ ] Register and remove a Pix key: `RegisterKey` is done (module `pixkey`: validates, registers in the DICT with the client's
+    `request_id`, stores the wallet's own copy; a retry after any failure is safe). `RemoveKey`, `ListKeys` and the
+    check that keeps the DICT and the wallet's copy in agreement are next. Written but not run on PostgreSQL yet (no Docker)
   - [ ] Pay a key of another institution (outbound flow)
   - [ ] Pay a key of another wallet user (book transfer): recognize the wallet's own keys, settle in the ledger within
     40 seconds, never query the DICT or send a `pacs.008`, and report the transaction afterwards

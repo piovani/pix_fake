@@ -25,7 +25,7 @@ const (
 func entries() []entry {
 	return []entry{
 		{ledger.Account{ID: AnaID, Branch: "0001", Number: "00123456", HolderName: "Ana Souza", TaxID: "52998224725"}, 100000},
-		{ledger.Account{ID: BrunoID, Branch: "0001", Number: "00234567", HolderName: "Bruno Lima", TaxID: "11144477735"}, 50000},
+		{ledger.Account{ID: BrunoID, Branch: "0001", Number: "00234567", HolderName: "Bruno Lima", TaxID: "11144477735", Type: "SVGS"}, 50000},
 		{ledger.Account{ID: PadariaID, Branch: "0001", Number: "00345678", HolderName: "Padaria Pão Quente Ltda", TaxID: "11222333000181"}, 0},
 	}
 }

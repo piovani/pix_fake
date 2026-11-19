@@ -20,8 +20,7 @@ type Ledger interface {
 	Balance(ctx context.Context, accountID string) (ledger.Balance, error)
 }
 
-// accountService answers wallet.v1.AccountService. GetStatement returns Unimplemented for now; the key and payment
-// services are registered when their modules exist.
+// accountService answers wallet.v1.AccountService. GetStatement returns Unimplemented for now.
 type accountService struct {
 	walletv1.UnimplementedAccountServiceServer
 	ledger Ledger
@@ -41,10 +40,13 @@ func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanc
 	return &walletv1.GetBalanceResponse{AvailableCents: b.AvailableCents, ReservedCents: b.ReservedCents}, nil
 }
 
-// New builds the gRPC server with the account service and the health service.
-func New(l Ledger) *grpc.Server {
+// New builds the gRPC server with the account service, the key service (when keys is not nil) and the health service.
+func New(l Ledger, keys Keys) *grpc.Server {
 	s := grpc.NewServer()
 	walletv1.RegisterAccountServiceServer(s, &accountService{ledger: l})
+	if keys != nil {
+		walletv1.RegisterKeyServiceServer(s, &keyService{keys: keys})
+	}
 
 	h := health.NewServer()
 	healthpb.RegisterHealthServer(s, h)

@@ -11,6 +11,8 @@ import (
 
 	"pixfake/wallet/internal/grpcapi"
 	"pixfake/wallet/internal/ledger"
+	"pixfake/wallet/internal/pix"
+	"pixfake/wallet/internal/pixkey"
 	"pixfake/wallet/internal/platform/config"
 	"pixfake/wallet/internal/platform/db"
 )
@@ -22,7 +24,7 @@ func main() {
 		slog.Error("migrate", "err", err)
 		os.Exit(1)
 	}
-	
+
 	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("connect to the database", "err", err)
@@ -35,7 +37,10 @@ func main() {
 		slog.Error("listen", "addr", cfg.GRPCAddr, "err", err)
 		os.Exit(1)
 	}
-	srv := grpcapi.New(ledger.New(pool))
+	accounts := ledger.New(pool)
+	dict := pix.NewDictClient(cfg.DictBaseURL, cfg.ISPB)
+	keys := pixkey.New(accounts, dict, pixkey.NewPostgres(pool), cfg.ISPB)
+	srv := grpcapi.New(accounts, keys)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

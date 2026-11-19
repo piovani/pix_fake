@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,6 +33,8 @@ type Account struct {
 	Number     string
 	HolderName string
 	TaxID      string
+	Type       string    // CACC (the default), SVGS or TRAN
+	OpenedAt   time.Time // set when read
 }
 
 // Balance is the money of an account, in centavos. Available can be spent; Reserved is held by payments in flight.
@@ -76,12 +79,24 @@ func New(pool *pgxpool.Pool) *Ledger { return &Ledger{pool: pool} }
 // Open creates an account with a zero balance. It returns ErrAccountExists if the ID or the branch and number are taken.
 func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 	err := l.pool.QueryRow(ctx, `
-		INSERT INTO accounts (id, branch, number, holder_name, tax_id)
-		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5)
-		RETURNING id`,
-		strings.ToLower(a.ID), a.Branch, a.Number, a.HolderName, a.TaxID).Scan(&a.ID)
+		INSERT INTO accounts (id, branch, number, holder_name, tax_id, account_type)
+		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, COALESCE(NULLIF($6, ''), 'CACC'))
+		RETURNING id, account_type, created_at`,
+		strings.ToLower(a.ID), a.Branch, a.Number, a.HolderName, a.TaxID, a.Type).Scan(&a.ID, &a.Type, &a.OpenedAt)
 	if isCode(err, "23505") {
 		return Account{}, ErrAccountExists
+	}
+	return a, err
+}
+
+// Account returns an account with its data.
+func (l *Ledger) Account(ctx context.Context, accountID string) (Account, error) {
+	var a Account
+	err := l.pool.QueryRow(ctx, `
+		SELECT id, branch, number, holder_name, tax_id, account_type, created_at FROM accounts WHERE id = $1`,
+		strings.ToLower(accountID)).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.OpenedAt)
+	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
+		return Account{}, ErrAccountNotFound
 	}
 	return a, err
 }
