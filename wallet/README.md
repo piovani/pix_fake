@@ -26,7 +26,7 @@ Inside the same repository, the wallet is a separate system:
 
 ```
 wallet/
-├── api/proto/wallet/v1/   # the gRPC contract
+├── api/proto/wallet/v1/   # the gRPC contract: account.proto, key.proto, payment.proto
 ├── migrations/            # SQL migrations (golang-migrate), embedded in the binary
 ├── gen/                   # generated Go code (make proto), committed for the clients
 ├── cmd/api/               # process 1: the gRPC API
@@ -70,6 +70,21 @@ start with an empty database: `docker compose down` or `docker compose down -v` 
 
 The mocks alone are `make setup` at the root (DICT on `:8080`, SPI on `:8081`). How to call them is in the
 [integration guide](../docs/integration-guide.md).
+
+## gRPC contract
+
+Three services in `api/proto/wallet/v1`, one per module. Only `GetBalance` is implemented so far; the rest is the contract the
+features will fill.
+
+| Service | Calls |
+|---------|-------|
+| `AccountService` | `GetBalance`, `GetStatement` |
+| `KeyService` | `RegisterKey`, `ListKeys`, `RemoveKey` |
+| `PaymentService` | `ResolveKey`, `CreatePayment`, `GetPayment`, `ListPayments`, `ReturnPayment` |
+
+To pay, call `ResolveKey` (it shows who owns the key) and then `CreatePayment` with the `resolution_id`. A payment through the SPI
+comes back `PENDING` and is read later; a payment to another customer of the wallet comes back `SETTLED`. Money is in centavos.
+The decisions are in the [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet).
 
 ## DICT client
 

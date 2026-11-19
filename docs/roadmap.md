@@ -157,8 +157,22 @@ Bacen contracts.
   example the conditional `UPDATE ... WHERE available_cents >= $1` that makes reserving safe. Transactions go through a
   helper in `platform/db` (`InTx`, over `pgx.BeginTxFunc`), so modules do not handle `pgx.Tx` lifecycle.
 - **Migrations: golang-migrate,** SQL files in `wallet/migrations` embedded in the binary. The API and the seed command apply them at start.
-- **Not decided yet:** the HTTP/XML client for Bacen, and the proto contract for keys, payments and the statement (the
-  current one has a single call).
+- **Contract: three services, one per module** (`wallet/api/proto/wallet/v1`): `AccountService` (balance, statement),
+  `KeyService` (register, list, remove) and `PaymentService` (resolve a key, pay, get, list, return). Decisions:
+  - **Paying takes two steps**, so the user sees who is paid before confirming: `ResolveKey` looks the key up (in the DICT,
+    or in the wallet's records for a book transfer) and returns a `resolution_id`; `CreatePayment` uses it. The
+    `resolution_id` carries the `EndToEndId` created before the lookup and makes the payment idempotent: one resolution,
+    at most one payment.
+  - **`CreatePayment` does not wait for the SPI.** A payment through the SPI returns `PENDING` and the client reads it
+    with `GetPayment` or `ListPayments`; a book transfer returns `SETTLED`. Pushing status changes (a streaming call) is left
+    for later.
+  - **The statement and the payment list are different things.** The statement (`GetStatement`) is money that moved,
+    read from the ledger log; `ListPayments` is every payment with its status, including the ones in flight and the rejected.
+  - **A return is a payment** of type `RETURN` with the id of the payment it returns; a received payment shows how much was
+    already returned.
+  - **Idempotency keys are chosen by the client** (`request_id`, `resolution_id`) and errors are gRPC status codes.
+  - Only `AccountService.GetBalance` is built; the rest of the contract is there for the modules to implement.
+- **Not decided yet:** the HTTP/XML client for Bacen beyond the DICT and SPI clients already built (`internal/pix`).
 
 ### Decision: the wallet is independent of the mocks
 
@@ -199,6 +213,7 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
   - [x] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
   - [ ] Mapping of Bacen errors to wallet behavior: `404`, `409`, `429`, `503` done for the DICT (`errors.Is` with `ErrNotFound`,
     `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`); rejected payments come with the SPI
+- [x] **Proto contract for keys, payments and the statement** (`account.proto`, `key.proto`, `payment.proto`).
 - [ ] **Features:**
   - [ ] Register and remove a Pix key
   - [ ] Pay a key of another institution (outbound flow)
@@ -290,7 +305,6 @@ Listed so they are not forgotten. None is agreed.
 | Decision | Needed for |
 |----------|------------|
 | The wallet's real ISPB (the placeholder `99000001` stays for now) | Seed data, wallet configuration |
-| Proto contract for keys, payments and the statement | Features |
 | Whether users need portability, that is, claims | Backlog |
 | Where MED 2 lives: inside `mock/dict` or as a separate mock | Phase 4 |
 | Where continuous integration runs | Environment and quality |

@@ -1,5 +1,4 @@
-// Package grpcapi is the wallet's gRPC adapter: it turns calls into use of the modules (ledger, payment, pix) and
-// holds no business rule. Every service of api/proto is registered here.
+// Package grpcapi is the wallet's gRPC adapter: it turns calls into use of the modules and holds no business rule.
 package grpcapi
 
 import (
@@ -16,19 +15,19 @@ import (
 	"pixfake/wallet/internal/ledger"
 )
 
-// Ledger is what the API needs from the ledger module. It is declared here, by the consumer, so the adapter can be
-// tested without a database.
+// Ledger is what the API needs from the ledger module, declared here so the adapter is tested without a database.
 type Ledger interface {
 	Balance(ctx context.Context, accountID string) (ledger.Balance, error)
 }
 
-// walletService answers wallet.v1.WalletService. Calls that the modules do not support yet return Unimplemented.
-type walletService struct {
-	walletv1.UnimplementedWalletServiceServer
+// accountService answers wallet.v1.AccountService. GetStatement returns Unimplemented for now; the key and payment
+// services are registered when their modules exist.
+type accountService struct {
+	walletv1.UnimplementedAccountServiceServer
 	ledger Ledger
 }
 
-func (s *walletService) GetBalance(ctx context.Context, req *walletv1.GetBalanceRequest) (*walletv1.GetBalanceResponse, error) {
+func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanceRequest) (*walletv1.GetBalanceResponse, error) {
 	if req.GetAccountId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "account_id is required")
 	}
@@ -42,10 +41,10 @@ func (s *walletService) GetBalance(ctx context.Context, req *walletv1.GetBalance
 	return &walletv1.GetBalanceResponse{AvailableCents: b.AvailableCents, ReservedCents: b.ReservedCents}, nil
 }
 
-// New builds the gRPC server with the wallet service and the standard health service.
+// New builds the gRPC server with the account service and the health service.
 func New(l Ledger) *grpc.Server {
 	s := grpc.NewServer()
-	walletv1.RegisterWalletServiceServer(s, &walletService{ledger: l})
+	walletv1.RegisterAccountServiceServer(s, &accountService{ledger: l})
 
 	h := health.NewServer()
 	healthpb.RegisterHealthServer(s, h)

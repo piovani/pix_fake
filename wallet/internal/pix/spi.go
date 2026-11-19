@@ -22,11 +22,11 @@ const (
 	xmlType     = "application/xml; charset=utf-8"
 )
 
-// ErrStreamGone means the stream path is too old: start again with Pull(ctx, "").
+// ErrStreamGone means the stream path is too old: open a new stream with Pull(ctx, "").
 var ErrStreamGone = errors.New("spi: stream path too old")
 
-// SPIClient is the participant side of the SPI ICOM interface: it sends messages and reads the participant's output
-// stream. It does not retry: sending the same message again is safe (the SPI is idempotent by EndToEndId).
+// SPIClient sends messages to the SPI and reads the participant's output stream. It does not retry; sending the same
+// message again is safe.
 type SPIClient struct {
 	baseURL string
 	origin  string
@@ -34,7 +34,6 @@ type SPIClient struct {
 	http    *http.Client
 }
 
-// NewSPIClient creates a client for the SPI at baseURL (including /api/v1) acting as the participant ispb.
 func NewSPIClient(baseURL, ispb string, opts ...SPIOption) *SPIClient {
 	c := &SPIClient{baseURL: strings.TrimRight(baseURL, "/"), ispb: ispb, http: &http.Client{Timeout: spiTimeout}}
 	if u, err := url.Parse(baseURL); err == nil {
@@ -50,15 +49,13 @@ type SPIOption func(*SPIClient)
 
 func WithSPIHTTPClient(h *http.Client) SPIOption { return func(c *SPIClient) { c.http = h } }
 
-// Message is one message read from the stream. ResourceID identifies it: a message not acknowledged is delivered again
-// with the same one.
+// Message is one message of the stream. A message not acknowledged is delivered again with the same ResourceID.
 type Message struct {
 	ResourceID string
 	Body       []byte
 }
 
-// Send sends 1 to 10 messages and returns their PI-ResourceIds. A 201 only means the SPI stored them; the result comes
-// through the stream.
+// Send sends 1 to 10 messages and returns their PI-ResourceIds. The result of a payment comes through the stream.
 func (c *SPIClient) Send(ctx context.Context, bodies ...[]byte) ([]string, error) {
 	if len(bodies) < 1 || len(bodies) > maxMessages {
 		return nil, fmt.Errorf("%w: Send takes 1 to %d messages, got %d", ErrBadRequest, maxMessages, len(bodies))
@@ -80,8 +77,7 @@ func (c *SPIClient) Send(ctx context.Context, bodies ...[]byte) ([]string, error
 	return strings.Split(resp.Header.Get("PI-ResourceId"), ","), nil
 }
 
-// Pull reads the next messages of the stream, waiting a few seconds for them. Pass "" to open a stream, then the
-// returned next path on every call. No messages is not an error. Call Ack with the last next path to mark what was read.
+// Pull reads the next messages, waiting a few seconds for them. Pass "" to open a stream, then the returned next path.
 func (c *SPIClient) Pull(ctx context.Context, next string) (msgs []Message, nextPath string, err error) {
 	target := c.baseURL + "/out/" + c.ispb + "/stream/start"
 	if next != "" {
@@ -107,7 +103,7 @@ func (c *SPIClient) Pull(ctx context.Context, next string) (msgs []Message, next
 	return msgs, nextPath, err
 }
 
-// Ack closes the stream at the given next path, marking everything read before it as received.
+// Ack marks everything read up to the next path as received.
 func (c *SPIClient) Ack(ctx context.Context, next string) error {
 	if next == "" {
 		return fmt.Errorf("%w: Ack needs the next path of a Pull", ErrBadRequest)
@@ -188,8 +184,7 @@ func readMessages(resp *http.Response, raw []byte) ([]Message, error) {
 	}
 }
 
-// SPIError is a problem+xml answer of the SPI. It matches ErrStreamGone, ErrBadRequest, ErrForbidden, ErrRateLimited
-// and ErrUnavailable with errors.Is.
+// SPIError is a problem+xml answer of the SPI.
 type SPIError struct {
 	Status     int
 	Kind       string

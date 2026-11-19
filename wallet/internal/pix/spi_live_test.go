@@ -9,8 +9,7 @@ import (
 	"time"
 )
 
-// These tests need the running mocks (`make setup`), WALLET_TEST_SPI_URL (http://localhost:8081/api/v1) and
-// WALLET_TEST_DICT_URL (http://localhost:8080/api/v2).
+// These tests need the running mocks (`make setup`) and WALLET_TEST_SPI_URL, such as http://localhost:8081/api/v1.
 func liveSPI(t *testing.T) *SPIClient {
 	t.Helper()
 	base := os.Getenv("WALLET_TEST_SPI_URL")
@@ -20,7 +19,7 @@ func liveSPI(t *testing.T) *SPIClient {
 	return NewSPIClient(base, "99000001")
 }
 
-// readUntil pulls the stream until a message for which found returns true arrives, then acknowledges what it read.
+// readUntil pulls the stream until found returns true for a message, then acknowledges.
 func readUntil(t *testing.T, c *SPIClient, found func(kind string, body []byte) bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -92,7 +91,7 @@ func TestLiveReceiveAPayment(t *testing.T) {
 	base := strings.Replace(os.Getenv("WALLET_TEST_SPI_URL"), "/api/v1", "", 1)
 	ctx := context.Background()
 
-	// the control API stands in for Banco Alfa's systems
+	// the control API makes Banco Alfa pay
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/mock/inbound/payments", strings.NewReader(
 		`{"from":"99000002","to":"99000001","to_account":"00123456","amount":"10.50","key":"ana.souza@example.com"}`))
 	resp, err := http.DefaultClient.Do(req)

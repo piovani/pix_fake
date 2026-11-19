@@ -1,0 +1,56 @@
+// The wallet's gRPC contract, versioned by the package (a breaking change becomes wallet.v2).
+// Money is an integer number of centavos. A call that changes something takes a client-chosen idempotency key
+// (request_id or resolution_id): repeating it returns the original result. UNAVAILABLE and RESOURCE_EXHAUSTED mean
+// Bacen is down or limiting: retry with the same key.
+syntax = "proto3";
+
+package wallet.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "pixfake/wallet/gen/wallet/v1;walletv1";
+
+service AccountService {
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+
+  // GetStatement lists the movements of an account, newest first.
+  rpc GetStatement(GetStatementRequest) returns (GetStatementResponse);
+}
+
+message GetBalanceRequest {
+  string account_id = 1;
+}
+
+message GetBalanceResponse {
+  int64 available_cents = 1;
+  // Held by payments in flight.
+  int64 reserved_cents = 2;
+}
+
+message GetStatementRequest {
+  string account_id = 1;
+  // At most 100; 0 means 50.
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message GetStatementResponse {
+  repeated StatementEntry entries = 1;
+  string next_page_token = 2;
+}
+
+// Money that moved. Payments in flight are in PaymentService.ListPayments, not here.
+message StatementEntry {
+  string id = 1;
+  EntryType type = 2;
+  int64 amount_cents = 3;
+  string payment_id = 4;
+  string counterparty_name = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+enum EntryType {
+  ENTRY_TYPE_UNSPECIFIED = 0;
+  ENTRY_TYPE_CREDIT = 1;
+  ENTRY_TYPE_DEBIT = 2;
+}

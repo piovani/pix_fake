@@ -63,7 +63,7 @@ func TestHealthIsServing(t *testing.T) {
 
 func TestGetBalance(t *testing.T) {
 	l := fakeLedger{balances: map[string]ledger.Balance{"acc": {AvailableCents: 6000, ReservedCents: 4000}}}
-	client := walletv1.NewWalletServiceClient(dial(t, l))
+	client := walletv1.NewAccountServiceClient(dial(t, l))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -80,7 +80,7 @@ func TestGetBalance(t *testing.T) {
 }
 
 func TestGetBalanceHidesInternalErrors(t *testing.T) {
-	client := walletv1.NewWalletServiceClient(dial(t, fakeLedger{err: errors.New("connection refused to 10.0.0.5")}))
+	client := walletv1.NewAccountServiceClient(dial(t, fakeLedger{err: errors.New("connection refused to 10.0.0.5")}))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

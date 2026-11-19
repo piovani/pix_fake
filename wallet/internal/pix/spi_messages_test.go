@@ -31,7 +31,7 @@ func TestPacs008BuildAndParse(t *testing.T) {
 	xmlText := string(body)
 	for _, want := range []string{
 		`<Envelope xmlns="https://www.bcb.gov.br/pi/pacs.008/1.16">`,
-		`<Id>00038166</Id>`, // addressed to the SPI
+		`<Id>00038166</Id>`,
 		`<MsgDefIdr>pacs.008.spi.1.16</MsgDefIdr>`,
 		`<SttlmMtd>CLRG</SttlmMtd>`,
 		`<Prtry>PAGPRI</Prtry>`,
@@ -120,7 +120,7 @@ func TestPacs002BuildAndParse(t *testing.T) {
 	}
 }
 
-// What the SPI sends when a payment settles: it carries the settlement date, which the wallet never writes.
+// A settled payment as the SPI sends it, with the settlement date.
 const settledFromSPI = `<?xml version="1.0" encoding="UTF-8"?>
 <Envelope xmlns="https://www.bcb.gov.br/pi/pacs.002/1.18">
   <AppHdr><Fr><FIId><FinInstnId><Othr><Id>00038166</Id></Othr></FinInstnId></FIId></Fr>

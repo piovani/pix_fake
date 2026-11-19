@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	spiISPB = "00038166" // the ISPB messages to the SPI are addressed to
+	spiISPB = "00038166" // the SPI's own ISPB, the addressee of every message
 
 	msgPacs008 = "pacs.008.spi.1.16"
 	msgPacs002 = "pacs.002.spi.1.18"
@@ -21,24 +21,21 @@ const (
 	timeLayout = "2006-01-02T15:04:05.000Z"
 )
 
-// Kinds of message, as returned by MessageKind.
 const (
-	KindPacs008 = "pacs.008" // a payment to credit
-	KindPacs002 = "pacs.002" // the status of a payment
-	KindPacs004 = "pacs.004" // a return to credit
-	KindCamt025 = "camt.025" // the receipt of a report
-	KindAdmi002 = "admi.002" // the SPI could not process a message
+	KindPacs008 = "pacs.008"
+	KindPacs002 = "pacs.002"
+	KindPacs004 = "pacs.004"
+	KindCamt025 = "camt.025"
+	KindAdmi002 = "admi.002"
 )
 
-// Transaction statuses of a pacs.002.
 const (
-	StatusAccepted = "ACSP" // the receiving participant accepts a payment
-	StatusSettled  = "ACSC" // the SPI tells the payer's participant that it settled
-	StatusCredit   = "ACCC" // the SPI tells the receiving participant that it can credit
+	StatusAccepted = "ACSP" // from the receiving participant
+	StatusSettled  = "ACSC" // to the payer's participant
+	StatusCredit   = "ACCC" // to the receiving participant, which can now credit
 	StatusRejected = "RJCT"
 )
 
-// Party is one side of a payment.
 type Party struct {
 	ISPB        string
 	Name        string // used for the payer only
@@ -48,7 +45,7 @@ type Party struct {
 	AccountType AccountType
 }
 
-// PaymentOrder is the content of a pacs.008, to send or as read from the stream.
+// PaymentOrder is the content of a pacs.008.
 type PaymentOrder struct {
 	MsgID       string // set when read
 	EndToEndID  string
@@ -60,7 +57,7 @@ type PaymentOrder struct {
 	AcceptedAt  time.Time
 }
 
-// NewPacs008 builds the XML of a payment order sent by the participant ispb and returns it with its MsgId.
+// NewPacs008 builds the XML of a payment order and returns it with its MsgId.
 func NewPacs008(ispb string, o PaymentOrder, now time.Time) (msgID string, body []byte, err error) {
 	if o.AmountCents <= 0 {
 		return "", nil, fmt.Errorf("%w: amount must be positive", ErrBadRequest)
@@ -111,7 +108,6 @@ func NewPacs008(ispb string, o PaymentOrder, now time.Time) (msgID string, body 
 	return msgID, body, err
 }
 
-// ParsePacs008 reads the payments of a pacs.008 that the SPI forwarded to the wallet.
 func ParsePacs008(body []byte) ([]PaymentOrder, error) {
 	var m pacs008XML
 	if err := xml.Unmarshal(body, &m); err != nil {
@@ -150,7 +146,6 @@ func ParsePacs008(body []byte) ([]PaymentOrder, error) {
 	return out, nil
 }
 
-// TxStatus is the status of one payment or return in a pacs.002.
 type TxStatus struct {
 	InstrID    string // the EndToEndId of a payment, or the RtrId of a return
 	EndToEndID string
@@ -160,11 +155,9 @@ type TxStatus struct {
 	SettledAt  time.Time // filled by the SPI only
 }
 
-// Rejected reports whether the transaction was rejected.
 func (s TxStatus) Rejected() bool { return s.Status == StatusRejected }
 
-// NewPacs002 builds the answer of the wallet, as the receiving participant, to a payment: StatusAccepted, or
-// StatusRejected with a reason code. It returns the XML with its MsgId.
+// NewPacs002 builds the wallet's answer to a payment it received: StatusAccepted, or StatusRejected with a reason code.
 func NewPacs002(ispb string, st TxStatus, now time.Time) (msgID string, body []byte, err error) {
 	if st.EndToEndID == "" || st.Status == "" {
 		return "", nil, fmt.Errorf("%w: EndToEndId and status are required", ErrBadRequest)
@@ -199,7 +192,6 @@ func NewPacs002(ispb string, st TxStatus, now time.Time) (msgID string, body []b
 	return msgID, body, err
 }
 
-// ParsePacs002 reads the statuses of a pacs.002.
 func ParsePacs002(body []byte) ([]TxStatus, error) {
 	var m pacs002XML
 	if err := xml.Unmarshal(body, &m); err != nil {
@@ -222,7 +214,7 @@ func ParsePacs002(body []byte) ([]TxStatus, error) {
 	return out, nil
 }
 
-// Notification is an admi.002: the SPI could not process a message of the wallet.
+// Notification is an admi.002: the SPI could not process a message.
 type Notification struct {
 	Ref         string // the PI-ResourceId of the message that failed
 	Reason      string
@@ -238,7 +230,7 @@ func ParseAdmi002(body []byte) (Notification, error) {
 	return Notification{Ref: a.RltdRef.Ref, Reason: a.Rsn.Reason, Description: a.Rsn.Description}, nil
 }
 
-// MessageKind tells what a message from the stream is (KindPacs008, KindPacs002...), from its application header.
+// MessageKind tells what a message is (KindPacs008...), from its application header.
 func MessageKind(body []byte) (string, error) {
 	var env struct {
 		AppHdr struct {

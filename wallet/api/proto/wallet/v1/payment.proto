@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package wallet.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "pixfake/wallet/gen/wallet/v1;walletv1";
+
+// Paying takes two steps so the user sees who will be paid: ResolveKey, then CreatePayment.
+service PaymentService {
+  // ResolveKey looks the key up in the DICT, or in the wallet's records when it is the wallet's own (a book transfer).
+  // Errors: NOT_FOUND, UNAVAILABLE.
+  rpc ResolveKey(ResolveKeyRequest) returns (ResolveKeyResponse);
+
+  // CreatePayment returns PENDING for a payment through the SPI and SETTLED for a book transfer. One resolution makes at
+  // most one payment. Errors: FAILED_PRECONDITION (insufficient funds), NOT_FOUND (unknown or expired resolution),
+  // ALREADY_EXISTS (the resolution was used with another amount).
+  rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
+
+  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+
+  // ListPayments lists payments sent and received, newest first.
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+
+  // ReturnPayment sends back a received payment, in whole or in part. Errors: FAILED_PRECONDITION (not received, not
+  // settled, older than 90 days, or more than what is left to return).
+  rpc ReturnPayment(ReturnPaymentRequest) returns (ReturnPaymentResponse);
+}
+
+// The other side of a payment. A client should show the tax id masked.
+message Payee {
+  string name = 1;
+  string tax_id = 2;
+  // ISPB of the institution that holds the account.
+  string participant = 3;
+  string branch = 4;
+  string account_number = 5;
+  string account_type = 6; // CACC, SVGS or TRAN
+  string key = 7;
+}
+
+message ResolveKeyRequest {
+  string account_id = 1;
+  string key = 2;
+}
+
+message ResolveKeyResponse {
+  // Valid for a few minutes; carries the EndToEndId of the payment.
+  string resolution_id = 1;
+  Payee payee = 2;
+  // The payee is a customer of the wallet: the payment will not go through the SPI.
+  bool book_transfer = 3;
+}
+
+message CreatePaymentRequest {
+  string resolution_id = 1;
+  int64 amount_cents = 2;
+  // Up to 140 characters.
+  string message = 3;
+}
+
+message CreatePaymentResponse {
+  Payment payment = 1;
+}
+
+message GetPaymentRequest {
+  string payment_id = 1;
+}
+
+message GetPaymentResponse {
+  Payment payment = 1;
+}
+
+message ListPaymentsRequest {
+  string account_id = 1;
+  // At most 100; 0 means 50.
+  int32 page_size = 2;
+  string page_token = 3;
+  repeated PaymentStatus statuses = 4;
+}
+
+message ListPaymentsResponse {
+  repeated Payment payments = 1;
+  string next_page_token = 2;
+}
+
+message ReturnPaymentRequest {
+  string payment_id = 1;
+  int64 amount_cents = 2;
+  // A UUID v4.
+  string request_id = 3;
+}
+
+message ReturnPaymentResponse {
+  Payment payment = 1;
+}
+
+message Payment {
+  string id = 1;
+  string account_id = 2;
+  PaymentDirection direction = 3;
+  PaymentType type = 4;
+  PaymentStatus status = 5;
+  int64 amount_cents = 6;
+  string end_to_end_id = 7;
+  // The payee of a payment sent, the payer of one received.
+  Payee counterparty = 8;
+  string message = 9;
+  // When rejected: the Pix reason code (AC03, AB03, FRAD...) and a text for the user.
+  string reject_code = 10;
+  string reject_reason = 11;
+  // For a return: the payment it returns.
+  string original_payment_id = 12;
+  // For a received payment: how much was already returned.
+  int64 returned_cents = 13;
+  google.protobuf.Timestamp created_at = 14;
+  // Unset while pending.
+  google.protobuf.Timestamp finished_at = 15;
+}
+
+enum PaymentDirection {
+  PAYMENT_DIRECTION_UNSPECIFIED = 0;
+  PAYMENT_DIRECTION_OUTBOUND = 1;
+  PAYMENT_DIRECTION_INBOUND = 2;
+}
+
+enum PaymentType {
+  PAYMENT_TYPE_UNSPECIFIED = 0;
+  PAYMENT_TYPE_PIX = 1;           // through the SPI
+  PAYMENT_TYPE_BOOK_TRANSFER = 2; // settled in the ledger
+  PAYMENT_TYPE_RETURN = 3;
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING = 1;  // the amount is reserved
+  PAYMENT_STATUS_SETTLED = 2;
+  PAYMENT_STATUS_REJECTED = 3; // including timeout; the reserved amount went back
+}
