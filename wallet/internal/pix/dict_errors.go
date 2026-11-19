@@ -7,17 +7,17 @@ import (
 	"time"
 )
 
-// Use errors.Is with these on the error returned by a DictClient method.
+// Use errors.Is with these on the errors of DictClient and SPIClient.
 var (
 	ErrNotFound             = errors.New("dict: key not found")
 	ErrConflict             = errors.New("dict: key already registered")
 	ErrBookTransfer         = errors.New("dict: key held by the requesting participant")
 	ErrRequestIDAlreadyUsed = errors.New("dict: request id already used with other data")
-	ErrBadRequest           = errors.New("dict: invalid request")
-	ErrForbidden            = errors.New("dict: forbidden")
-	ErrRateLimited          = errors.New("dict: too many requests")
+	ErrBadRequest           = errors.New("pix: invalid request")
+	ErrForbidden            = errors.New("pix: forbidden")
+	ErrRateLimited          = errors.New("pix: too many requests")
 	// ErrUnavailable covers 5xx and network failures; for a write, the outcome is unknown.
-	ErrUnavailable = errors.New("dict: unavailable")
+	ErrUnavailable = errors.New("pix: unavailable")
 )
 
 // APIError is a problem+xml answer of the DICT.

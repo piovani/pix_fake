@@ -193,10 +193,7 @@ func (c *DictClient) do(ctx context.Context, method, path string, extra http.Hea
 
 // decodeProblem turns an error answer into an *APIError, even when the body is not a problem+xml.
 func decodeProblem(resp *http.Response, raw []byte) error {
-	e := &APIError{Status: resp.StatusCode, Kind: "Unknown"}
-	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 {
-		e.RetryAfter = time.Duration(secs) * time.Second
-	}
+	e := &APIError{Status: resp.StatusCode, Kind: "Unknown", RetryAfter: retryAfter(resp.Header)}
 	var p problemXML
 	if err := xml.Unmarshal(raw, &p); err != nil || p.Type == "" {
 		return e
@@ -207,4 +204,11 @@ func decodeProblem(resp *http.Response, raw []byte) error {
 		e.Violations = append(e.Violations, Violation{Reason: v.Reason, Value: v.Value, Property: v.Property})
 	}
 	return e
+}
+
+func retryAfter(h http.Header) time.Duration {
+	if secs, err := strconv.Atoi(h.Get("Retry-After")); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return 0
 }

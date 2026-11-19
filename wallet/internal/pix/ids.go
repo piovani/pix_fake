@@ -56,3 +56,18 @@ func randomString(n int) (string, error) {
 	}
 	return string(out), nil
 }
+
+var messageIDRe = regexp.MustCompile(`^M[0-9A-Z]{8}[A-Za-z0-9]{23}$`)
+
+// NewMessageID creates the identifier of a message: "M" + ISPB of the sender (8) + 23 random characters.
+func NewMessageID(ispb string) (string, error) {
+	suffix, err := randomString(23)
+	if err != nil {
+		return "", err
+	}
+	id := "M" + ispb + suffix
+	if !messageIDRe.MatchString(id) {
+		return "", fmt.Errorf("pix: invalid MsgId %q (is the ISPB 8 characters of 0-9 A-Z?)", id)
+	}
+	return id, nil
+}

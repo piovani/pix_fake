@@ -192,7 +192,10 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
   - [x] DICT client for the five implemented operations (`wallet/internal/pix`: `GetEntry`, `CreateEntry`, `UpdateEntry`,
     `DeleteEntry`, `CheckKeys`). Tested against a fake server; the tests against the running mock are written but were not
     run yet (`WALLET_TEST_DICT_URL`, needs `make setup`)
-  - [ ] SPI client
+  - [x] SPI client, first part (`wallet/internal/pix`): send messages, read and acknowledge the stream, build `pacs.008` and
+    `pacs.002`, read `pacs.008`, `pacs.002` and `admi.002`. Tested against a fake server; the tests against the running mock are
+    written but were not run yet (`WALLET_TEST_SPI_URL`)
+  - [ ] SPI client, second part: returns (`pacs.004`) and the report of transactions settled outside the SPI (`trck.002`, `camt.025`)
   - [x] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
   - [ ] Mapping of Bacen errors to wallet behavior: `404`, `409`, `429`, `503` done for the DICT (`errors.Is` with `ErrNotFound`,
     `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`); rejected payments come with the SPI

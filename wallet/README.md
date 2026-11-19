@@ -5,7 +5,7 @@ the SPI. It is the product of this project; the mocks next to it (`../mock`) onl
 
 > **Status: the core is done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
-> is tested on PostgreSQL. The DICT client (`internal/pix`) is in place; the SPI client and the payment flows are next.
+> is tested on PostgreSQL. The DICT client and the first part of the SPI client (`internal/pix`) are in place; returns, reports and the payment flows are next.
 
 ## Independence from the mocks
 
@@ -78,6 +78,14 @@ The mocks alone are `make setup` at the root (DICT on `:8080`, SPI on `:8081`). 
 `ErrNotFound`, `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable` and others with `errors.Is`; `pix.Retryable`
 tells whether trying again can work. The client does not retry: that depends on the payment flow.
 
+## SPI client
+
+`NewSPIClient(baseURL, ispb)` in `internal/pix`: `Send` (1 to 10 messages), `Pull` (reads the stream; pass `""` to open it, then
+the returned next path) and `Ack` (closes the stream at a next path). The messages of the payment cycle: `NewPacs008` and
+`ParsePacs008` (the payment order), `NewPacs002` and `ParsePacs002` (the status), `ParseAdmi002` (the SPI could not process a
+message) and `MessageKind` to tell what came from the stream. Returns (`pacs.004`) and reports (`trck.002`) are not built yet.
+Like the DICT client, it does not retry; a message sent again is safe, since the SPI is idempotent by `EndToEndId`.
+
 ## Test accounts
 
 `make up` loads three accounts, with the same people, branch and account numbers as the wallet's accounts in the DICT
@@ -97,7 +105,7 @@ With the API running, `GetBalance` of Ana (for example with `grpcurl`, or a clie
 ```sh
 go test ./...           # unit tests; the ones that need PostgreSQL are skipped
 make test-integration   # all of them, on the wallet's PostgreSQL (needs Docker); each test gets its own schema
-WALLET_TEST_DICT_URL=http://localhost:8080/api/v2 go test ./internal/pix   # also the DICT client against the running mock (`make setup`)
+WALLET_TEST_DICT_URL=http://localhost:8080/api/v2 WALLET_TEST_SPI_URL=http://localhost:8081/api/v1 go test ./internal/pix   # also the DICT and SPI clients against the running mocks (`make setup`)
 ```
 
 ## Ports
