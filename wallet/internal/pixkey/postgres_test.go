@@ -53,4 +53,25 @@ func TestPostgresStore(t *testing.T) {
 	if _, err := store.Insert(ctx, pixkey.Key{Key: "x", Type: pix.KeyEmail, AccountID: "5c1f3a52-6b7d-4e0a-9c11-2d5a7b3e9f01", RequestID: req2}); err == nil {
 		t.Fatal("a key for an account that does not exist was stored")
 	}
+
+	if _, err := store.Insert(ctx, pixkey.Key{Key: "b@example.com", Type: pix.KeyEmail, AccountID: acct.ID, RequestID: req2}); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := store.ByAccount(ctx, acct.ID)
+	if err != nil || len(keys) != 2 || keys[0].Key != "a@example.com" || keys[1].Key != "b@example.com" {
+		t.Fatalf("by account: %+v, %v", keys, err)
+	}
+
+	if err := store.Delete(ctx, "a@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(ctx, "a@example.com"); err != nil {
+		t.Fatalf("deleting twice: %v", err)
+	}
+	if _, found, _ := store.ByKey(ctx, "a@example.com"); found {
+		t.Fatal("the key is still there")
+	}
+	if keys, _ := store.ByAccount(ctx, acct.ID); len(keys) != 1 {
+		t.Fatalf("after delete: %+v", keys)
+	}
 }

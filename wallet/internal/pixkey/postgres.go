@@ -36,6 +36,28 @@ func (p *Postgres) ByKey(ctx context.Context, key string) (Key, bool, error) {
 	return p.one(ctx, `SELECT `+columns+` FROM pix_keys WHERE key = $1`, key)
 }
 
+func (p *Postgres) ByAccount(ctx context.Context, accountID string) ([]Key, error) {
+	rows, err := p.pool.Query(ctx, `SELECT `+columns+` FROM pix_keys WHERE account_id = $1 ORDER BY created_at, key`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []Key
+	for rows.Next() {
+		k, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+func (p *Postgres) Delete(ctx context.Context, key string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM pix_keys WHERE key = $1`, key)
+	return err
+}
+
 func (p *Postgres) one(ctx context.Context, query string, arg any) (Key, bool, error) {
 	k, err := scan(p.pool.QueryRow(ctx, query, arg))
 	if errors.Is(err, pgx.ErrNoRows) {

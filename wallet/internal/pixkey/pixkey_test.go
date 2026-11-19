@@ -26,10 +26,20 @@ func (f fakeAccounts) Account(_ context.Context, id string) (ledger.Account, err
 }
 
 type fakeDict struct {
-	calls  []pix.Entry
-	reqIDs []string
-	err    error
-	evpKey string
+	calls     []pix.Entry
+	reqIDs    []string
+	err       error
+	evpKey    string
+	deleted   []string
+	deleteErr error
+}
+
+func (f *fakeDict) DeleteEntry(_ context.Context, key string, reason pix.EntryReason) error {
+	f.deleted = append(f.deleted, key)
+	if reason != pix.ReasonUserRequested {
+		return errors.New("unexpected reason " + string(reason))
+	}
+	return f.deleteErr
 }
 
 func (f *fakeDict) CreateEntry(_ context.Context, e pix.Entry, requestID string) (pix.Entry, error) {
@@ -62,6 +72,26 @@ func (m *memStore) ByKey(_ context.Context, key string) (Key, bool, error) {
 		}
 	}
 	return Key{}, false, nil
+}
+
+func (m *memStore) ByAccount(_ context.Context, accountID string) ([]Key, error) {
+	var out []Key
+	for _, k := range m.keys {
+		if k.AccountID == accountID {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) Delete(_ context.Context, key string) error {
+	for i, k := range m.keys {
+		if k.Key == key {
+			m.keys = append(m.keys[:i], m.keys[i+1:]...)
+			return nil
+		}
+	}
+	return nil
 }
 
 func (m *memStore) Insert(_ context.Context, k Key) (Key, error) {
@@ -229,5 +259,98 @@ func TestRegisterOwnCPFKey(t *testing.T) {
 	s, _, _ := setup()
 	if _, err := s.Register(context.Background(), RegisterInput{AccountID: ana.ID, Type: pix.KeyCPF, Key: "52998224725", RequestID: req1}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func registered(t *testing.T, s *Service, account string, typ pix.KeyType, key, req string) Key {
+	t.Helper()
+	k, err := s.Register(context.Background(), RegisterInput{AccountID: account, Type: typ, Key: key, RequestID: req})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+func TestListReturnsTheKeysOfTheAccount(t *testing.T) {
+	s, _, _ := setup()
+	ctx := context.Background()
+	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
+	registered(t, s, padaria.ID, pix.KeyEmail, "p@example.com", req2)
+
+	keys, err := s.List(ctx, ana.ID)
+	if err != nil || len(keys) != 1 || keys[0].Key != "a@example.com" {
+		t.Fatalf("keys = %+v, err = %v", keys, err)
+	}
+	if _, err := s.List(ctx, "nope"); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Errorf("unknown account: %v", err)
+	}
+	if _, err := s.List(ctx, ""); !errors.Is(err, ErrInvalid) {
+		t.Errorf("no account: %v", err)
+	}
+}
+
+func TestRemoveDeletesInTheDICTAndLocally(t *testing.T) {
+	s, d, st := setup()
+	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
+
+	if err := s.Remove(context.Background(), ana.ID, "a@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.deleted) != 1 || d.deleted[0] != "a@example.com" || len(st.keys) != 0 {
+		t.Fatalf("DICT deletes = %v, stored = %d", d.deleted, len(st.keys))
+	}
+}
+
+func TestRemoveAKeyThatIsAlreadyGoneIsNotAnError(t *testing.T) {
+	s, d, _ := setup()
+	if err := s.Remove(context.Background(), ana.ID, "never@example.com"); err != nil || len(d.deleted) != 0 {
+		t.Fatalf("err = %v, DICT deletes = %v", err, d.deleted)
+	}
+}
+
+func TestRemoveRetryAfterTheDICTAlreadyDeletedIt(t *testing.T) {
+	s, d, st := setup()
+	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
+
+	d.deleteErr = &pix.APIError{Status: 404, Kind: "NotFound"}
+	if err := s.Remove(context.Background(), ana.ID, "a@example.com"); err != nil || len(st.keys) != 0 {
+		t.Fatalf("err = %v, stored = %d", err, len(st.keys))
+	}
+}
+
+func TestRemoveWhenTheDICTIsDownKeepsTheKey(t *testing.T) {
+	s, d, st := setup()
+	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
+
+	d.deleteErr = &pix.APIError{Status: 503, Kind: "ServiceUnavailable"}
+	if err := s.Remove(context.Background(), ana.ID, "a@example.com"); !errors.Is(err, pix.ErrUnavailable) || len(st.keys) != 1 {
+		t.Fatalf("down: err = %v, stored = %d", err, len(st.keys))
+	}
+	d.deleteErr = nil
+	if err := s.Remove(context.Background(), ana.ID, "a@example.com"); err != nil || len(st.keys) != 0 {
+		t.Fatalf("retry: err = %v, stored = %d", err, len(st.keys))
+	}
+}
+
+func TestRemoveAKeyOfAnotherAccountIsRefused(t *testing.T) {
+	s, d, st := setup()
+	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
+
+	if err := s.Remove(context.Background(), padaria.ID, "a@example.com"); !errors.Is(err, ErrKeyNotFound) || len(d.deleted) != 0 || len(st.keys) != 1 {
+		t.Fatalf("err = %v, DICT deletes = %v, stored = %d", err, d.deleted, len(st.keys))
+	}
+}
+
+func TestRemoveValidation(t *testing.T) {
+	s, _, _ := setup()
+	ctx := context.Background()
+	if err := s.Remove(ctx, "", "k"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("no account: %v", err)
+	}
+	if err := s.Remove(ctx, ana.ID, ""); !errors.Is(err, ErrInvalid) {
+		t.Errorf("no key: %v", err)
+	}
+	if err := s.Remove(ctx, "nope", "k"); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Errorf("unknown account: %v", err)
 	}
 }

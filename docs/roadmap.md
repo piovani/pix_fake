@@ -215,9 +215,10 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`); rejected payments come with the SPI
 - [x] **Proto contract for keys, payments and the statement** (`account.proto`, `key.proto`, `payment.proto`).
 - [ ] **Features:**
-  - [ ] Register and remove a Pix key: `RegisterKey` is done (module `pixkey`: validates, registers in the DICT with the client's
-    `request_id`, stores the wallet's own copy; a retry after any failure is safe). `RemoveKey`, `ListKeys` and the
-    check that keeps the DICT and the wallet's copy in agreement are next. Written but not run on PostgreSQL yet (no Docker)
+  - [x] Register and remove a Pix key (module `pixkey`: `RegisterKey`, `ListKeys`, `RemoveKey`). Registering validates, registers in
+    the DICT with the client's `request_id` and stores the wallet's own copy; removing asks the DICT first and counts a key it no
+    longer has as removed, so every call can be repeated after a failure. Written but not run on PostgreSQL yet (no Docker).
+    Not built: a check that finds keys the DICT and the wallet's copy disagree on
   - [ ] Pay a key of another institution (outbound flow)
   - [ ] Pay a key of another wallet user (book transfer): recognize the wallet's own keys, settle in the ledger within
     40 seconds, never query the DICT or send a `pacs.008`, and report the transaction afterwards

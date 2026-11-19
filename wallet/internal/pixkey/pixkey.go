@@ -17,6 +17,7 @@ var (
 	ErrInvalid         = errors.New("pixkey: invalid request")
 	ErrKeyTaken        = errors.New("pixkey: key already registered")
 	ErrRequestConflict = errors.New("pixkey: request id already used with other data")
+	ErrKeyNotFound     = errors.New("pixkey: key not found for this account")
 )
 
 // Key is a Pix key of an account.
@@ -43,6 +44,7 @@ type Accounts interface {
 // Directory is what the service needs from the DICT.
 type Directory interface {
 	CreateEntry(ctx context.Context, e pix.Entry, requestID string) (pix.Entry, error)
+	DeleteEntry(ctx context.Context, key string, reason pix.EntryReason) error
 }
 
 // Store keeps the wallet's copy of the keys. Insert returns the existing key when the request id was already stored, and
@@ -50,7 +52,9 @@ type Directory interface {
 type Store interface {
 	ByRequestID(ctx context.Context, requestID string) (Key, bool, error)
 	ByKey(ctx context.Context, key string) (Key, bool, error)
+	ByAccount(ctx context.Context, accountID string) ([]Key, error)
 	Insert(ctx context.Context, k Key) (Key, error)
+	Delete(ctx context.Context, key string) error
 }
 
 type Service struct {
@@ -99,6 +103,42 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Key, error) {
 		return Key{}, mapDictError(err)
 	}
 	return s.store.Insert(ctx, Key{Key: entry.Key, Type: in.Type, AccountID: acct.ID, RequestID: in.RequestID})
+}
+
+// List returns the keys of an account, oldest first.
+func (s *Service) List(ctx context.Context, accountID string) ([]Key, error) {
+	if accountID == "" {
+		return nil, fmt.Errorf("%w: account is required", ErrInvalid)
+	}
+	if _, err := s.accounts.Account(ctx, accountID); err != nil {
+		return nil, err
+	}
+	return s.store.ByAccount(ctx, accountID)
+}
+
+// Remove removes a key from the DICT and from the wallet. A key that is already gone is not an error, so a caller can
+// repeat the call after any failure: the DICT is asked first, and a key the DICT no longer has counts as removed.
+func (s *Service) Remove(ctx context.Context, accountID, key string) error {
+	if accountID == "" || key == "" {
+		return fmt.Errorf("%w: account and key are required", ErrInvalid)
+	}
+	if _, err := s.accounts.Account(ctx, accountID); err != nil {
+		return err
+	}
+	stored, found, err := s.store.ByKey(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	if stored.AccountID != accountID {
+		return ErrKeyNotFound
+	}
+	if err := s.dict.DeleteEntry(ctx, key, pix.ReasonUserRequested); err != nil && !errors.Is(err, pix.ErrNotFound) {
+		return mapDictError(err)
+	}
+	return s.store.Delete(ctx, key)
 }
 
 func validate(in RegisterInput) error {

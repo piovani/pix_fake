@@ -18,9 +18,11 @@ import (
 // Keys is what the API needs from the pixkey module.
 type Keys interface {
 	Register(ctx context.Context, in pixkey.RegisterInput) (pixkey.Key, error)
+	List(ctx context.Context, accountID string) ([]pixkey.Key, error)
+	Remove(ctx context.Context, accountID, key string) error
 }
 
-// keyService answers wallet.v1.KeyService. ListKeys and RemoveKey return Unimplemented for now.
+// keyService answers wallet.v1.KeyService.
 type keyService struct {
 	walletv1.UnimplementedKeyServiceServer
 	keys Keys
@@ -42,17 +44,38 @@ func (s *keyService) RegisterKey(ctx context.Context, req *walletv1.RegisterKeyR
 		RequestID: req.GetRequestId(),
 	})
 	if err != nil {
-		return nil, registerError(err)
+		return nil, keyError("register key", err)
 	}
 	return &walletv1.RegisterKeyResponse{Key: toProtoKey(k)}, nil
 }
 
-func registerError(err error) error {
+func (s *keyService) ListKeys(ctx context.Context, req *walletv1.ListKeysRequest) (*walletv1.ListKeysResponse, error) {
+	keys, err := s.keys.List(ctx, req.GetAccountId())
+	if err != nil {
+		return nil, keyError("list keys", err)
+	}
+	res := &walletv1.ListKeysResponse{}
+	for _, k := range keys {
+		res.Keys = append(res.Keys, toProtoKey(k))
+	}
+	return res, nil
+}
+
+func (s *keyService) RemoveKey(ctx context.Context, req *walletv1.RemoveKeyRequest) (*walletv1.RemoveKeyResponse, error) {
+	if err := s.keys.Remove(ctx, req.GetAccountId(), req.GetKey()); err != nil {
+		return nil, keyError("remove key", err)
+	}
+	return &walletv1.RemoveKeyResponse{}, nil
+}
+
+func keyError(op string, err error) error {
 	switch {
 	case errors.Is(err, pixkey.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, ledger.ErrAccountNotFound):
 		return status.Error(codes.NotFound, "account not found")
+	case errors.Is(err, pixkey.ErrKeyNotFound):
+		return status.Error(codes.NotFound, "the key does not belong to this account")
 	case errors.Is(err, pixkey.ErrKeyTaken):
 		return status.Error(codes.AlreadyExists, "the key is already registered")
 	case errors.Is(err, pixkey.ErrRequestConflict):
@@ -62,8 +85,8 @@ func registerError(err error) error {
 	case errors.Is(err, pix.ErrUnavailable):
 		return status.Error(codes.Unavailable, "the DICT is unavailable, try again later")
 	}
-	slog.Error("register key", "err", err)
-	return status.Error(codes.Internal, "could not register the key")
+	slog.Error(op, "err", err)
+	return status.Error(codes.Internal, "could not complete the request")
 }
 
 func toProtoKey(k pixkey.Key) *walletv1.Key {

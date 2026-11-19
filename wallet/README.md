@@ -3,7 +3,7 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: the core is done, and `RegisterKey` works.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
+> **Status: the core and the keys are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
 > is tested on PostgreSQL. The DICT client and the first part of the SPI client (`internal/pix`) are in place; returns, reports and the payment flows are next.
 
@@ -74,7 +74,7 @@ The mocks alone are `make setup` at the root (DICT on `:8080`, SPI on `:8081`). 
 
 ## gRPC contract
 
-Three services in `api/proto/wallet/v1`, one per module. Only `GetBalance` and `RegisterKey` are implemented so far; the rest is
+Three services in `api/proto/wallet/v1`, one per module. Implemented so far: `GetBalance` and the whole `KeyService`; the rest is
 the contract the features will fill.
 
 | Service | Calls |
