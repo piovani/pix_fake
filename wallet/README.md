@@ -3,10 +3,10 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet and receiving payments are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
+> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet, receiving payments and returning them are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
 > is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports. A customer can pay a key of another
-> institution or another customer of the wallet, and receive payments, end to end; returning and the statement are next.
+> institution or another customer of the wallet, receive payments and return them, end to end; the statement is next.
 
 ## Independence from the mocks
 
@@ -104,7 +104,20 @@ key of the wallet itself answers `Unimplemented` for now). `CreatePayment` reser
   after all of it was applied; one that fails is delivered again, and applying a status twice changes nothing.
 - **The timeout is the SPI's.** A payment nobody answers in 40 s comes back `RJCT` with `AB03`. The wallet never rejects on its own a
   payment the SPI may have taken, or the money could leave twice.
-- **Not handled yet by the worker:** returns (`pacs.004`) are logged and skipped.
+- **Not handled yet by the worker:** a return of a payment the wallet made (`pacs.004` received) is logged and skipped.
+
+## Returning a received payment
+
+`ReturnPayment` sends back, in whole or in part, a payment the wallet received through the SPI and settled. It is refused with
+`FAILED_PRECONDITION` for a payment sent, a book transfer, one not yet settled, one settled more than 90 days ago, or an amount above
+what is left. The amount is reserved, a `pacs.004` goes to the SPI (reason `MD06`), and the return is a `RETURN` payment, `PENDING`:
+`ACSC` takes the money out, `RJCT` (`AM09`, `DT05`, `AG13`...) gives it back. Without enough money it is `FAILED_PRECONDITION`.
+
+- **Idempotent by `request_id`** (a UUID v4): the same call returns the same return; another amount is `ALREADY_EXISTS`.
+- **`returned_cents`** of the received payment counts the returns settled and in flight, so a rejected one frees its amount. Two returns
+  at the same time can never add up to more than the original: they are serialized on the original payment.
+- **The `end_to_end_id` of a return is its `RtrId`**; `original_payment_id` points to the payment it returns.
+- **The SPI being down** leaves the return pending and the worker sends it again, as for any payment.
 
 ## Receiving a payment
 

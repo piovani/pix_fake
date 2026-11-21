@@ -367,6 +367,17 @@ func (e env) receivedBy(t *testing.T, account, endToEndID string) *walletv1.Paym
 	return nil
 }
 
+func (e env) waitReceived(t *testing.T, endToEndID string) *walletv1.Payment {
+	t.Helper()
+	var got *walletv1.Payment
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
+		if got = e.receivedBy(t, seed.AnaID, endToEndID); got != nil && got.Status != walletv1.PaymentStatus_PAYMENT_STATUS_PENDING {
+			break
+		}
+	}
+	return got
+}
+
 func TestReceiveAPaymentFromAnotherBank(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
@@ -377,12 +388,7 @@ func TestReceiveAPaymentFromAnotherBank(t *testing.T) {
 	id := e.bankPays(t, `{"from":"99000002","to":"99000001","to_account":"00123456","amount":"10.50","key":"ana.souza@example.com"}`)
 	e.mockPayment(t, id, func(p map[string]any) bool { return p["settled_at"] != nil })
 
-	var got *walletv1.Payment
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
-		if got = e.receivedBy(t, seed.AnaID, id); got != nil && got.Status != walletv1.PaymentStatus_PAYMENT_STATUS_PENDING {
-			break
-		}
-	}
+	got := e.waitReceived(t, id)
 	if got == nil || got.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED || got.Type != walletv1.PaymentType_PAYMENT_TYPE_PIX ||
 		got.AmountCents != 1050 || got.Counterparty.Participant != "99000002" || got.FinishedAt == nil {
 		t.Fatalf("received payment: %v", got)
@@ -416,4 +422,77 @@ func TestPaymentsTheWalletRefusesToReceive(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReturnAReceivedPayment(t *testing.T) {
+	e := setup(t)
+	if e.spi == "" {
+		t.Skip("WALLET_E2E_SPI_URL is not set")
+	}
+	before := e.balance(t)
+	id := e.bankPays(t, `{"from":"99000002","to":"99000001","to_account":"00123456","amount":"10.50","key":"ana.souza@example.com"}`)
+	received := e.waitReceived(t, id)
+	if received == nil || received.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
+		t.Fatalf("received: %v", received)
+	}
+
+	giveBack := func(cents int64, request string) (*walletv1.Payment, error) {
+		res, err := e.payments.ReturnPayment(ctx(t), &walletv1.ReturnPaymentRequest{PaymentId: received.Id, AmountCents: cents, RequestId: request})
+		return res.GetPayment(), err
+	}
+	request := requestID(t)
+	first, err := giveBack(400, request)
+	if err != nil {
+		t.Fatalf("ReturnPayment: %v", err)
+	}
+	if first.Type != walletv1.PaymentType_PAYMENT_TYPE_RETURN || first.OriginalPaymentId != received.Id || first.AmountCents != 400 ||
+		first.Direction != walletv1.PaymentDirection_PAYMENT_DIRECTION_OUTBOUND {
+		t.Fatalf("return: %v", first)
+	}
+	if done := e.waitFinished(t, first.Id, 30*time.Second); done.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
+		t.Fatalf("finished: %v", done)
+	}
+	if got := e.balance(t); got.AvailableCents != before.AvailableCents+1050-400 || got.ReservedCents != before.ReservedCents {
+		t.Errorf("balance %v -> %v", before, got)
+	}
+	if res, err := e.payments.GetPayment(ctx(t), &walletv1.GetPaymentRequest{PaymentId: received.Id}); err != nil || res.Payment.ReturnedCents != 400 {
+		t.Errorf("original: %v, %v", res, err)
+	}
+
+	again, err := giveBack(400, request)
+	if err != nil || again.Id != first.Id {
+		t.Errorf("repeat: %v, %v", again, err)
+	}
+	_, err = giveBack(401, request)
+	wantCode(t, "another amount", err, codes.AlreadyExists)
+
+	_, err = giveBack(651, requestID(t))
+	wantCode(t, "more than what is left", err, codes.FailedPrecondition)
+	rest, err := giveBack(650, requestID(t))
+	if err != nil {
+		t.Fatalf("the rest: %v", err)
+	}
+	if done := e.waitFinished(t, rest.Id, 30*time.Second); done.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
+		t.Fatalf("finished: %v", done)
+	}
+	if got := e.balance(t); got.AvailableCents != before.AvailableCents || got.ReservedCents != before.ReservedCents {
+		t.Errorf("everything returned, balance %v -> %v", before, got)
+	}
+	_, err = giveBack(1, requestID(t))
+	wantCode(t, "after returning everything", err, codes.FailedPrecondition)
+}
+
+func TestPaymentsThatCannotBeReturned(t *testing.T) {
+	e := setup(t)
+	r := e.resolve(t, "+5511999990002")
+	sent, err := e.pay(t, r.ResolutionId, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.payments.ReturnPayment(ctx(t), &walletv1.ReturnPaymentRequest{PaymentId: sent.Id, AmountCents: 10, RequestId: requestID(t)})
+	wantCode(t, "a payment sent", err, codes.FailedPrecondition)
+	_, err = e.payments.ReturnPayment(ctx(t), &walletv1.ReturnPaymentRequest{PaymentId: "0a1b2c3d-9999-4000-8000-000000000009", AmountCents: 10, RequestId: requestID(t)})
+	wantCode(t, "unknown payment", err, codes.NotFound)
+	_, err = e.payments.ReturnPayment(ctx(t), &walletv1.ReturnPaymentRequest{PaymentId: sent.Id, AmountCents: 10, RequestId: "req"})
+	wantCode(t, "bad request id", err, codes.InvalidArgument)
 }

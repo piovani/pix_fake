@@ -13,15 +13,20 @@ import (
 // OnStatus applies a pacs.002 to the payment it is about, sent or received. Timeouts are the SPI's to decide (AB03): the
 // wallet never rejects on its own a payment the SPI may have taken, or the money could leave twice.
 func (s *Service) OnStatus(ctx context.Context, st pix.TxStatus) error {
-	if st.InstrID != "" && st.InstrID != st.EndToEndID {
-		return nil // the status of a return, not of a payment
+	isReturn := st.InstrID != "" && st.InstrID != st.EndToEndID
+	key := st.EndToEndID
+	if isReturn {
+		key = st.InstrID
 	}
-	sent, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Outbound)
+	sent, found, err := s.store.ByEndToEnd(ctx, key, Outbound)
 	if err != nil {
 		return err
 	}
-	if found && sent.Type == TypePix {
+	if found && (sent.Type == TypePix || sent.Type == TypeReturn) {
 		return s.onOutboundStatus(ctx, sent, st)
+	}
+	if isReturn {
+		return nil
 	}
 	received, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Inbound)
 	if err != nil {
@@ -114,11 +119,7 @@ func (s *Service) SendPending(ctx context.Context) (int, error) {
 	}
 	sent := 0
 	for _, p := range unsent {
-		acct, err := s.accounts.Account(ctx, p.AccountID)
-		if err != nil {
-			return sent, err
-		}
-		after, err := s.submit(ctx, p, acct)
+		after, err := s.submit(ctx, p)
 		if err != nil {
 			return sent, err
 		}
@@ -132,7 +133,7 @@ func (s *Service) SendPending(ctx context.Context) (int, error) {
 // Handle applies one message of the SPI stream. A message that cannot be read can never succeed, so it is logged and
 // skipped; an error means the message should be delivered again.
 //
-// Returns (pacs.004) are logged and skipped for now.
+// Returns received (pacs.004) are logged and skipped for now.
 func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	kind, err := pix.MessageKind(m.Body)
 	if err != nil {

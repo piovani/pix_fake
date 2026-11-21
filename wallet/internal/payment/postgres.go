@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pixfake/wallet/internal/pix"
+	"pixfake/wallet/internal/platform/db"
 )
 
 // Postgres is the Store in the wallet's database.
@@ -75,22 +76,25 @@ func (p *Postgres) Resolution(ctx context.Context, id string) (Resolution, bool,
 
 const columns = `id, account_id, direction, type, status, amount_cents, end_to_end_id, resolution_id, reservation_id,
 	counterparty, message, reject_code, reject_reason, resource_id, submitted_at, created_at, finished_at,
-	report_status, report_sent_at, report_reason`
+	report_status, report_sent_at, report_reason, original_payment_id, request_id,
+	(SELECT COALESCE(SUM(r.amount_cents), 0)::bigint FROM payments r
+	 WHERE r.original_payment_id = payments.id AND r.status <> 'REJECTED')`
 
 func scan(row pgx.Row) (Payment, error) {
 	var p Payment
 	var direction, typ, status string
-	var resolution, reservation, resource *string
+	var resolution, reservation, resource, original, request *string
 	var counterparty []byte
 	var submitted, finished, reportSent *time.Time
 	err := row.Scan(&p.ID, &p.AccountID, &direction, &typ, &status, &p.AmountCents, &p.EndToEndID, &resolution, &reservation,
 		&counterparty, &p.Message, &p.RejectCode, &p.RejectReason, &resource, &submitted, &p.CreatedAt, &finished,
-		&p.ReportStatus, &reportSent, &p.ReportReason)
+		&p.ReportStatus, &reportSent, &p.ReportReason, &original, &request, &p.ReturnedCents)
 	if err != nil {
 		return Payment{}, err
 	}
 	p.Direction, p.Type, p.Status = Direction(direction), Type(typ), Status(status)
 	p.ResolutionID, p.ReservationID, p.ResourceID = deref(resolution), deref(reservation), deref(resource)
+	p.OriginalPaymentID, p.RequestID = deref(original), deref(request)
 	if submitted != nil {
 		p.SubmittedAt = *submitted
 	}
@@ -183,6 +187,55 @@ func (p *Postgres) ByResource(ctx context.Context, id string) (Payment, bool, er
 	return p.one(ctx, `resource_id = $1`, id)
 }
 
+func (p *Postgres) ByRequestID(ctx context.Context, id string) (Payment, bool, error) {
+	return p.one(ctx, `request_id = $1`, id)
+}
+
+func (p *Postgres) InsertReturn(ctx context.Context, in Payment) (Payment, bool, error) {
+	cp, err := marshalPayee(in.Counterparty)
+	if err != nil {
+		return Payment{}, false, err
+	}
+	var stored Payment
+	created := false
+	err = db.InTx(ctx, p.pool, func(tx pgx.Tx) error {
+		// the lock serializes the returns of one payment, so two of them cannot both fit in what is left
+		var original, returned int64
+		if err := tx.QueryRow(ctx, `SELECT amount_cents FROM payments WHERE id = $1 FOR UPDATE`, in.OriginalPaymentID).Scan(&original); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrPaymentNotFound
+			}
+			return err
+		}
+		existing, err := scan(tx.QueryRow(ctx, `SELECT `+columns+` FROM payments WHERE request_id = $1`, in.RequestID))
+		if err == nil {
+			stored = existing
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM payments WHERE original_payment_id = $1 AND status <> 'REJECTED'`,
+			in.OriginalPaymentID).Scan(&returned); err != nil {
+			return err
+		}
+		if returned+in.AmountCents > original {
+			return ErrReturnTooLarge
+		}
+		stored, err = scan(tx.QueryRow(ctx, `
+			INSERT INTO payments (account_id, direction, type, status, amount_cents, end_to_end_id, reservation_id, counterparty,
+				original_payment_id, request_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			RETURNING `+columns,
+			in.AccountID, string(in.Direction), string(in.Type), string(in.Status), in.AmountCents, in.EndToEndID,
+			nullable(in.ReservationID), cp, in.OriginalPaymentID, in.RequestID, in.CreatedAt))
+		created = err == nil
+		return err
+	})
+	return stored, created, err
+}
+
 func (p *Postgres) MarkSubmitted(ctx context.Context, id, resourceID string, at time.Time) error {
 	_, err := p.pool.Exec(ctx, `UPDATE payments SET resource_id = $2, submitted_at = $3 WHERE id = $1`,
 		id, nullable(resourceID), at)
@@ -199,7 +252,7 @@ func (p *Postgres) Close(ctx context.Context, id string, status Status, code, re
 func (p *Postgres) Unsent(ctx context.Context, before time.Time, limit int) ([]Payment, error) {
 	return p.many(ctx, `
 		SELECT `+columns+` FROM payments
-		WHERE status = 'PENDING' AND submitted_at IS NULL AND direction = 'OUTBOUND' AND type = 'PIX' AND created_at < $1
+		WHERE status = 'PENDING' AND submitted_at IS NULL AND direction = 'OUTBOUND' AND type IN ('PIX', 'RETURN') AND created_at < $1
 		ORDER BY created_at LIMIT $2`, before, limit)
 }
 

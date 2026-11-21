@@ -20,6 +20,7 @@ type fakePayments struct {
 	resolved   [2]string
 	paid       payment.PayInput
 	listed     payment.ListInput
+	returned   payment.ReturnInput
 	resolution payment.Resolution
 	payment    payment.Payment
 	page       payment.Page
@@ -33,6 +34,11 @@ func (f *fakePayments) ResolveKey(_ context.Context, accountID, key string) (pay
 
 func (f *fakePayments) Pay(_ context.Context, in payment.PayInput) (payment.Payment, error) {
 	f.paid = in
+	return f.payment, f.err
+}
+
+func (f *fakePayments) Return(_ context.Context, in payment.ReturnInput) (payment.Payment, error) {
+	f.returned = in
 	return f.payment, f.err
 }
 
@@ -152,6 +158,9 @@ func TestPaymentErrors(t *testing.T) {
 		{payment.ErrResolutionNotFound, codes.NotFound},
 		{payment.ErrPaymentNotFound, codes.NotFound},
 		{payment.ErrResolutionConflict, codes.AlreadyExists},
+		{payment.ErrRequestConflict, codes.AlreadyExists},
+		{payment.ErrNotReturnable, codes.FailedPrecondition},
+		{payment.ErrReturnTooLarge, codes.FailedPrecondition},
 		{ledger.ErrInsufficientFunds, codes.FailedPrecondition},
 		{payment.ErrKeyNotRecorded, codes.Internal},
 		{&pix.APIError{Status: 429}, codes.ResourceExhausted},
@@ -164,7 +173,8 @@ func TestPaymentErrors(t *testing.T) {
 		_, e2 := client.CreatePayment(ctx5(t), &walletv1.CreatePaymentRequest{})
 		_, e3 := client.GetPayment(ctx5(t), &walletv1.GetPaymentRequest{})
 		_, e4 := client.ListPayments(ctx5(t), &walletv1.ListPaymentsRequest{})
-		for _, err := range []error{e1, e2, e3, e4} {
+		_, e5 := client.ReturnPayment(ctx5(t), &walletv1.ReturnPaymentRequest{})
+		for _, err := range []error{e1, e2, e3, e4, e5} {
 			if status.Code(err) != tt.want || strings.Contains(err.Error(), "10.0.0.5") {
 				t.Errorf("%v: want %v, got %v", tt.err, tt.want, err)
 			}
@@ -172,12 +182,37 @@ func TestPaymentErrors(t *testing.T) {
 	}
 }
 
-func TestPaymentServiceIsOptionalAndReturnIsNotBuiltYet(t *testing.T) {
+func TestPaymentServiceIsOptional(t *testing.T) {
 	if _, err := walletv1.NewPaymentServiceClient(dial(t, fakeLedger{})).GetPayment(ctx5(t), &walletv1.GetPaymentRequest{}); status.Code(err) != codes.Unimplemented {
 		t.Errorf("without the module: %v", err)
 	}
-	client := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, &fakePayments{}))
-	if _, err := client.ReturnPayment(ctx5(t), &walletv1.ReturnPaymentRequest{}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ReturnPayment: %v", err)
+}
+
+func TestReturnPayment(t *testing.T) {
+	f := &fakePayments{payment: payment.Payment{
+		ID: "ret-1", Direction: payment.Outbound, Type: payment.TypeReturn, Status: payment.Pending, AmountCents: 400,
+		OriginalPaymentID: "pay-1", EndToEndID: "D99000001202611211200abcdefghijk",
+	}}
+	client := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, f))
+
+	res, err := client.ReturnPayment(ctx5(t), &walletv1.ReturnPaymentRequest{PaymentId: "pay-1", AmountCents: 400, RequestId: "req"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.returned != (payment.ReturnInput{PaymentID: "pay-1", AmountCents: 400, RequestID: "req"}) {
+		t.Fatalf("input %+v", f.returned)
+	}
+	p := res.GetPayment()
+	if p.GetType() != walletv1.PaymentType_PAYMENT_TYPE_RETURN || p.GetOriginalPaymentId() != "pay-1" || p.GetAmountCents() != 400 ||
+		p.GetStatus() != walletv1.PaymentStatus_PAYMENT_STATUS_PENDING {
+		t.Errorf("payment = %v", p)
+	}
+}
+
+func TestReceivedPaymentShowsWhatWasReturned(t *testing.T) {
+	f := &fakePayments{payment: payment.Payment{ID: "pay-1", Direction: payment.Inbound, Type: payment.TypePix, Status: payment.Settled, AmountCents: 1050, ReturnedCents: 400}}
+	res, err := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, f)).GetPayment(ctx5(t), &walletv1.GetPaymentRequest{PaymentId: "pay-1"})
+	if err != nil || res.GetPayment().GetReturnedCents() != 400 {
+		t.Fatalf("%v, %v", res, err)
 	}
 }

@@ -12,15 +12,15 @@ import (
 	"pixfake/wallet/internal/pix"
 )
 
-// Errors of the module. Callers compare them with errors.Is. What the ledger refuses (ledger.ErrInsufficientFunds,
-// ledger.ErrAccountNotFound) and what the DICT and the SPI refuse while being unavailable (pix.ErrUnavailable,
-// pix.ErrRateLimited) pass through unchanged.
 var (
 	ErrInvalid            = errors.New("payment: invalid request")
 	ErrKeyNotFound        = errors.New("payment: key not found")
 	ErrResolutionNotFound = errors.New("payment: resolution not found or expired")
 	ErrResolutionConflict = errors.New("payment: resolution already used with another amount or message")
 	ErrPaymentNotFound    = errors.New("payment: payment not found")
+	ErrNotReturnable      = errors.New("payment: the payment cannot be returned")
+	ErrReturnTooLarge     = errors.New("payment: more than what is left to return")
+	ErrRequestConflict    = errors.New("payment: request id already used with other data")
 	ErrKeyNotRecorded     = errors.New("payment: the DICT says the key is the wallet's but the wallet has no record of it")
 )
 
@@ -79,24 +79,28 @@ type Resolution struct {
 
 // Payment is a payment of an account, sent or received.
 type Payment struct {
-	ID            string
-	AccountID     string
-	Direction     Direction
-	Type          Type
-	Status        Status
-	AmountCents   int64
-	EndToEndID    string
-	ResolutionID  string
-	ReservationID string
-	Counterparty  Payee
-	Message       string
-	RejectCode    string
-	RejectReason  string
-	ResourceID    string    // the PI-ResourceId the SPI gave the order; empty until the SPI accepted it
-	SubmittedAt   time.Time // zero until the SPI accepted the order
-	CreatedAt     time.Time
-	FinishedAt    time.Time // zero while pending
-	// report of a book transfer to the SPI: "", ReportSent, ReportAccepted or ReportRejected
+	ID                string
+	AccountID         string
+	Direction         Direction
+	Type              Type
+	Status            Status
+	AmountCents       int64
+	EndToEndID        string
+	ResolutionID      string
+	ReservationID     string
+	OriginalPaymentID string
+	RequestID         string
+	ReturnedCents     int64
+	Counterparty      Payee
+	Message           string
+	RejectCode        string
+	RejectReason      string
+	ResourceID        string
+
+	SubmittedAt time.Time
+	CreatedAt   time.Time
+	FinishedAt  time.Time
+
 	ReportStatus string
 	ReportSentAt time.Time
 	ReportReason string
@@ -141,24 +145,21 @@ type Store interface {
 	SaveResolution(ctx context.Context, r Resolution) (Resolution, error)
 	Resolution(ctx context.Context, id string) (Resolution, bool, error)
 
-	// Insert returns the existing payment, with created false, when the resolution or the EndToEndId and direction already have one.
 	Insert(ctx context.Context, p Payment) (stored Payment, created bool, err error)
 	Discard(ctx context.Context, id string) error
 	ByID(ctx context.Context, id string) (Payment, bool, error)
 	ByEndToEnd(ctx context.Context, endToEndID string, direction Direction) (Payment, bool, error)
 	ByResolution(ctx context.Context, resolutionID string) (Payment, bool, error)
 	ByResource(ctx context.Context, resourceID string) (Payment, bool, error)
-	// MarkSubmitted records that the SPI accepted the order.
+	ByRequestID(ctx context.Context, requestID string) (Payment, bool, error)
+	InsertReturn(ctx context.Context, p Payment) (stored Payment, created bool, err error)
 	MarkSubmitted(ctx context.Context, id, resourceID string, at time.Time) error
-	// Close moves a pending payment to Settled or Rejected. It reports false when the payment was not pending.
 	Close(ctx context.Context, id string, status Status, rejectCode, rejectReason string, at time.Time) (bool, error)
-	// Unsent returns pending payments created before the given time that the SPI has not accepted.
 	Unsent(ctx context.Context, before time.Time, limit int) ([]Payment, error)
 	List(ctx context.Context, q Query) ([]Payment, error)
 
 	PendingBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error)
 	UnreportedBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error)
-	// SetReport never changes a report already accepted.
 	SetReport(ctx context.Context, id, status, reason string, at time.Time) error
 }
 
@@ -323,7 +324,7 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	if !created {
 		return s.repeat(ctx, stored, in) // another call for the same resolution won
 	}
-	return s.submit(ctx, stored, acct)
+	return s.submit(ctx, stored)
 }
 
 // repeat answers a call for a resolution that already made a payment.
@@ -338,11 +339,7 @@ func (s *Service) repeat(ctx context.Context, p Payment, in PayInput) (Payment, 
 		return p, nil
 	}
 	if p.Status == Pending && !p.Submitted() {
-		acct, err := s.accounts.Account(ctx, p.AccountID)
-		if err != nil {
-			return Payment{}, err
-		}
-		return s.submit(ctx, p, acct)
+		return s.submit(ctx, p)
 	}
 	return p, nil
 }
@@ -350,7 +347,44 @@ func (s *Service) repeat(ctx context.Context, p Payment, in PayInput) (Payment, 
 // submit sends the order to the SPI. An answer of "unavailable" is not a failure of the payment: it stays pending and
 // unsent, and the worker sends it again. A definite refusal of the message (400) means the SPI never took it, so the
 // payment is rejected and the money goes back.
-func (s *Service) submit(ctx context.Context, p Payment, acct ledger.Account) (Payment, error) {
+func (s *Service) submit(ctx context.Context, p Payment) (Payment, error) {
+	body, err := s.orderOf(ctx, p)
+	if err != nil {
+		return p, err
+	}
+
+	ids, err := s.bank.Send(ctx, body)
+	switch {
+	case errors.Is(err, pix.ErrBadRequest):
+		slog.Error("the SPI refused the order", "payment", p.ID, "type", p.Type, "err", err)
+		return s.reject(ctx, p, pix.Rejection{Code: "SPI400", Cause: pix.CauseWallet, Message: "The payment could not be processed. It was not made."})
+	case err != nil:
+		slog.Warn("the SPI did not take the order; the worker sends it again", "payment", p.ID, "type", p.Type, "err", err)
+		return p, nil
+	}
+
+	at := s.now()
+	resource := ""
+	if len(ids) > 0 {
+		resource = ids[0]
+	}
+	if err := s.store.MarkSubmitted(ctx, p.ID, resource, at); err != nil {
+		// the SPI has it; the worker sends it once more and gets the same outcome
+		slog.Warn("could not record that the SPI took the order", "payment", p.ID, "err", err)
+		return p, nil
+	}
+	p.ResourceID, p.SubmittedAt = resource, at
+	return p, nil
+}
+
+func (s *Service) orderOf(ctx context.Context, p Payment) ([]byte, error) {
+	if p.Type == TypeReturn {
+		return s.returnOrderOf(ctx, p)
+	}
+	acct, err := s.accounts.Account(ctx, p.AccountID)
+	if err != nil {
+		return nil, err
+	}
 	_, body, err := pix.NewPacs008(s.ispb, pix.PaymentOrder{
 		EndToEndID:  p.EndToEndID,
 		AmountCents: p.AmountCents,
@@ -366,32 +400,7 @@ func (s *Service) submit(ctx context.Context, p Payment, acct ledger.Account) (P
 		Message:    p.Message,
 		AcceptedAt: p.CreatedAt,
 	}, s.now())
-	if err != nil {
-		return p, fmt.Errorf("build the payment order: %w", err)
-	}
-
-	ids, err := s.bank.Send(ctx, body)
-	switch {
-	case errors.Is(err, pix.ErrBadRequest):
-		slog.Error("the SPI refused the payment order", "end_to_end_id", p.EndToEndID, "err", err)
-		return s.reject(ctx, p, pix.Rejection{Code: "SPI400", Cause: pix.CauseWallet, Message: "The payment could not be processed. It was not made."})
-	case err != nil:
-		slog.Warn("the SPI did not take the payment order; the worker sends it again", "end_to_end_id", p.EndToEndID, "err", err)
-		return p, nil
-	}
-
-	at := s.now()
-	resource := ""
-	if len(ids) > 0 {
-		resource = ids[0]
-	}
-	if err := s.store.MarkSubmitted(ctx, p.ID, resource, at); err != nil {
-		// The SPI has it. Not recording that is harmless: the worker sends it once more and gets the same outcome.
-		slog.Warn("could not record that the SPI took the payment order", "end_to_end_id", p.EndToEndID, "err", err)
-		return p, nil
-	}
-	p.ResourceID, p.SubmittedAt = resource, at
-	return p, nil
+	return body, err
 }
 
 // Get returns a payment.

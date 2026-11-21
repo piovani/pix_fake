@@ -21,9 +21,10 @@ type Payments interface {
 	Pay(ctx context.Context, in payment.PayInput) (payment.Payment, error)
 	Get(ctx context.Context, id string) (payment.Payment, error)
 	List(ctx context.Context, in payment.ListInput) (payment.Page, error)
+	Return(ctx context.Context, in payment.ReturnInput) (payment.Payment, error)
 }
 
-// paymentService answers wallet.v1.PaymentService. ReturnPayment returns Unimplemented for now.
+// paymentService answers wallet.v1.PaymentService.
 type paymentService struct {
 	walletv1.UnimplementedPaymentServiceServer
 	payments Payments
@@ -73,6 +74,16 @@ func (s *paymentService) ListPayments(ctx context.Context, req *walletv1.ListPay
 	return res, nil
 }
 
+func (s *paymentService) ReturnPayment(ctx context.Context, req *walletv1.ReturnPaymentRequest) (*walletv1.ReturnPaymentResponse, error) {
+	p, err := s.payments.Return(ctx, payment.ReturnInput{
+		PaymentID: req.GetPaymentId(), AmountCents: req.GetAmountCents(), RequestID: req.GetRequestId(),
+	})
+	if err != nil {
+		return nil, paymentError("return payment", err)
+	}
+	return &walletv1.ReturnPaymentResponse{Payment: toProtoPayment(p)}, nil
+}
+
 func paymentError(op string, err error) error {
 	switch {
 	case errors.Is(err, payment.ErrInvalid):
@@ -87,6 +98,10 @@ func paymentError(op string, err error) error {
 		return status.Error(codes.NotFound, "payment not found")
 	case errors.Is(err, payment.ErrResolutionConflict):
 		return status.Error(codes.AlreadyExists, "the resolution was already used with another amount or message")
+	case errors.Is(err, payment.ErrRequestConflict):
+		return status.Error(codes.AlreadyExists, "request_id was already used with other data")
+	case errors.Is(err, payment.ErrNotReturnable), errors.Is(err, payment.ErrReturnTooLarge):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ledger.ErrInsufficientFunds):
 		return status.Error(codes.FailedPrecondition, "insufficient funds")
 	case errors.Is(err, pix.ErrRateLimited):
@@ -136,6 +151,7 @@ func toProtoPayment(p payment.Payment) *walletv1.Payment {
 		Id: p.ID, AccountId: p.AccountID, Direction: directions[p.Direction], Type: types[p.Type], Status: statuses[p.Status],
 		AmountCents: p.AmountCents, EndToEndId: p.EndToEndID, Counterparty: toProtoPayee(p.Counterparty), Message: p.Message,
 		RejectCode: p.RejectCode, RejectReason: p.RejectReason, CreatedAt: timestamppb.New(p.CreatedAt),
+		OriginalPaymentId: p.OriginalPaymentID, ReturnedCents: p.ReturnedCents,
 	}
 	if !p.FinishedAt.IsZero() {
 		out.FinishedAt = timestamppb.New(p.FinishedAt)

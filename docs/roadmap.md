@@ -248,10 +248,15 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     the batch unacknowledged, so it is retried. Tested on PostgreSQL and end to end (`make e2e`, a simulated bank pays through the
     SPI mock's control API): credited, and refused with each of the three reasons.
     Known gaps: no account status or limits, so `AC06`, `AC07` and `AM02` are never answered
-  - [ ] Return a received payment
+  - [x] Return a received payment (`ReturnPayment`). Only a payment received through the SPI, settled, at most 90 days old, up to
+    what is left (`returned_cents`, which counts returns in flight so a rejected one frees its amount). The amount is reserved, a
+    `pacs.004` is sent (`MD06`), and `ACSC` or `RJCT` from the SPI settles or releases it. Idempotent by `request_id`; two returns at
+    once are serialized on the original payment so they never exceed it. A return's `end_to_end_id` is its `RtrId`. Tested on
+    PostgreSQL and end to end (`make e2e`): partial returns until nothing is left, and the refusals.
+    Known gap: the return of a payment the wallet made (a `pacs.004` received) is skipped by the worker
   - [ ] Statement and payment history
 - [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow,
-  the book transfer and received payments (see above); still to do for returns.
+  the book transfer, received payments and returns sent (see above); still to do for returns received.
 - [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
   on mock internals.
 
