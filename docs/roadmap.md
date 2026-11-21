@@ -211,8 +211,10 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     transactions settled outside the SPI (`NewTrck002`, `ParseCamt025`). Checked against the official XSDs (apart from the empty
     `Sgntr`, as in the mock); the tests against the running mock (`WALLET_TEST_SPI_URL`) are written but were not run yet
   - [x] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
-  - [ ] Mapping of Bacen errors to wallet behavior: `404`, `409`, `429`, `503` done for the DICT (`errors.Is` with `ErrNotFound`,
-    `ErrConflict`, `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`); rejected payments come with the SPI
+  - [x] Mapping of Bacen errors to wallet behavior. DICT: `404`, `409`, `429`, `503` (`errors.Is` with `ErrNotFound`, `ErrConflict`,
+    `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`). SPI: the reason codes of rejected payments, returns and
+    reports (`pacs.002`, `camt.025`, `admi.002`) become a `Rejection` with a cause, `TryAgain`, a message safe for the customer and
+    `Alert()` (`ReasonOf`, `wallet/internal/pix/spi_reasons.go`)
 - [x] **Proto contract for keys, payments and the statement** (`account.proto`, `key.proto`, `payment.proto`).
 - [ ] **Features:**
   - [x] Register and remove a Pix key (module `pixkey`: `RegisterKey`, `ListKeys`, `RemoveKey`). Registering validates, registers in

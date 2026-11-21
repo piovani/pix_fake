@@ -113,6 +113,13 @@ Returns and reports:
   (positive amount, not a salary account, settled at most 30 days ago and not in the future, the Pix key present or absent
   according to how the payment was initiated).
 
+Rejections. `ReasonOf(code)`, or `Rejection()` on a `TxStatus`, a `Receipt` or a `Notification`, turns a reason code of the SPI into a
+`Rejection`: the `Cause` (`recipient`: the receiving side cannot take it; `rule`: the Pix rules forbid it; `transient`: a timeout or
+processing error; `wallet`: the wallet's own fault or limit; `unknown`), whether the same payment can work if made again later
+(`TryAgain`, as a new payment with a new `EndToEndId`), a `Message` that is safe to show the customer, and `Alert()` for what
+operations must look at. A rejection is final, so the reserved balance goes back whatever the cause. The message never repeats the text
+another institution sent and never says a payment was refused on suspicion of fraud. A code nobody mapped is `unknown`, never an error.
+
 Like the DICT client, it does not retry; a message sent again is safe, since the SPI is idempotent by `EndToEndId`, `RtrId`
 and `MsgId`.
 
