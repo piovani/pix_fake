@@ -5,7 +5,7 @@ the SPI. It is the product of this project; the mocks next to it (`../mock`) onl
 
 > **Status: the core and the keys are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
-> is tested on PostgreSQL. The DICT client and the first part of the SPI client (`internal/pix`) are in place; returns, reports and the payment flows are next.
+> is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports; the payment flows are next.
 
 ## Independence from the mocks
 
@@ -99,8 +99,22 @@ tells whether trying again can work. The client does not retry: that depends on 
 `NewSPIClient(baseURL, ispb)` in `internal/pix`: `Send` (1 to 10 messages), `Pull` (reads the stream; pass `""` to open it, then
 the returned next path) and `Ack` (closes the stream at a next path). The messages of the payment cycle: `NewPacs008` and
 `ParsePacs008` (the payment order), `NewPacs002` and `ParsePacs002` (the status), `ParseAdmi002` (the SPI could not process a
-message) and `MessageKind` to tell what came from the stream. Returns (`pacs.004`) and reports (`trck.002`) are not built yet.
-Like the DICT client, it does not retry; a message sent again is safe, since the SPI is idempotent by `EndToEndId`.
+message) and `MessageKind` to tell what came from the stream.
+
+Returns and reports:
+
+- **Return.** `NewReturnID` creates the `RtrId` (create it before sending and keep it); `NewPacs004` builds the return of a
+  payment the wallet received, and `ParsePacs004` reads the return of a payment the wallet made. The SPI's `pacs.002` answers
+  a return with the `RtrId` as `InstrID`, and the wallet answers a return it receives with `NewPacs002` the same way. A return
+  to the same participant is refused by the builder: it is a ledger movement, not a message.
+- **Report of transactions settled outside the SPI.** `NewTrck002` builds the report of 1 to 500 `ReportedTx` (a book transfer,
+  or a return inside the institution) and returns its `MsgId`; `ParseCamt025` reads the SPI's receipts, one per transaction
+  (`ACPT`, or `RJCT` with a reason), which name that `MsgId`. The builder applies the rules of the contract before sending
+  (positive amount, not a salary account, settled at most 30 days ago and not in the future, the Pix key present or absent
+  according to how the payment was initiated).
+
+Like the DICT client, it does not retry; a message sent again is safe, since the SPI is idempotent by `EndToEndId`, `RtrId`
+and `MsgId`.
 
 ## Test accounts
 

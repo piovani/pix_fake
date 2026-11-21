@@ -57,6 +57,26 @@ func randomString(n int) (string, error) {
 	return string(out), nil
 }
 
+var returnIDRe = regexp.MustCompile(`^D[0-9]{8}[0-9]{12}[A-Za-z0-9]{11}$`)
+
+// NewReturnID creates the identifier of a return (the RtrId of a pacs.004): "D" + ISPB of the sender (8) +
+// yyyyMMddHHmm in UTC (12) + 11 random characters. Create it before sending and keep it: it is what makes the return
+// idempotent and what the SPI answers with.
+func NewReturnID(ispb string, now time.Time) (string, error) {
+	if len(ispb) != 8 {
+		return "", fmt.Errorf("pix: ISPB must have 8 digits, got %q", ispb)
+	}
+	suffix, err := randomString(11)
+	if err != nil {
+		return "", err
+	}
+	id := "D" + ispb + now.UTC().Format("200601021504") + suffix
+	if !returnIDRe.MatchString(id) {
+		return "", fmt.Errorf("pix: invalid RtrId %q (is the ISPB numeric?)", id)
+	}
+	return id, nil
+}
+
 var messageIDRe = regexp.MustCompile(`^M[0-9A-Z]{8}[A-Za-z0-9]{23}$`)
 
 // NewMessageID creates the identifier of a message: "M" + ISPB of the sender (8) + 23 random characters.

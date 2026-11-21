@@ -201,3 +201,128 @@ type admi002XML struct {
 		} `xml:"admi.002.001.01"`
 	} `xml:"Document"`
 }
+
+// pacs.004: the return of a payment. The sender holds the account that is debited (DbtrAgt), the receiver of the
+// message the one that is credited (CdtrAgt).
+type returnXML struct {
+	RtrID         string    `xml:"RtrId"`
+	OrgnlEndToEnd string    `xml:"OrgnlEndToEndId"`
+	Amount        amountXML `xml:"RtrdIntrBkSttlmAmt"`
+	Priority      string    `xml:"SttlmPrty"`
+	ChrgBr        string    `xml:"ChrgBr"`
+	RtrRsnInf     struct {
+		Rsn struct {
+			Cd string `xml:"Cd"`
+		} `xml:"Rsn"`
+		AddtlInf string `xml:"AddtlInf,omitempty"`
+	} `xml:"RtrRsnInf"`
+	OrgnlTxRef struct {
+		RmtInf  *remittanceXML `xml:"RmtInf,omitempty"`
+		DbtrAgt agentXML       `xml:"DbtrAgt"`
+		CdtrAgt agentXML       `xml:"CdtrAgt"`
+	} `xml:"OrgnlTxRef"`
+}
+
+type pacs004XML struct {
+	XMLName  xml.Name  `xml:"Envelope"`
+	Xmlns    string    `xml:"xmlns,attr"`
+	AppHdr   appHdrXML `xml:"AppHdr"`
+	Document struct {
+		PmtRtr struct {
+			GrpHdr struct {
+				MsgID    string `xml:"MsgId"`
+				CreDtTm  string `xml:"CreDtTm"`
+				NbOfTxs  string `xml:"NbOfTxs"`
+				SttlmInf struct {
+					Method string `xml:"SttlmMtd"`
+				} `xml:"SttlmInf"`
+			} `xml:"GrpHdr"`
+			TxInf []returnXML `xml:"TxInf"`
+		} `xml:"PmtRtr"`
+	} `xml:"Document"`
+}
+
+// trck.002: the report of transactions settled outside the SPI. Here the parties are identified by Pty/Id.
+type partyIDXML struct {
+	Pty struct {
+		ID privateIDXML `xml:"Id"`
+	} `xml:"Pty"`
+}
+
+func partyID(taxID string) partyIDXML {
+	var p partyIDXML
+	p.Pty.ID = privateID(taxID)
+	return p
+}
+
+type reportedTxXML struct {
+	PmtID struct {
+		InstrID  string `xml:"InstrId,omitempty"`
+		EndToEnd string `xml:"EndToEndId"`
+	} `xml:"PmtId"`
+	PmtTpInf struct {
+		LclInstrm struct {
+			Prtry string `xml:"Prtry"`
+		} `xml:"LclInstrm"`
+	} `xml:"PmtTpInf"`
+	PmtScnro struct {
+		Prtry string `xml:"Prtry"`
+	} `xml:"PmtScnro"`
+	Amount      amountXML `xml:"IntrBkSttlmAmt"`
+	ReqdExctnDt struct {
+		DtTm string `xml:"DtTm"`
+	} `xml:"ReqdExctnDt"`
+	Debtor       partyIDXML     `xml:"Dbtr"`
+	DebtorAcct   bankAccountXML `xml:"DbtrAcct"`
+	DebtorAgt    agentXML       `xml:"DbtrAgt"`
+	CreditorAgt  agentXML       `xml:"CdtrAgt"`
+	Creditor     partyIDXML     `xml:"Cdtr"`
+	CreditorAcct bankAccountXML `xml:"CdtrAcct"`
+}
+
+type trck002XML struct {
+	XMLName  xml.Name  `xml:"Envelope"`
+	Xmlns    string    `xml:"xmlns,attr"`
+	AppHdr   appHdrXML `xml:"AppHdr"`
+	Document struct {
+		PmtStsTrckrRpt struct {
+			GrpHdr struct {
+				MsgID   string `xml:"MsgId"`
+				CreDtTm string `xml:"CreDtTm"`
+			} `xml:"GrpHdr"`
+			TrckrStsAndTx struct {
+				TxSts struct {
+					Sts string `xml:"Sts"`
+				} `xml:"TxSts"`
+				Tx []reportedTxXML `xml:"Tx"`
+			} `xml:"TrckrStsAndTx"`
+		} `xml:"PmtStsTrckrRpt"`
+	} `xml:"Document"`
+}
+
+// camt.025: the SPI's receipt for a trck.002.
+type camt025XML struct {
+	Document struct {
+		Rct struct {
+			RctDtls []struct {
+				OrgnlMsgID struct {
+					MsgID string `xml:"MsgId"`
+				} `xml:"OrgnlMsgId"`
+				OrgnlPmtID struct {
+					PrtryID string `xml:"PrtryId"`
+				} `xml:"OrgnlPmtId"`
+				ReqHdlg struct {
+					Sts struct {
+						Cd string `xml:"Cd"`
+					} `xml:"Sts"`
+					StsRsn *struct {
+						Rsn struct {
+							Prtry string `xml:"Prtry"`
+						} `xml:"Rsn"`
+						AddtlInf string `xml:"AddtlInf"`
+					} `xml:"StsRsn"`
+				} `xml:"ReqHdlg"`
+			} `xml:"RctDtls"`
+		} `xml:"Rct"`
+	} `xml:"Document"`
+}
