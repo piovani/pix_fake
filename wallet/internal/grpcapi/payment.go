@@ -34,7 +34,7 @@ func (s *paymentService) ResolveKey(ctx context.Context, req *walletv1.ResolveKe
 	if err != nil {
 		return nil, paymentError("resolve key", err)
 	}
-	return &walletv1.ResolveKeyResponse{ResolutionId: r.ID, Payee: toProtoPayee(r.Payee)}, nil
+	return &walletv1.ResolveKeyResponse{ResolutionId: r.ID, Payee: toProtoPayee(r.Payee), BookTransfer: r.BookTransfer}, nil
 }
 
 func (s *paymentService) CreatePayment(ctx context.Context, req *walletv1.CreatePaymentRequest) (*walletv1.CreatePaymentResponse, error) {
@@ -89,8 +89,6 @@ func paymentError(op string, err error) error {
 		return status.Error(codes.AlreadyExists, "the resolution was already used with another amount or message")
 	case errors.Is(err, ledger.ErrInsufficientFunds):
 		return status.Error(codes.FailedPrecondition, "insufficient funds")
-	case errors.Is(err, payment.ErrBookTransferUnsupported):
-		return status.Error(codes.Unimplemented, "paying a key of the wallet itself is not available yet")
 	case errors.Is(err, pix.ErrRateLimited):
 		return status.Error(codes.ResourceExhausted, "the DICT is limiting requests, try again later")
 	case errors.Is(err, pix.ErrUnavailable):

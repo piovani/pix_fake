@@ -3,10 +3,10 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: the core, the keys and paying a key of another institution are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
+> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
 > is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports. A customer can pay a key of another
-> institution end to end; book transfers, receiving, returning and the statement are next.
+> institution or another customer of the wallet end to end; receiving, returning and the statement are next.
 
 ## Independence from the mocks
 
@@ -32,14 +32,14 @@ wallet/
 ├── gen/                   # generated Go code (make proto), committed for the clients
 ├── cmd/api/               # process 1: the gRPC API
 ├── cmd/worker/            # process 2: the SPI stream consumer, started next to the API
-├── cmd/seed/              # applies the migrations and loads the test accounts (idempotent)
+├── cmd/seed/              # applies the migrations and loads the test accounts and their keys (idempotent)
 └── internal/
     ├── ledger/            # module: accounts, simple balance with reservation
     ├── payment/           # module: payment flows and status
     ├── pix/               # module: DICT and SPI clients (the integration layer)
     ├── pixkey/            # module: the wallet's Pix keys (registers them in the DICT)
     ├── grpcapi/           # adapter: gRPC services
-    ├── seed/              # test accounts, same people as the wallet's accounts in the DICT seed
+    ├── seed/              # test accounts and their Pix keys, same people and keys as the wallet's accounts in the DICT seed
     └── platform/
         ├── config/        # environment configuration
         └── db/            # pgx pool, transactions (InTx) and migrations; dbtest/ for integration tests
@@ -67,7 +67,7 @@ go run ./cmd/api       # gRPC on :9090, with the standard health service
 go run ./cmd/worker    # reads the SPI stream and settles the payments; without it they stay PENDING
 ```
 
-Or only the wallet's side, from `wallet/`: `make up` (PostgreSQL on `:5434`, migrations applied, test accounts loaded). To stop it or to
+Or only the wallet's side, from `wallet/`: `make up` (PostgreSQL on `:5434`, migrations applied, test accounts and their keys loaded). To stop it or to
 start with an empty database: `docker compose down` or `docker compose down -v` inside `wallet/`.
 
 The mocks alone are `make setup` at the root (DICT on `:8080`, SPI on `:8081`). How to call them is in the
@@ -85,8 +85,8 @@ the contract the features will fill.
 | `PaymentService` | `ResolveKey`, `CreatePayment`, `GetPayment`, `ListPayments`, `ReturnPayment` |
 
 To pay, call `ResolveKey` (it shows who owns the key) and then `CreatePayment` with the `resolution_id`. A payment through the SPI
-comes back `PENDING` and is read later with `GetPayment` or `ListPayments`; a payment to another customer of the wallet will come back
-`SETTLED`. Money is in centavos. The decisions are in the [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet).
+comes back `PENDING` and is read later with `GetPayment` or `ListPayments`; a payment to another customer of the wallet comes back
+`SETTLED` in the same call. Money is in centavos. The decisions are in the [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet).
 
 ## Paying a key of another institution
 
@@ -104,8 +104,29 @@ key of the wallet itself answers `Unimplemented` for now). `CreatePayment` reser
   after all of it was applied; one that fails is delivered again, and applying a status twice changes nothing.
 - **The timeout is the SPI's.** A payment nobody answers in 40 s comes back `RJCT` with `AB03`. The wallet never rejects on its own a
   payment the SPI may have taken, or the money could leave twice.
-- **Not handled yet by the worker:** received payments (`pacs.008`), returns (`pacs.004`) and the receipts of reports (`camt.025`) are
-  logged and skipped, so a payment made to the wallet while the worker runs is not answered and times out at the payer.
+- **Not handled yet by the worker:** received payments (`pacs.008`) and returns (`pacs.004`) are logged and skipped, so a payment made
+  to the wallet while the worker runs is not answered and times out at the payer.
+
+## Paying another customer of the wallet (book transfer)
+
+Same two calls. `ResolveKey` looks at the wallet's own records first (`pixkey.AccountOf`): a key of another customer answers
+`book_transfer = true` with the payee's data, **without asking the DICT** (which would refuse it); a key of the paying account is
+`INVALID_ARGUMENT`. The wallet's own copy of the keys must agree with the DICT; the seed loads both. A key the DICT calls ours but the
+wallet does not know is an error (`ErrKeyNotRecorded`), never a payment through the SPI, which would refuse it with `AG12`.
+
+- **One step.** `CreatePayment` records the payment, then `ledger.Transfer` debits the payer and credits the payee in a single
+  database transaction (idempotent by `EndToEndId`: a repeat moves nothing), records the payment the payee receives (`INBOUND`, same
+  `EndToEndId`, so each side sees it in `ListPayments`) and closes the first as `SETTLED`. No reservation, nothing sent to the SPI.
+- **Without enough money** it is `FAILED_PRECONDITION` and the attempt leaves nothing behind, so the same resolution can be paid after
+  a deposit.
+- **A call that stops halfway can be repeated,** and the worker finishes what it finds pending after 10 s. The transfer is atomic, so
+  the money is never half moved.
+- **Reported afterwards.** The worker sends a `trck.002` for each settled book transfer (scenario `BOK1`, initiation `DICT` when the key
+  was used), up to 10 per call. The `camt.025` receipt marks it accepted; one that is not answered in a minute is sent again (the SPI is
+  idempotent per transaction); a refusal worth trying again (`ED05`) is sent again, and any other is final and logged as an error for
+  operations, since the report was built by the wallet.
+- **The 40 seconds** of the Pix rules are met by settling in the same call, not enforced by a clock: nothing rejects a transfer that
+  took longer.
 
 ## DICT client
 

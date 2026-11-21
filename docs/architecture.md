@@ -160,5 +160,10 @@ sequenceDiagram
     B-->>P: Receipt (CAMT.025): accepted, or rejected with a reason
 ```
 
+In the wallet this is `payment.payInside`: the payment is recorded, `ledger.Transfer` moves the money in one database
+transaction, and the worker reports it (`ReportBookTransfers`) and applies the `camt.025` (`OnReceipt`). The 40 seconds are met by
+settling in the same call; a transfer that stops halfway is finished by the worker within seconds. See the
+[wallet README](../wallet/README.md#paying-another-customer-of-the-wallet-book-transfer).
+
 Sources: Manual de Tempos do Pix, version 7.0 (sections 1.3, 1.4 and 4.5.1), the DICT API v2.13.0 error table, and the
 SPI message catalog 5.13 (`trck.002` and `camt.025`). I did not read the Instrução Normativa itself.

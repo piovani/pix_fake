@@ -26,9 +26,11 @@ const (
 	marcosCPF     = "82910476340"    // AB09
 )
 
-func (e env) balance(t *testing.T) *walletv1.GetBalanceResponse {
+func (e env) balance(t *testing.T) *walletv1.GetBalanceResponse { return e.balanceOf(t, seed.AnaID) }
+
+func (e env) balanceOf(t *testing.T, account string) *walletv1.GetBalanceResponse {
 	t.Helper()
-	res, err := e.accounts.GetBalance(ctx(t), &walletv1.GetBalanceRequest{AccountId: seed.AnaID})
+	res, err := e.accounts.GetBalance(ctx(t), &walletv1.GetBalanceRequest{AccountId: account})
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
@@ -166,9 +168,8 @@ func TestPayErrors(t *testing.T) {
 	_, err := e.payments.ResolveKey(ctx(t), &walletv1.ResolveKeyRequest{AccountId: seed.AnaID, Key: "nobody@example.com"})
 	wantCode(t, "unknown key", err, codes.NotFound)
 
-	// a key of the wallet itself is a book transfer, which is not built yet
-	_, err = e.payments.ResolveKey(ctx(t), &walletv1.ResolveKeyRequest{AccountId: seed.AnaID, Key: brunoCPF})
-	wantCode(t, "a key of the wallet", err, codes.Unimplemented)
+	_, err = e.payments.ResolveKey(ctx(t), &walletv1.ResolveKeyRequest{AccountId: seed.AnaID, Key: anaCPF})
+	wantCode(t, "the payer's own key", err, codes.InvalidArgument)
 
 	r := e.resolve(t, carlosPhone)
 	_, err = e.pay(t, r.ResolutionId, before.AvailableCents+1, "")
@@ -231,5 +232,85 @@ func (e env) clearSPIFaults(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodDelete, e.spi+"/mock/faults", nil)
 	if resp, err := http.DefaultClient.Do(req); err == nil {
 		resp.Body.Close()
+	}
+}
+
+func TestPayAnotherCustomerOfTheWallet(t *testing.T) {
+	e := setup(t)
+	ana, bruno := e.balance(t), e.balanceOf(t, seed.BrunoID)
+
+	r := e.resolve(t, "+5511999990002")
+	if !r.BookTransfer || r.Payee.Name != "Bruno Lima" || r.Payee.Participant != "99000001" || r.Payee.AccountNumber != "00234567" {
+		t.Fatalf("resolution: %v", r)
+	}
+
+	p, err := e.pay(t, r.ResolutionId, 175, "to Bruno")
+	if err != nil {
+		t.Fatalf("CreatePayment: %v", err)
+	}
+	if p.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED || p.Type != walletv1.PaymentType_PAYMENT_TYPE_BOOK_TRANSFER ||
+		p.Direction != walletv1.PaymentDirection_PAYMENT_DIRECTION_OUTBOUND || p.FinishedAt == nil || p.Counterparty.Name != "Bruno Lima" {
+		t.Fatalf("a book transfer is settled in the same call: %v", p)
+	}
+	if got := e.balance(t); got.AvailableCents != ana.AvailableCents-175 || got.ReservedCents != ana.ReservedCents {
+		t.Errorf("Ana: %v -> %v", ana, got)
+	}
+	if got := e.balanceOf(t, seed.BrunoID); got.AvailableCents != bruno.AvailableCents+175 {
+		t.Errorf("Bruno: %v -> %v", bruno, got)
+	}
+
+	list, err := e.payments.ListPayments(ctx(t), &walletv1.ListPaymentsRequest{AccountId: seed.BrunoID, PageSize: 5})
+	if err != nil || len(list.Payments) == 0 {
+		t.Fatalf("Bruno's payments: %v, %v", list, err)
+	}
+	in := list.Payments[0]
+	if in.Direction != walletv1.PaymentDirection_PAYMENT_DIRECTION_INBOUND || in.Type != walletv1.PaymentType_PAYMENT_TYPE_BOOK_TRANSFER ||
+		in.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED || in.AmountCents != 175 || in.EndToEndId != p.EndToEndId ||
+		in.Counterparty.Name != "Ana Souza" || in.Message != "to Bruno" {
+		t.Errorf("what Bruno received: %v", in)
+	}
+
+	again, err := e.pay(t, r.ResolutionId, 175, "to Bruno")
+	if err != nil || again.Id != p.Id || e.balance(t).AvailableCents != ana.AvailableCents-175 {
+		t.Errorf("repeat: %v, %v", again, err)
+	}
+
+	if e.spi == "" {
+		return
+	}
+	if status := e.spiStatus(t, "/mock/payments/"+p.EndToEndId); status != http.StatusNotFound {
+		t.Errorf("the SPI has a payment for a book transfer (status %d)", status)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for e.spiStatus(t, "/mock/reports/"+p.EndToEndId) != http.StatusOK {
+		if time.Now().After(deadline) {
+			t.Fatal("the SPI was not told about the book transfer: is the worker running?")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func (e env) spiStatus(t *testing.T, path string) int {
+	t.Helper()
+	resp, err := http.Get(e.spi + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestPayAnotherCustomerWithoutEnoughMoney(t *testing.T) {
+	e := setup(t)
+	ana, bruno := e.balance(t), e.balanceOf(t, seed.BrunoID)
+
+	r := e.resolve(t, "+5511999990002")
+	_, err := e.pay(t, r.ResolutionId, ana.AvailableCents+1, "")
+	wantCode(t, "insufficient funds", err, codes.FailedPrecondition)
+	if got := e.balance(t); got.AvailableCents != ana.AvailableCents || e.balanceOf(t, seed.BrunoID).AvailableCents != bruno.AvailableCents {
+		t.Errorf("a refused payment moved money: Ana %v -> %v", ana, got)
+	}
+	if p, err := e.pay(t, r.ResolutionId, 1, ""); err != nil || p.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
+		t.Errorf("after the refusal: %v, %v", p, err)
 	}
 }

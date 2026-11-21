@@ -48,38 +48,44 @@ func (p *Postgres) SaveResolution(ctx context.Context, r Resolution) (Resolution
 		return Resolution{}, err
 	}
 	err = p.pool.QueryRow(ctx, `
-		INSERT INTO resolutions (account_id, key, end_to_end_id, payee, expires_at) VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`, r.AccountID, r.Key, r.EndToEndID, payee, r.ExpiresAt).Scan(&r.ID)
+		INSERT INTO resolutions (account_id, key, end_to_end_id, payee, expires_at, book_transfer, payee_account_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id`, r.AccountID, r.Key, r.EndToEndID, payee, r.ExpiresAt, r.BookTransfer, nullable(r.PayeeAccountID)).Scan(&r.ID)
 	return r, err
 }
 
 func (p *Postgres) Resolution(ctx context.Context, id string) (Resolution, bool, error) {
 	var r Resolution
 	var payee []byte
+	var payeeAccount *string
 	err := p.pool.QueryRow(ctx, `
-		SELECT id, account_id, key, end_to_end_id, payee, expires_at FROM resolutions WHERE id = $1`, id).
-		Scan(&r.ID, &r.AccountID, &r.Key, &r.EndToEndID, &payee, &r.ExpiresAt)
+		SELECT id, account_id, key, end_to_end_id, payee, expires_at, book_transfer, payee_account_id
+		FROM resolutions WHERE id = $1`, id).
+		Scan(&r.ID, &r.AccountID, &r.Key, &r.EndToEndID, &payee, &r.ExpiresAt, &r.BookTransfer, &payeeAccount)
 	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") { // not found, or not a UUID
 		return Resolution{}, false, nil
 	}
 	if err != nil {
 		return Resolution{}, false, err
 	}
+	r.PayeeAccountID = deref(payeeAccount)
 	r.Payee, err = unmarshalPayee(payee)
 	return r, err == nil, err
 }
 
 const columns = `id, account_id, direction, type, status, amount_cents, end_to_end_id, resolution_id, reservation_id,
-	counterparty, message, reject_code, reject_reason, resource_id, submitted_at, created_at, finished_at`
+	counterparty, message, reject_code, reject_reason, resource_id, submitted_at, created_at, finished_at,
+	report_status, report_sent_at, report_reason`
 
 func scan(row pgx.Row) (Payment, error) {
 	var p Payment
 	var direction, typ, status string
 	var resolution, reservation, resource *string
 	var counterparty []byte
-	var submitted, finished *time.Time
+	var submitted, finished, reportSent *time.Time
 	err := row.Scan(&p.ID, &p.AccountID, &direction, &typ, &status, &p.AmountCents, &p.EndToEndID, &resolution, &reservation,
-		&counterparty, &p.Message, &p.RejectCode, &p.RejectReason, &resource, &submitted, &p.CreatedAt, &finished)
+		&counterparty, &p.Message, &p.RejectCode, &p.RejectReason, &resource, &submitted, &p.CreatedAt, &finished,
+		&p.ReportStatus, &reportSent, &p.ReportReason)
 	if err != nil {
 		return Payment{}, err
 	}
@@ -90,6 +96,9 @@ func scan(row pgx.Row) (Payment, error) {
 	}
 	if finished != nil {
 		p.FinishedAt = *finished
+	}
+	if reportSent != nil {
+		p.ReportSentAt = *reportSent
 	}
 	p.Counterparty, err = unmarshalPayee(counterparty)
 	return p, err
@@ -116,14 +125,14 @@ func (p *Postgres) Insert(ctx context.Context, in Payment) (Payment, bool, error
 	}
 	stored, err := scan(p.pool.QueryRow(ctx, `
 		INSERT INTO payments (account_id, direction, type, status, amount_cents, end_to_end_id, resolution_id, reservation_id,
-			counterparty, message, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (resolution_id) DO NOTHING
+			counterparty, message, created_at, finished_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT DO NOTHING
 		RETURNING `+columns,
 		in.AccountID, string(in.Direction), string(in.Type), string(in.Status), in.AmountCents, in.EndToEndID,
-		nullable(in.ResolutionID), nullable(in.ReservationID), cp, in.Message, in.CreatedAt))
-	if errors.Is(err, pgx.ErrNoRows) { // the resolution already made a payment
-		existing, found, err := p.ByResolution(ctx, in.ResolutionID)
+		nullable(in.ResolutionID), nullable(in.ReservationID), cp, in.Message, in.CreatedAt, nullTime(in.FinishedAt)))
+	if errors.Is(err, pgx.ErrNoRows) { // the resolution already made a payment, or the EndToEndId already has one in this direction
+		existing, found, err := p.existingOf(ctx, in)
 		if err == nil && !found {
 			err = pgx.ErrNoRows
 		}
@@ -132,8 +141,29 @@ func (p *Postgres) Insert(ctx context.Context, in Payment) (Payment, bool, error
 	return stored, err == nil, err
 }
 
-func (p *Postgres) one(ctx context.Context, where string, arg any) (Payment, bool, error) {
-	got, err := scan(p.pool.QueryRow(ctx, `SELECT `+columns+` FROM payments WHERE `+where, arg))
+func (p *Postgres) existingOf(ctx context.Context, in Payment) (Payment, bool, error) {
+	if in.ResolutionID != "" {
+		if existing, found, err := p.ByResolution(ctx, in.ResolutionID); err != nil || found {
+			return existing, found, err
+		}
+	}
+	return p.ByEndToEnd(ctx, in.EndToEndID, in.Direction)
+}
+
+func nullTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+func (p *Postgres) Discard(ctx context.Context, id string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM payments WHERE id = $1 AND status = 'PENDING'`, id)
+	return err
+}
+
+func (p *Postgres) one(ctx context.Context, where string, args ...any) (Payment, bool, error) {
+	got, err := scan(p.pool.QueryRow(ctx, `SELECT `+columns+` FROM payments WHERE `+where, args...))
 	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
 		return Payment{}, false, nil
 	}
@@ -143,8 +173,8 @@ func (p *Postgres) one(ctx context.Context, where string, arg any) (Payment, boo
 func (p *Postgres) ByID(ctx context.Context, id string) (Payment, bool, error) {
 	return p.one(ctx, `id = $1`, id)
 }
-func (p *Postgres) ByEndToEnd(ctx context.Context, e string) (Payment, bool, error) {
-	return p.one(ctx, `end_to_end_id = $1`, e)
+func (p *Postgres) ByEndToEnd(ctx context.Context, e string, d Direction) (Payment, bool, error) {
+	return p.one(ctx, `end_to_end_id = $1 AND direction = $2`, e, string(d))
 }
 func (p *Postgres) ByResolution(ctx context.Context, id string) (Payment, bool, error) {
 	return p.one(ctx, `resolution_id = $1`, id)
@@ -171,6 +201,29 @@ func (p *Postgres) Unsent(ctx context.Context, before time.Time, limit int) ([]P
 		SELECT `+columns+` FROM payments
 		WHERE status = 'PENDING' AND submitted_at IS NULL AND direction = 'OUTBOUND' AND type = 'PIX' AND created_at < $1
 		ORDER BY created_at LIMIT $2`, before, limit)
+}
+
+func (p *Postgres) PendingBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error) {
+	return p.many(ctx, `
+		SELECT `+columns+` FROM payments
+		WHERE status = 'PENDING' AND type = 'BOOK_TRANSFER' AND direction = 'OUTBOUND' AND created_at < $1
+		ORDER BY created_at LIMIT $2`, before, limit)
+}
+
+func (p *Postgres) UnreportedBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error) {
+	return p.many(ctx, `
+		SELECT `+columns+` FROM payments
+		WHERE type = 'BOOK_TRANSFER' AND direction = 'OUTBOUND' AND status = 'SETTLED'
+		  AND ((report_status = '' AND (report_sent_at IS NULL OR report_sent_at < $1))
+		    OR (report_status = 'SENT' AND report_sent_at < $1))
+		ORDER BY finished_at LIMIT $2`, before, limit)
+}
+
+func (p *Postgres) SetReport(ctx context.Context, id, status, reason string, at time.Time) error {
+	_, err := p.pool.Exec(ctx, `
+		UPDATE payments SET report_status = $2, report_reason = $3, report_sent_at = $4
+		WHERE id = $1 AND report_status <> 'ACCEPTED'`, id, status, reason, at)
+	return err
 }
 
 func (p *Postgres) List(ctx context.Context, q Query) ([]Payment, error) {

@@ -105,6 +105,12 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Key, error) {
 	return s.store.Insert(ctx, Key{Key: entry.Key, Type: in.Type, AccountID: acct.ID, RequestID: in.RequestID})
 }
 
+// AccountOf finds the account that holds a key of the wallet.
+func (s *Service) AccountOf(ctx context.Context, key string) (accountID string, found bool, err error) {
+	k, found, err := s.store.ByKey(ctx, key)
+	return k.AccountID, found, err
+}
+
 // List returns the keys of an account, oldest first.
 func (s *Service) List(ctx context.Context, accountID string) ([]Key, error) {
 	if accountID == "" {

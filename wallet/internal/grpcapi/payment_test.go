@@ -94,6 +94,14 @@ func TestResolveKeyAndCreatePayment(t *testing.T) {
 	}
 }
 
+func TestResolveKeyOfAnotherCustomerOfTheWallet(t *testing.T) {
+	f := &fakePayments{resolution: payment.Resolution{ID: "res-2", BookTransfer: true, Payee: testPayee}}
+	r, err := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, f)).ResolveKey(ctx5(t), &walletv1.ResolveKeyRequest{AccountId: "acc", Key: "k"})
+	if err != nil || !r.GetBookTransfer() || r.GetResolutionId() != "res-2" {
+		t.Fatalf("%v, %v", r, err)
+	}
+}
+
 func TestGetPaymentShowsARejection(t *testing.T) {
 	finished := time.Date(2026, 11, 21, 12, 0, 5, 0, time.UTC)
 	f := &fakePayments{payment: payment.Payment{
@@ -145,7 +153,7 @@ func TestPaymentErrors(t *testing.T) {
 		{payment.ErrPaymentNotFound, codes.NotFound},
 		{payment.ErrResolutionConflict, codes.AlreadyExists},
 		{ledger.ErrInsufficientFunds, codes.FailedPrecondition},
-		{payment.ErrBookTransferUnsupported, codes.Unimplemented},
+		{payment.ErrKeyNotRecorded, codes.Internal},
 		{&pix.APIError{Status: 429}, codes.ResourceExhausted},
 		{&pix.APIError{Status: 503}, codes.Unavailable},
 		{errors.New("connection refused to 10.0.0.5"), codes.Internal},

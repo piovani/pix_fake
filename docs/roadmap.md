@@ -231,14 +231,21 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     payment the SPI may have taken. Tested on PostgreSQL and end to end (`make e2e`, [`wallet/e2e`](../wallet/e2e/payments_test.go)):
     settled, the seven rejections the SPI mock can force, and the SPI down.
     Known gaps: a crash between reserving and storing the payment leaves money reserved until the call is repeated (nothing sweeps
-    it yet); the worker skips what it does not handle (received payments, returns, receipts)
-  - [ ] Pay a key of another wallet user (book transfer): recognize the wallet's own keys, settle in the ledger within
-    40 seconds, never query the DICT or send a `pacs.008`, and report the transaction afterwards
+    it yet); the worker skips what it does not handle (received payments, returns)
+  - [x] Pay a key of another wallet user (book transfer). `ResolveKey` recognizes the wallet's own keys from its own records
+    (`pixkey.AccountOf`, loaded by the seed) and never asks the DICT; `CreatePayment` moves the money in one transaction
+    (`ledger.Transfer`, idempotent by `EndToEndId`), records the payment each side sees (a sent and a received payment with the same
+    `EndToEndId`) and settles in the same call. The worker finishes a transfer that stopped halfway and reports each one to the SPI
+    (`trck.002`, scenario `BOK1`), applying the `camt.025`: accepted, sent again after a minute without a receipt, sent again on a
+    processing error, final and logged otherwise. Tested on PostgreSQL and end to end (`make e2e`): settled at once, nothing in the
+    SPI's payments, the report arrives, refused without funds.
+    Known gaps: the 40 seconds are met by settling in the same call, not enforced by a clock; a refused report is only logged, there is
+    no way to fix and resend it by hand yet
   - [ ] Receive a payment (inbound flow)
   - [ ] Return a received payment
   - [ ] Statement and payment history
 - [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow
-  (see above); still to do for a book transfer (the 40 seconds are the wallet's to keep), received payments and returns.
+  and for the book transfer (see above); still to do for received payments and returns.
 - [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
   on mock internals.
 

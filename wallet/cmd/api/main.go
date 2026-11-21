@@ -41,7 +41,7 @@ func main() {
 	accounts := ledger.New(pool)
 	dict := pix.NewDictClient(cfg.DictBaseURL, cfg.ISPB)
 	keys := pixkey.New(accounts, dict, pixkey.NewPostgres(pool), cfg.ISPB)
-	payments := payment.New(accounts, dict, pix.NewSPIClient(cfg.SPIBaseURL, cfg.ISPB), payment.NewPostgres(pool), cfg.ISPB)
+	payments := payment.New(accounts, keys, dict, pix.NewSPIClient(cfg.SPIBaseURL, cfg.ISPB), payment.NewPostgres(pool), cfg.ISPB)
 	srv := grpcapi.New(accounts, keys, payments)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

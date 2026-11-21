@@ -247,3 +247,133 @@ func TestAccountReturnsItsData(t *testing.T) {
 		t.Fatalf("bad id: %v", err)
 	}
 }
+
+func TestTransferMovesMoneyBetweenAccounts(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	payer, payee := account(t, l, "001", 10000), account(t, l, "002", 500)
+
+	if err := l.Transfer(ctx, payer, payee, 2590, "E-1"); err != nil {
+		t.Fatal(err)
+	}
+	if b := balance(t, l, payer); b != (ledger.Balance{AvailableCents: 7410}) {
+		t.Errorf("payer: %+v", b)
+	}
+	if b := balance(t, l, payee); b != (ledger.Balance{AvailableCents: 3090}) {
+		t.Errorf("payee: %+v", b)
+	}
+}
+
+func TestTransferIsIdempotentByReference(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	payer, payee := account(t, l, "001", 10000), account(t, l, "002", 0)
+
+	for range 3 {
+		if err := l.Transfer(ctx, payer, payee, 2590, "E-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b := balance(t, l, payer); b.AvailableCents != 7410 {
+		t.Errorf("payer: %+v", b)
+	}
+	if b := balance(t, l, payee); b.AvailableCents != 2590 {
+		t.Errorf("payee: %+v", b)
+	}
+	if err := l.Transfer(ctx, payer, payee, 9999, "E-1"); !errors.Is(err, ledger.ErrReferenceConflict) {
+		t.Errorf("the same reference with another amount: %v", err)
+	}
+	if err := l.Transfer(ctx, payer, payee, 100, "E-2"); err != nil {
+		t.Fatal(err)
+	}
+	if b := balance(t, l, payee); b.AvailableCents != 2690 {
+		t.Errorf("payee: %+v", b)
+	}
+}
+
+func TestTransferInsufficientFundsChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	payer, payee := account(t, l, "001", 1000), account(t, l, "002", 0)
+
+	if err := l.Transfer(ctx, payer, payee, 1001, "E-1"); !errors.Is(err, ledger.ErrInsufficientFunds) {
+		t.Fatalf("err = %v", err)
+	}
+	if balance(t, l, payer).AvailableCents != 1000 || balance(t, l, payee).AvailableCents != 0 {
+		t.Error("a refused transfer moved money")
+	}
+	if err := l.Credit(ctx, payer, 1, "top-up"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Transfer(ctx, payer, payee, 1001, "E-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Credit(ctx, payer, 500, "more"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(ctx, payer, 500, "held"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Transfer(ctx, payer, payee, 1, "E-3"); !errors.Is(err, ledger.ErrInsufficientFunds) {
+		t.Errorf("transferring reserved money: %v", err)
+	}
+}
+
+func TestTransferValidation(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	a, b := account(t, l, "001", 1000), account(t, l, "002", 0)
+	missing := "5c1f3a52-6b7d-4e0a-9c11-2d5a7b3e9f01"
+
+	for name, tt := range map[string]struct {
+		from, to string
+		cents    int64
+		ref      string
+		want     error
+	}{
+		"zero amount":      {a, b, 0, "r", ledger.ErrInvalidAmount},
+		"no reference":     {a, b, 1, "", ledger.ErrInvalidReference},
+		"the same account": {a, a, 1, "r", ledger.ErrSameAccount},
+		"unknown payer":    {missing, b, 1, "r", ledger.ErrAccountNotFound},
+		"unknown payee":    {a, missing, 1, "r", ledger.ErrAccountNotFound},
+		"malformed payee":  {a, "not-a-uuid", 1, "r", ledger.ErrAccountNotFound},
+	} {
+		if err := l.Transfer(ctx, tt.from, tt.to, tt.cents, tt.ref); !errors.Is(err, tt.want) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if balance(t, l, a).AvailableCents != 1000 {
+		t.Error("a refused transfer moved money")
+	}
+}
+
+func TestConcurrentTransfersNeverSpendTheSameMoney(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	payer, payee := account(t, l, "001", 1000), account(t, l, "002", 0)
+
+	var wg sync.WaitGroup
+	results := make(chan error, 20)
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- l.Transfer(ctx, payer, payee, 100, fmt.Sprintf("E-%d", i))
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	ok := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			ok++
+		case !errors.Is(err, ledger.ErrInsufficientFunds):
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	if ok != 10 || balance(t, l, payer).AvailableCents != 0 || balance(t, l, payee).AvailableCents != 1000 {
+		t.Errorf("%d transfers; payer %+v, payee %+v", ok, balance(t, l, payer), balance(t, l, payee))
+	}
+}

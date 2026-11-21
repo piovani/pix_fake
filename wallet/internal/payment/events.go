@@ -20,7 +20,7 @@ func (s *Service) OnStatus(ctx context.Context, st pix.TxStatus) error {
 	if st.InstrID != "" && st.InstrID != st.EndToEndID {
 		return nil // the status of a return, not of a payment
 	}
-	p, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID)
+	p, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Outbound)
 	if err != nil {
 		return err
 	}
@@ -126,8 +126,7 @@ func (s *Service) SendPending(ctx context.Context) (int, error) {
 // Handle applies one message of the SPI stream. A message that cannot be read can never succeed, so it is logged and
 // skipped; an error means the message should be delivered again.
 //
-// Only what answers a payment the wallet sent is handled for now. Received payments (pacs.008), returns (pacs.004) and
-// receipts of reports (camt.025) are logged and skipped.
+// Received payments (pacs.008) and returns (pacs.004) are logged and skipped for now.
 func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	kind, err := pix.MessageKind(m.Body)
 	if err != nil {
@@ -143,6 +142,17 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 		}
 		for _, st := range sts {
 			if err := s.OnStatus(ctx, st); err != nil {
+				return err
+			}
+		}
+	case pix.KindCamt025:
+		receipts, err := pix.ParseCamt025(m.Body)
+		if err != nil {
+			slog.Error("unreadable camt.025, skipped", "resource", m.ResourceID, "err", err)
+			return nil
+		}
+		for _, r := range receipts {
+			if err := s.OnReceipt(ctx, r); err != nil {
 				return err
 			}
 		}

@@ -21,7 +21,18 @@ const (
 	walletISPB = "99000001"
 	anaID      = "0a1b2c3d-0001-4000-8000-000000000001"
 	anaTaxID   = "52998224725"
+	brunoID    = "0a1b2c3d-0002-4000-8000-000000000002"
+	brunoTaxID = "11144477735"
+	anaKey     = "ana.souza@example.com" // a key of the wallet, Ana's
+	brunoKey   = "+5511999990002"        // a key of the wallet, Bruno's
 )
+
+type fakeKeys map[string]string
+
+func (k fakeKeys) AccountOf(_ context.Context, key string) (string, bool, error) {
+	id, ok := k[key]
+	return id, ok, nil
+}
 
 type fakeDict struct {
 	entry pix.Entry
@@ -62,6 +73,7 @@ type fixture struct {
 	store  *Postgres
 	dict   *fakeDict
 	bank   *fakeBank
+	keys   fakeKeys
 	clock  time.Time
 }
 
@@ -79,9 +91,10 @@ func newFixture(t *testing.T) *fixture {
 			Account: pix.Account{Participant: "99000002", Branch: "0001", AccountNumber: "00456789", AccountType: pix.AccountChecking},
 		}},
 		bank:  &fakeBank{},
+		keys:  fakeKeys{anaKey: anaID, brunoKey: brunoID},
 		clock: time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC),
 	}
-	f.svc = New(f.ledger, f.dict, f.bank, f.store, walletISPB)
+	f.svc = New(f.ledger, f.keys, f.dict, f.bank, f.store, walletISPB)
 	f.svc.now = func() time.Time { return f.clock }
 
 	ctx := context.Background()
@@ -89,6 +102,12 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	if err := f.ledger.Credit(ctx, anaID, 100000, "seed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.ledger.Open(ctx, ledger.Account{ID: brunoID, Branch: "0001", Number: "00234567", HolderName: "Bruno Lima", TaxID: brunoTaxID, Type: "SVGS"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ledger.Credit(ctx, brunoID, 50000, "seed"); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -159,7 +178,7 @@ func TestResolveKeyErrors(t *testing.T) {
 		want    error
 	}{
 		"unknown key":   {pix.ErrNotFound, ErrKeyNotFound},
-		"own key":       {pix.ErrBookTransfer, ErrBookTransferUnsupported},
+		"own key":       {pix.ErrBookTransfer, ErrKeyNotRecorded},
 		"unavailable":   {pix.ErrUnavailable, pix.ErrUnavailable},
 		"rate limiting": {pix.ErrRateLimited, pix.ErrRateLimited},
 	} {
@@ -497,6 +516,7 @@ func TestStatusesThatAreNotForThisModuleAreIgnored(t *testing.T) {
 
 	for name, st := range map[string]pix.TxStatus{
 		"another payment":  settled("E99000001202611211200zzzzzzzzzzz"),
+		"a book transfer":  settled(f.settledBookTransferID(t)),
 		"a return":         {InstrID: "D99000001202611211200abcdefghijk", EndToEndID: p.EndToEndID, Status: pix.StatusSettled},
 		"an acceptance":    {InstrID: p.EndToEndID, EndToEndID: p.EndToEndID, Status: pix.StatusAccepted},
 		"a credit notice":  {InstrID: p.EndToEndID, EndToEndID: p.EndToEndID, Status: pix.StatusCredit},
@@ -654,7 +674,7 @@ func TestConsumeDoesNotAcknowledgeWhatFailed(t *testing.T) {
 	f := newFixture(t)
 	p := f.pay(t, f.resolve(t), 2590)
 	flaky := &failingLedger{Ledger: f.ledger, failures: 1}
-	svc := New(flaky, f.dict, f.bank, f.store, walletISPB)
+	svc := New(flaky, f.keys, f.dict, f.bank, f.store, walletISPB)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -739,5 +759,44 @@ func TestGetUnknownPayment(t *testing.T) {
 	}
 	if _, err := f.svc.Get(context.Background(), ""); !errors.Is(err, ErrInvalid) {
 		t.Errorf("empty: %v", err)
+	}
+}
+
+func (f *fixture) settledBookTransferID(t *testing.T) string {
+	t.Helper()
+	r, err := f.svc.ResolveKey(context.Background(), anaID, brunoKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f.pay(t, r, 100).EndToEndID
+}
+
+func TestInsertReturnsWhatAlreadyExists(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	r := f.resolve(t)
+
+	in := Payment{AccountID: brunoID, Direction: Inbound, Type: TypeBookTransfer, Status: Settled, AmountCents: 100, EndToEndID: r.EndToEndID,
+		Counterparty: r.Payee, CreatedAt: f.clock, FinishedAt: f.clock}
+	first, created, err := f.store.Insert(ctx, in)
+	if err != nil || !created || first.ID == "" || first.FinishedAt.IsZero() || first.ResolutionID != "" {
+		t.Fatalf("first: %+v, %v, %v", first, created, err)
+	}
+	again, created, err := f.store.Insert(ctx, in)
+	if err != nil || created || again.ID != first.ID {
+		t.Fatalf("again: %+v, %v, %v", again, created, err)
+	}
+
+	out := in
+	out.AccountID, out.Direction, out.Status, out.ResolutionID, out.FinishedAt = anaID, Outbound, Pending, r.ID, time.Time{}
+	sent, created, err := f.store.Insert(ctx, out)
+	if err != nil || !created || sent.ID == first.ID {
+		t.Fatalf("sent: %+v, %v, %v", sent, created, err)
+	}
+	if got, found, _ := f.store.ByEndToEnd(ctx, r.EndToEndID, Inbound); !found || got.ID != first.ID {
+		t.Errorf("received: %+v", got)
+	}
+	if got, found, _ := f.store.ByEndToEnd(ctx, r.EndToEndID, Outbound); !found || got.ID != sent.ID {
+		t.Errorf("sent: %+v", got)
 	}
 }

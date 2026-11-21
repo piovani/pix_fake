@@ -1,4 +1,4 @@
-// Command seed applies the migrations and loads the wallet's test accounts. It is idempotent.
+// Command seed applies the migrations and loads the wallet's test accounts and their Pix keys. It is idempotent.
 package main
 
 import (
@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"pixfake/wallet/internal/ledger"
+	"pixfake/wallet/internal/pixkey"
 	"pixfake/wallet/internal/platform/config"
 	"pixfake/wallet/internal/platform/db"
 	"pixfake/wallet/internal/seed"
@@ -27,9 +28,9 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := seed.Run(ctx, ledger.New(pool)); err != nil {
+	if err := seed.Run(ctx, ledger.New(pool), pixkey.NewPostgres(pool)); err != nil {
 		slog.Error("seed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("wallet accounts loaded")
+	slog.Info("wallet accounts and keys loaded")
 }

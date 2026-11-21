@@ -21,9 +21,7 @@ var (
 	ErrResolutionNotFound = errors.New("payment: resolution not found or expired")
 	ErrResolutionConflict = errors.New("payment: resolution already used with another amount or message")
 	ErrPaymentNotFound    = errors.New("payment: payment not found")
-	// ErrBookTransferUnsupported: the key belongs to the wallet itself. Such a payment is settled in the ledger and never
-	// reaches the DICT or the SPI; that flow is not built yet.
-	ErrBookTransferUnsupported = errors.New("payment: paying a key of the wallet itself is not available yet")
+	ErrKeyNotRecorded     = errors.New("payment: the DICT says the key is the wallet's but the wallet has no record of it")
 )
 
 type (
@@ -69,12 +67,14 @@ type Payee struct {
 // Resolution is the lookup of a key before paying it. Its EndToEndId was created before the lookup and is the one
 // the payment carries.
 type Resolution struct {
-	ID         string
-	AccountID  string
-	Key        string
-	EndToEndID string
-	Payee      Payee
-	ExpiresAt  time.Time
+	ID             string
+	AccountID      string
+	Key            string
+	EndToEndID     string
+	Payee          Payee
+	ExpiresAt      time.Time
+	BookTransfer   bool
+	PayeeAccountID string
 }
 
 // Payment is a payment of an account, sent or received.
@@ -96,7 +96,17 @@ type Payment struct {
 	SubmittedAt   time.Time // zero until the SPI accepted the order
 	CreatedAt     time.Time
 	FinishedAt    time.Time // zero while pending
+	// report of a book transfer to the SPI: "", ReportSent, ReportAccepted or ReportRejected
+	ReportStatus string
+	ReportSentAt time.Time
+	ReportReason string
 }
+
+const (
+	ReportSent     = "SENT"
+	ReportAccepted = "ACCEPTED"
+	ReportRejected = "REJECTED"
+)
 
 // Submitted reports whether the SPI accepted the order for processing.
 func (p Payment) Submitted() bool { return !p.SubmittedAt.IsZero() }
@@ -107,6 +117,11 @@ type Accounts interface {
 	Reserve(ctx context.Context, accountID string, cents int64, reference string) (ledger.Reservation, error)
 	Settle(ctx context.Context, reservationID string) error
 	Release(ctx context.Context, reservationID string) error
+	Transfer(ctx context.Context, fromAccountID, toAccountID string, cents int64, reference string) error
+}
+
+type Keys interface {
+	AccountOf(ctx context.Context, key string) (accountID string, found bool, err error)
 }
 
 // Directory is what the module needs from the DICT.
@@ -124,11 +139,11 @@ type Store interface {
 	SaveResolution(ctx context.Context, r Resolution) (Resolution, error)
 	Resolution(ctx context.Context, id string) (Resolution, bool, error)
 
-	// Insert stores a new payment. When the resolution already made a payment it returns that one instead, with created
-	// false.
+	// Insert returns the existing payment, with created false, when the resolution or the EndToEndId and direction already have one.
 	Insert(ctx context.Context, p Payment) (stored Payment, created bool, err error)
+	Discard(ctx context.Context, id string) error
 	ByID(ctx context.Context, id string) (Payment, bool, error)
-	ByEndToEnd(ctx context.Context, endToEndID string) (Payment, bool, error)
+	ByEndToEnd(ctx context.Context, endToEndID string, direction Direction) (Payment, bool, error)
 	ByResolution(ctx context.Context, resolutionID string) (Payment, bool, error)
 	ByResource(ctx context.Context, resourceID string) (Payment, bool, error)
 	// MarkSubmitted records that the SPI accepted the order.
@@ -138,6 +153,11 @@ type Store interface {
 	// Unsent returns pending payments created before the given time that the SPI has not accepted.
 	Unsent(ctx context.Context, before time.Time, limit int) ([]Payment, error)
 	List(ctx context.Context, q Query) ([]Payment, error)
+
+	PendingBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error)
+	UnreportedBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error)
+	// SetReport never changes a report already accepted.
+	SetReport(ctx context.Context, id, status, reason string, at time.Time) error
 }
 
 // Query is a page of payments of an account, newest first. After is the position of the last payment of the previous page.
@@ -156,6 +176,7 @@ type Cursor struct {
 
 type Service struct {
 	accounts Accounts
+	keys     Keys
 	dict     Directory
 	bank     Bank
 	store    Store
@@ -163,12 +184,12 @@ type Service struct {
 	now      func() time.Time
 }
 
-func New(accounts Accounts, dict Directory, bank Bank, store Store, ispb string) *Service {
-	return &Service{accounts: accounts, dict: dict, bank: bank, store: store, ispb: ispb, now: time.Now}
+func New(accounts Accounts, keys Keys, dict Directory, bank Bank, store Store, ispb string) *Service {
+	return &Service{accounts: accounts, keys: keys, dict: dict, bank: bank, store: store, ispb: ispb, now: time.Now}
 }
 
-// ResolveKey looks a key up in the DICT so the customer sees who will be paid. It creates the EndToEndId of the payment
-// before the lookup, as the DICT requires, and keeps it with the resolution.
+// ResolveKey creates the EndToEndId before the lookup, as the DICT requires. A key of another customer of the wallet is
+// found in the wallet's own records and never looked up in the DICT.
 func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolution, error) {
 	if accountID == "" || key == "" {
 		return Resolution{}, fmt.Errorf("%w: account and key are required", ErrInvalid)
@@ -182,30 +203,50 @@ func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolu
 	if err != nil {
 		return Resolution{}, err
 	}
+	res := Resolution{AccountID: acct.ID, Key: key, EndToEndID: e2e, ExpiresAt: now.Add(ResolutionTTL)}
+
+	owner, own, err := s.keys.AccountOf(ctx, key)
+	if err != nil {
+		return Resolution{}, err
+	}
+	if own {
+		if owner == acct.ID {
+			return Resolution{}, fmt.Errorf("%w: the key belongs to the paying account", ErrInvalid)
+		}
+		payee, err := s.accounts.Account(ctx, owner)
+		if err != nil {
+			return Resolution{}, err
+		}
+		res.BookTransfer, res.PayeeAccountID = true, payee.ID
+		res.Payee = s.partyOf(payee, key)
+		return s.store.SaveResolution(ctx, res)
+	}
 
 	entry, err := s.dict.GetEntry(ctx, pix.GetEntryParams{Key: key, PayerID: acct.TaxID, EndToEndID: e2e})
 	switch {
 	case errors.Is(err, pix.ErrNotFound):
 		return Resolution{}, ErrKeyNotFound
 	case errors.Is(err, pix.ErrBookTransfer):
-		return Resolution{}, ErrBookTransferUnsupported
+		slog.Error("the DICT says a key is the wallet's but the wallet has no record of it", "key", key)
+		return Resolution{}, ErrKeyNotRecorded
 	case errors.Is(err, pix.ErrBadRequest):
 		return Resolution{}, fmt.Errorf("%w: %v", ErrInvalid, err)
 	case err != nil:
 		return Resolution{}, err
 	}
+	res.Payee = Payee{
+		Name: entry.Owner.Name, TaxID: entry.Owner.TaxIDNumber, Participant: entry.Account.Participant,
+		Branch: entry.Account.Branch, AccountNumber: entry.Account.AccountNumber, AccountType: entry.Account.AccountType,
+		Key: entry.Key,
+	}
+	return s.store.SaveResolution(ctx, res)
+}
 
-	return s.store.SaveResolution(ctx, Resolution{
-		AccountID:  acct.ID,
-		Key:        key,
-		EndToEndID: e2e,
-		Payee: Payee{
-			Name: entry.Owner.Name, TaxID: entry.Owner.TaxIDNumber, Participant: entry.Account.Participant,
-			Branch: entry.Account.Branch, AccountNumber: entry.Account.AccountNumber, AccountType: entry.Account.AccountType,
-			Key: entry.Key,
-		},
-		ExpiresAt: now.Add(ResolutionTTL),
-	})
+func (s *Service) partyOf(a ledger.Account, key string) Payee {
+	return Payee{
+		Name: a.HolderName, TaxID: a.TaxID, Participant: s.ispb, Branch: a.Branch, AccountNumber: a.Number,
+		AccountType: pix.AccountType(a.Type), Key: key,
+	}
 }
 
 // PayInput is the request to pay a resolved key.
@@ -252,6 +293,9 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	if err != nil {
 		return Payment{}, err
 	}
+	if res.BookTransfer {
+		return s.payInside(ctx, res, in)
+	}
 	// The reference is the EndToEndId, so reserving again for the same payment moves nothing.
 	rsv, err := s.accounts.Reserve(ctx, acct.ID, in.AmountCents, res.EndToEndID)
 	if errors.Is(err, ledger.ErrReferenceConflict) {
@@ -284,6 +328,12 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 func (s *Service) repeat(ctx context.Context, p Payment, in PayInput) (Payment, error) {
 	if p.AmountCents != in.AmountCents || p.Message != in.Message {
 		return Payment{}, ErrResolutionConflict
+	}
+	if p.Type == TypeBookTransfer {
+		if p.Status == Pending {
+			return s.completeBookTransfer(ctx, p) // an earlier call stopped halfway
+		}
+		return p, nil
 	}
 	if p.Status == Pending && !p.Submitted() {
 		acct, err := s.accounts.Account(ctx, p.AccountID)

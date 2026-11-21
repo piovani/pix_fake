@@ -23,6 +23,7 @@ var (
 	ErrReservationNotFound = errors.New("ledger: reservation not found")
 	ErrReservationClosed   = errors.New("ledger: reservation already closed the other way")
 	ErrReferenceConflict   = errors.New("ledger: reference already used with a different account or amount")
+	ErrSameAccount         = errors.New("ledger: a transfer needs two different accounts")
 )
 
 // Account is an account of the wallet. Branch and Number are what the DICT holds for its keys, so the wallet can
@@ -67,6 +68,7 @@ const (
 	kindReserve entryKind = "RESERVE"
 	kindSettle  entryKind = "SETTLE"
 	kindRelease entryKind = "RELEASE"
+	kindDebit   entryKind = "DEBIT"
 )
 
 // Ledger keeps the accounts, their balances and the log of movements in the wallet's database.
@@ -187,6 +189,53 @@ func (l *Ledger) Reserve(ctx context.Context, accountID string, cents int64, ref
 		return Reservation{}, err
 	}
 	return r, nil
+}
+
+// Transfer debits one account and credits another in one transaction. The reference makes it idempotent.
+func (l *Ledger) Transfer(ctx context.Context, fromAccountID, toAccountID string, cents int64, reference string) error {
+	if cents <= 0 {
+		return ErrInvalidAmount
+	}
+	if reference == "" {
+		return ErrInvalidReference
+	}
+	from, to := strings.ToLower(fromAccountID), strings.ToLower(toAccountID)
+	if from == to {
+		return ErrSameAccount
+	}
+	return db.InTx(ctx, l.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO ledger_entries (account_id, kind, amount_cents, reference) VALUES ($1, $2, $3, $4)
+			ON CONFLICT (account_id, kind, reference) DO NOTHING`, from, kindDebit, cents, reference)
+		if err != nil {
+			return mapAccountErr(err)
+		}
+		if tag.RowsAffected() == 0 { // already transferred: the same one, or a reference reused for something else
+			var done int64
+			if err := tx.QueryRow(ctx, `SELECT amount_cents FROM ledger_entries WHERE account_id = $1 AND kind = $2 AND reference = $3`,
+				from, kindDebit, reference).Scan(&done); err != nil {
+				return err
+			}
+			if done != cents {
+				return ErrReferenceConflict
+			}
+			return nil
+		}
+
+		// the condition is what stops two transfers spending the same money
+		tag, err = tx.Exec(ctx, `UPDATE accounts SET available_cents = available_cents - $1 WHERE id = $2 AND available_cents >= $1`, cents, from)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrInsufficientFunds // rolls back the entry too
+		}
+		if err := addEntry(ctx, tx, to, kindCredit, cents, reference); err != nil {
+			return mapAccountErr(err)
+		}
+		_, err = tx.Exec(ctx, `UPDATE accounts SET available_cents = available_cents + $1 WHERE id = $2`, cents, to)
+		return err
+	})
 }
 
 // Settle confirms a reservation: the reserved money leaves the account. Settling a reservation that is already settled
