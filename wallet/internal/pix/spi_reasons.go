@@ -58,6 +58,7 @@ var reasons = map[string]Rejection{
 
 	// timeouts and processing errors on the way
 	"AB03": {Cause: CauseTransient, TryAgain: true, Message: "The payment took too long to settle. It was not made; try again."},
+	"AB09": {Cause: CauseTransient, TryAgain: true, Message: "The receiving institution had an error. The payment was not made; try again later."},
 	"AB11": {Cause: CauseTransient, TryAgain: true, Message: "The payment could not be sent in time. It was not made; try again."},
 	"ED05": {Cause: CauseTransient, TryAgain: true, Message: "A processing error stopped the payment. It was not made; try again later."},
 	"DS27": {Cause: CauseTransient, TryAgain: true, Message: "The receiving institution is not available in Pix right now. Try again later."},

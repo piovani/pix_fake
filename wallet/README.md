@@ -3,9 +3,10 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: the core and the keys are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
+> **Status: the core, the keys and paying a key of another institution are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
-> is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports; the payment flows are next.
+> is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports. A customer can pay a key of another
+> institution end to end; book transfers, receiving, returning and the statement are next.
 
 ## Independence from the mocks
 
@@ -63,7 +64,7 @@ Run the two processes (each in its own terminal, after `make up`):
 
 ```sh
 go run ./cmd/api       # gRPC on :9090, with the standard health service
-go run ./cmd/worker
+go run ./cmd/worker    # reads the SPI stream and settles the payments; without it they stay PENDING
 ```
 
 Or only the wallet's side, from `wallet/`: `make up` (PostgreSQL on `:5434`, migrations applied, test accounts loaded). To stop it or to
@@ -84,8 +85,27 @@ the contract the features will fill.
 | `PaymentService` | `ResolveKey`, `CreatePayment`, `GetPayment`, `ListPayments`, `ReturnPayment` |
 
 To pay, call `ResolveKey` (it shows who owns the key) and then `CreatePayment` with the `resolution_id`. A payment through the SPI
-comes back `PENDING` and is read later; a payment to another customer of the wallet comes back `SETTLED`. Money is in centavos.
-The decisions are in the [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet).
+comes back `PENDING` and is read later with `GetPayment` or `ListPayments`; a payment to another customer of the wallet will come back
+`SETTLED`. Money is in centavos. The decisions are in the [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet).
+
+## Paying a key of another institution
+
+Module `internal/payment`. `ResolveKey` creates the `EndToEndId`, looks the key up in the DICT and keeps the answer for 5 minutes (a
+key of the wallet itself answers `Unimplemented` for now). `CreatePayment` reserves the amount in the ledger (the reference is the
+`EndToEndId`) and sends the `pacs.008`; the payment is `PENDING` until the SPI answers.
+
+- **One resolution, at most one payment.** Repeating `CreatePayment` returns the payment that exists, or finishes the one that stopped
+  halfway (reserved but not sent); with another amount or message it is `ALREADY_EXISTS`. Concurrent calls make one payment.
+- **The SPI being down does not fail the payment.** It stays `PENDING`, the money stays reserved, and the worker sends it again
+  (every 5 s, for what is older than 10 s). The SPI is idempotent by `EndToEndId`, so sending twice is safe. A `400` from the SPI means
+  it never took the order, so the payment is rejected and the money goes back.
+- **The worker settles.** `cmd/worker` reads the SPI stream: `ACSC` settles (the reserved money leaves the account), `RJCT` gives it
+  back with the reason of `ReasonOf` (see the SPI client), and an `admi.002` that names the order rejects it. A batch is acknowledged only
+  after all of it was applied; one that fails is delivered again, and applying a status twice changes nothing.
+- **The timeout is the SPI's.** A payment nobody answers in 40 s comes back `RJCT` with `AB03`. The wallet never rejects on its own a
+  payment the SPI may have taken, or the money could leave twice.
+- **Not handled yet by the worker:** received payments (`pacs.008`), returns (`pacs.004`) and the receipts of reports (`camt.025`) are
+  logged and skipped, so a payment made to the wallet while the worker runs is not answered and times out at the payer.
 
 ## DICT client
 

@@ -11,6 +11,7 @@ import (
 
 	"pixfake/wallet/internal/grpcapi"
 	"pixfake/wallet/internal/ledger"
+	"pixfake/wallet/internal/payment"
 	"pixfake/wallet/internal/pix"
 	"pixfake/wallet/internal/pixkey"
 	"pixfake/wallet/internal/platform/config"
@@ -40,7 +41,8 @@ func main() {
 	accounts := ledger.New(pool)
 	dict := pix.NewDictClient(cfg.DictBaseURL, cfg.ISPB)
 	keys := pixkey.New(accounts, dict, pixkey.NewPostgres(pool), cfg.ISPB)
-	srv := grpcapi.New(accounts, keys)
+	payments := payment.New(accounts, dict, pix.NewSPIClient(cfg.SPIBaseURL, cfg.ISPB), payment.NewPostgres(pool), cfg.ISPB)
+	srv := grpcapi.New(accounts, keys, payments)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

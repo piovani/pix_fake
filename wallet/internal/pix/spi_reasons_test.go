@@ -7,7 +7,7 @@ import (
 
 // Every code the contract lists for pacs.002 (payments and returns) and for camt.025 (reports).
 var contractCodes = []string{
-	"AB03", "AB11", "AC03", "AC06", "AC07", "AC14", "AG03", "AG12", "AM01", "AM02", "AM04", "AM18", "BE01", "CH11", "CH16",
+	"AB03", "AB09", "AB11", "AC03", "AC06", "AC07", "AC14", "AG03", "AG12", "AM01", "AM02", "AM04", "AM18", "BE01", "CH11", "CH16",
 	"DS04", "DS27", "DT02", "ED05", "FF08", "FRAD", "RC09", "RC10", // payments
 	"AG13", "AM09", "DT05", // returns
 	"AG01", // reports
@@ -36,6 +36,7 @@ func TestReasonCauses(t *testing.T) {
 		{"AC07", CauseRecipient, false, false},
 		{"FRAD", CauseRecipient, false, false},
 		{"AB03", CauseTransient, true, false}, // the SPI timeout
+		{"AB09", CauseTransient, true, false}, // an error at the receiving participant
 		{"ED05", CauseTransient, true, false},
 		{"AG13", CauseRule, false, false},
 		{"DT05", CauseRule, false, false},

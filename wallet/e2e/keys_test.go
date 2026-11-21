@@ -3,6 +3,9 @@
 //
 //	WALLET_E2E_GRPC_ADDR  the wallet API, such as localhost:9090
 //	WALLET_E2E_DICT_URL   the DICT, such as http://localhost:8080/api/v2
+//	WALLET_E2E_SPI_URL    the SPI, such as http://localhost:8081/api/v1 (optional: without it the test that makes the SPI fail is skipped)
+//
+// The wallet's worker must be running too: it settles the payments.
 package e2e
 
 import (
@@ -32,9 +35,12 @@ const (
 )
 
 type env struct {
-	keys    walletv1.KeyServiceClient
-	bank    *pix.DictClient // Banco Alfa looking keys up, the way a payer's bank does
-	control string          // the DICT mock's control API
+	keys     walletv1.KeyServiceClient
+	payments walletv1.PaymentServiceClient
+	accounts walletv1.AccountServiceClient
+	spi      string          // the SPI mock's control API, empty when not given
+	bank     *pix.DictClient // Banco Alfa looking keys up, the way a payer's bank does
+	control  string          // the DICT mock's control API
 }
 
 func setup(t *testing.T) env {
@@ -50,9 +56,12 @@ func setup(t *testing.T) env {
 	t.Cleanup(func() { conn.Close() })
 
 	e := env{
-		keys:    walletv1.NewKeyServiceClient(conn),
-		bank:    pix.NewDictClient(dictURL, bankAlfa),
-		control: strings.TrimSuffix(dictURL, "/api/v2"),
+		keys:     walletv1.NewKeyServiceClient(conn),
+		payments: walletv1.NewPaymentServiceClient(conn),
+		accounts: walletv1.NewAccountServiceClient(conn),
+		bank:     pix.NewDictClient(dictURL, bankAlfa),
+		control:  strings.TrimSuffix(dictURL, "/api/v2"),
+		spi:      strings.TrimSuffix(os.Getenv("WALLET_E2E_SPI_URL"), "/api/v1"),
 	}
 	e.clearFaults(t)
 	t.Cleanup(func() { e.clearFaults(t) })

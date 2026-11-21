@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs the end-to-end tests: starts PostgreSQL for the DICT mock and the SPI mock, loads the seed data, starts both
-# mocks and runs e2e/closing_test.go against them (the mocks together). Then starts the wallet's API on a throwaway schema
-# of the wallet's PostgreSQL, pointed at those mocks, and runs wallet/e2e against it (the wallet's flows). Needs Docker
-# and Go.
+# mocks and runs e2e/closing_test.go against them (the mocks together). Then starts the wallet's API and its worker on a
+# throwaway schema of the wallet's PostgreSQL, pointed at those mocks, and runs wallet/e2e against them (the wallet's
+# flows). Needs Docker and Go.
 #
 #   make e2e
 #
@@ -49,7 +49,7 @@ echo "==> starting PostgreSQL"
 echo "==> building"
 (cd "$ROOT/mock/dict" && go build -o "$WORK/dict" ./cmd/dict && go build -o "$WORK/dict-seed" ./cmd/seed)
 (cd "$ROOT/mock/spi" && go build -o "$WORK/spi" ./cmd/spi && go build -o "$WORK/spi-seed" ./cmd/seed)
-(cd "$ROOT/wallet" && go build -o "$WORK/wallet-api" ./cmd/api && go build -o "$WORK/wallet-seed" ./cmd/seed)
+(cd "$ROOT/wallet" && go build -o "$WORK/wallet-api" ./cmd/api && go build -o "$WORK/wallet-worker" ./cmd/worker && go build -o "$WORK/wallet-seed" ./cmd/seed)
 
 echo "==> loading the seed data"
 "$WORK/dict-seed"
@@ -81,14 +81,18 @@ if [ "$rc" -eq 0 ]; then
     if (exec 3<>"/dev/tcp/localhost/$WALLET_PORT") 2>/dev/null; then break; fi
     sleep 0.2
   done
+  # the API has applied the migrations by now; the worker settles the payments
+  DICT_BASE_URL="http://localhost:$DICT_PORT/api/v2" SPI_BASE_URL="http://localhost:$SPI_PORT/api/v1" \
+    "$WORK/wallet-worker" >"$WORK/wallet-worker.log" 2>&1 &
+  pids+=("$!")
 
   echo "==> running the wallet end-to-end tests"
   (cd "$ROOT/wallet" && WALLET_E2E_GRPC_ADDR="localhost:$WALLET_PORT" WALLET_E2E_DICT_URL="http://localhost:$DICT_PORT/api/v2" \
-    go test -count=1 -v ./e2e) || rc=$?
+    WALLET_E2E_SPI_URL="http://localhost:$SPI_PORT/api/v1" go test -count=1 -v ./e2e) || rc=$?
 fi
 
 if [ "$rc" -ne 0 ]; then
   echo "==> a test failed; the logs:" >&2
-  tail -n 30 "$WORK/dict.log" "$WORK/spi.log" "$WORK/wallet.log" >&2 2>/dev/null || true
+  tail -n 30 "$WORK/dict.log" "$WORK/spi.log" "$WORK/wallet.log" "$WORK/wallet-worker.log" >&2 2>/dev/null || true
 fi
 exit "$rc"

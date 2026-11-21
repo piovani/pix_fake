@@ -171,7 +171,8 @@ Bacen contracts.
   - **A return is a payment** of type `RETURN` with the id of the payment it returns; a received payment shows how much was
     already returned.
   - **Idempotency keys are chosen by the client** (`request_id`, `resolution_id`) and errors are gRPC status codes.
-  - Only `AccountService.GetBalance` is built; the rest of the contract is there for the modules to implement.
+  - Built: `AccountService.GetBalance`, `KeyService` and, in `PaymentService`, `ResolveKey`, `CreatePayment`, `GetPayment` and
+    `ListPayments` (for a key of another institution). `GetStatement` and `ReturnPayment` are there for the modules to implement.
 - **Not decided yet:** the HTTP/XML client for Bacen beyond the DICT and SPI clients already built (`internal/pix`).
 
 ### Decision: the wallet is independent of the mocks
@@ -209,7 +210,7 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     `pacs.002`, read `pacs.008`, `pacs.002` and `admi.002`. Tested against a fake server and against the running mock (`WALLET_TEST_SPI_URL`)
   - [x] SPI client, second part (`wallet/internal/pix`): returns (`NewPacs004`, `ParsePacs004`, `NewReturnID`) and the report of
     transactions settled outside the SPI (`NewTrck002`, `ParseCamt025`). Checked against the official XSDs (apart from the empty
-    `Sgntr`, as in the mock); the tests against the running mock (`WALLET_TEST_SPI_URL`) are written but were not run yet
+    `Sgntr`, as in the mock) and against the running mock (`WALLET_TEST_SPI_URL`): a received payment is returned and settled, and a book transfer is reported and accepted
   - [x] `EndToEndId` generation before the key lookup, and `RequestId` (UUID v4) for idempotent registration
   - [x] Mapping of Bacen errors to wallet behavior. DICT: `404`, `409`, `429`, `503` (`errors.Is` with `ErrNotFound`, `ErrConflict`,
     `ErrBookTransfer`, `ErrRateLimited`, `ErrUnavailable`...; `pix.Retryable`). SPI: the reason codes of rejected payments, returns and
@@ -223,13 +224,21 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     [`wallet/e2e`](../wallet/e2e/keys_test.go)): the key shows up in the DICT for another bank, repeating a call is safe, and the
     DICT failing (`503`, `429`) leaves nothing half done.
     Not built: a check that finds keys the DICT and the wallet's copy disagree on
-  - [ ] Pay a key of another institution (outbound flow)
+  - [x] Pay a key of another institution (outbound flow). Module `payment`: `ResolveKey` creates the `EndToEndId` and looks the key up;
+    `CreatePayment` reserves the money and sends the `pacs.008`, idempotent per resolution (one resolution, at most one payment); the
+    worker (`cmd/worker`) reads the SPI stream and settles (`ACSC`) or rejects (`RJCT`, `admi.002`, with the reason of `ReasonOf`) and
+    sends again what the SPI did not take while it was down. The 40-second timeout is the SPI's (`AB03`): the wallet never rejects a
+    payment the SPI may have taken. Tested on PostgreSQL and end to end (`make e2e`, [`wallet/e2e`](../wallet/e2e/payments_test.go)):
+    settled, the seven rejections the SPI mock can force, and the SPI down.
+    Known gaps: a crash between reserving and storing the payment leaves money reserved until the call is repeated (nothing sweeps
+    it yet); the worker skips what it does not handle (received payments, returns, receipts)
   - [ ] Pay a key of another wallet user (book transfer): recognize the wallet's own keys, settle in the ledger within
     40 seconds, never query the DICT or send a `pacs.008`, and report the transaction afterwards
   - [ ] Receive a payment (inbound flow)
   - [ ] Return a received payment
   - [ ] Statement and payment history
-- [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries.
+- [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow
+  (see above); still to do for a book transfer (the 40 seconds are the wallet's to keep), received payments and returns.
 - [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
   on mock internals.
 

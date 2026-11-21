@@ -37,10 +37,12 @@ func (f fakeLedger) Balance(_ context.Context, id string) (ledger.Balance, error
 
 func dial(t *testing.T, l Ledger) *grpc.ClientConn { return dialWith(t, l, nil) }
 
-func dialWith(t *testing.T, l Ledger, keys Keys) *grpc.ClientConn {
+func dialWith(t *testing.T, l Ledger, keys Keys) *grpc.ClientConn { return dialAll(t, l, keys, nil) }
+
+func dialAll(t *testing.T, l Ledger, keys Keys, payments Payments) *grpc.ClientConn {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := New(l, keys)
+	srv := New(l, keys, payments)
 	go srv.Serve(lis)
 	t.Cleanup(srv.Stop)
 
