@@ -10,24 +10,30 @@ import (
 	"pixfake/wallet/internal/pix"
 )
 
-// OnStatus applies a pacs.002 from the SPI to the payment it is about: settled (ACSC) takes the reserved money out of
-// the account, rejected (RJCT) gives it back, with the reason. It is safe to apply the same status twice. A status that
-// is not about a payment this module sent is ignored.
-//
-// The timeout is the SPI's to decide: a payment nobody answered in time comes back as RJCT with AB03. The wallet never
-// rejects on its own a payment the SPI may have taken, or the money could leave twice.
+// OnStatus applies a pacs.002 to the payment it is about, sent or received. Timeouts are the SPI's to decide (AB03): the
+// wallet never rejects on its own a payment the SPI may have taken, or the money could leave twice.
 func (s *Service) OnStatus(ctx context.Context, st pix.TxStatus) error {
 	if st.InstrID != "" && st.InstrID != st.EndToEndID {
 		return nil // the status of a return, not of a payment
 	}
-	p, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Outbound)
+	sent, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Outbound)
 	if err != nil {
 		return err
 	}
-	if !found || p.Direction != Outbound || p.Type != TypePix {
-		return nil
+	if found && sent.Type == TypePix {
+		return s.onOutboundStatus(ctx, sent, st)
 	}
+	received, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Inbound)
+	if err != nil {
+		return err
+	}
+	if found && received.Type == TypePix {
+		return s.onInboundStatus(ctx, received, st)
+	}
+	return nil
+}
 
+func (s *Service) onOutboundStatus(ctx context.Context, p Payment, st pix.TxStatus) error {
 	switch st.Status {
 	case pix.StatusSettled:
 		return s.settle(ctx, p, st.SettledAt)
@@ -126,7 +132,7 @@ func (s *Service) SendPending(ctx context.Context) (int, error) {
 // Handle applies one message of the SPI stream. A message that cannot be read can never succeed, so it is logged and
 // skipped; an error means the message should be delivered again.
 //
-// Received payments (pacs.008) and returns (pacs.004) are logged and skipped for now.
+// Returns (pacs.004) are logged and skipped for now.
 func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	kind, err := pix.MessageKind(m.Body)
 	if err != nil {
@@ -142,6 +148,17 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 		}
 		for _, st := range sts {
 			if err := s.OnStatus(ctx, st); err != nil {
+				return err
+			}
+		}
+	case pix.KindPacs008:
+		orders, err := pix.ParsePacs008(m.Body)
+		if err != nil {
+			slog.Error("unreadable pacs.008, skipped", "resource", m.ResourceID, "err", err)
+			return nil
+		}
+		for _, o := range orders {
+			if err := s.OnPaymentOrder(ctx, o); err != nil {
 				return err
 			}
 		}

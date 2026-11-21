@@ -231,7 +231,7 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     payment the SPI may have taken. Tested on PostgreSQL and end to end (`make e2e`, [`wallet/e2e`](../wallet/e2e/payments_test.go)):
     settled, the seven rejections the SPI mock can force, and the SPI down.
     Known gaps: a crash between reserving and storing the payment leaves money reserved until the call is repeated (nothing sweeps
-    it yet); the worker skips what it does not handle (received payments, returns)
+    it yet); the worker skips what it does not handle (returns)
   - [x] Pay a key of another wallet user (book transfer). `ResolveKey` recognizes the wallet's own keys from its own records
     (`pixkey.AccountOf`, loaded by the seed) and never asks the DICT; `CreatePayment` moves the money in one transaction
     (`ledger.Transfer`, idempotent by `EndToEndId`), records the payment each side sees (a sent and a received payment with the same
@@ -241,11 +241,17 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     SPI's payments, the report arrives, refused without funds.
     Known gaps: the 40 seconds are met by settling in the same call, not enforced by a clock; a refused report is only logged, there is
     no way to fix and resend it by hand yet
-  - [ ] Receive a payment (inbound flow)
+  - [x] Receive a payment (inbound flow). The worker answers each `pacs.008` the SPI sends: the account is found by branch and number
+    (`ledger.AccountByNumber`), and `AC03`, `BE01` or `AC14` are answered with `RJCT` and nothing recorded; an accepted order is
+    recorded as an `INBOUND` payment, pending, and answered `ACSP`; `ACCC` credits the account (idempotent by `EndToEndId`) and settles
+    it, `RJCT` from the SPI rejects it. Delivered again, it is answered again and recorded once; an answer that cannot be sent leaves
+    the batch unacknowledged, so it is retried. Tested on PostgreSQL and end to end (`make e2e`, a simulated bank pays through the
+    SPI mock's control API): credited, and refused with each of the three reasons.
+    Known gaps: no account status or limits, so `AC06`, `AC07` and `AM02` are never answered
   - [ ] Return a received payment
   - [ ] Statement and payment history
-- [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow
-  and for the book transfer (see above); still to do for received payments and returns.
+- [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow,
+  the book transfer and received payments (see above); still to do for returns.
 - [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
   on mock internals.
 

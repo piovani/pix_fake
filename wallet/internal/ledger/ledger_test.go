@@ -377,3 +377,19 @@ func TestConcurrentTransfersNeverSpendTheSameMoney(t *testing.T) {
 		t.Errorf("%d transfers; payer %+v, payee %+v", ok, balance(t, l, payer), balance(t, l, payee))
 	}
 }
+
+func TestAccountByNumber(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	id := account(t, l, "001", 0)
+
+	got, err := l.AccountByNumber(ctx, "0001", "001")
+	if err != nil || got.ID != id || got.HolderName != "Ana" || got.TaxID != "52998224725" || got.Type != "CACC" {
+		t.Fatalf("%+v, %v", got, err)
+	}
+	for _, c := range [][2]string{{"0001", "999"}, {"0002", "001"}, {"", ""}} {
+		if _, err := l.AccountByNumber(ctx, c[0], c[1]); !errors.Is(err, ledger.ErrAccountNotFound) {
+			t.Errorf("%v: %v", c, err)
+		}
+	}
+}

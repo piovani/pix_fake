@@ -103,6 +103,17 @@ func (l *Ledger) Account(ctx context.Context, accountID string) (Account, error)
 	return a, err
 }
 
+func (l *Ledger) AccountByNumber(ctx context.Context, branch, number string) (Account, error) {
+	var a Account
+	err := l.pool.QueryRow(ctx, `
+		SELECT id, branch, number, holder_name, tax_id, account_type, created_at FROM accounts WHERE branch = $1 AND number = $2`,
+		branch, number).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.OpenedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, ErrAccountNotFound
+	}
+	return a, err
+}
+
 // Balance returns the balance of an account.
 func (l *Ledger) Balance(ctx context.Context, accountID string) (Balance, error) {
 	var b Balance

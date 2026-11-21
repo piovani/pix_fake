@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -312,5 +313,107 @@ func TestPayAnotherCustomerWithoutEnoughMoney(t *testing.T) {
 	}
 	if p, err := e.pay(t, r.ResolutionId, 1, ""); err != nil || p.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
 		t.Errorf("after the refusal: %v, %v", p, err)
+	}
+}
+
+func (e env) bankPays(t *testing.T, body string) string {
+	t.Helper()
+	resp, err := http.Post(e.spi+"/mock/inbound/payments", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		ID string `json:"id"`
+	}
+	if resp.StatusCode != http.StatusCreated || json.NewDecoder(resp.Body).Decode(&out) != nil || out.ID == "" {
+		t.Fatalf("the simulated bank could not pay: status %d", resp.StatusCode)
+	}
+	return out.ID
+}
+
+func (e env) mockPayment(t *testing.T, id string, done func(map[string]any) bool) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		resp, err := http.Get(e.spi + "/mock/payments/" + id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&p)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK && done(p) {
+			return p
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the SPI payment %s never got there: %v", id, p)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func (e env) receivedBy(t *testing.T, account, endToEndID string) *walletv1.Payment {
+	t.Helper()
+	list, err := e.payments.ListPayments(ctx(t), &walletv1.ListPaymentsRequest{AccountId: account, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range list.Payments {
+		if p.EndToEndId == endToEndID && p.Direction == walletv1.PaymentDirection_PAYMENT_DIRECTION_INBOUND {
+			return p
+		}
+	}
+	return nil
+}
+
+func TestReceiveAPaymentFromAnotherBank(t *testing.T) {
+	e := setup(t)
+	if e.spi == "" {
+		t.Skip("WALLET_E2E_SPI_URL is not set")
+	}
+	before := e.balance(t)
+
+	id := e.bankPays(t, `{"from":"99000002","to":"99000001","to_account":"00123456","amount":"10.50","key":"ana.souza@example.com"}`)
+	e.mockPayment(t, id, func(p map[string]any) bool { return p["settled_at"] != nil })
+
+	var got *walletv1.Payment
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
+		if got = e.receivedBy(t, seed.AnaID, id); got != nil && got.Status != walletv1.PaymentStatus_PAYMENT_STATUS_PENDING {
+			break
+		}
+	}
+	if got == nil || got.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED || got.Type != walletv1.PaymentType_PAYMENT_TYPE_PIX ||
+		got.AmountCents != 1050 || got.Counterparty.Participant != "99000002" || got.FinishedAt == nil {
+		t.Fatalf("received payment: %v", got)
+	}
+	if after := e.balance(t); after.AvailableCents != before.AvailableCents+1050 || after.ReservedCents != before.ReservedCents {
+		t.Errorf("balance %v -> %v", before, after)
+	}
+}
+
+func TestPaymentsTheWalletRefusesToReceive(t *testing.T) {
+	e := setup(t)
+	if e.spi == "" {
+		t.Skip("WALLET_E2E_SPI_URL is not set")
+	}
+	tests := []struct{ name, body, code string }{
+		{"no such account", `"to_account":"00999999","to_tax_id":"52998224725"`, "AC03"},
+		{"another tax id", `"to_account":"00123456","to_tax_id":"39053344705"`, "BE01"},
+		{"another account type", `"to_account":"00123456","to_type":"SVGS"`, "AC14"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			before := e.balance(t)
+			id := e.bankPays(t, `{"from":"99000002","to":"99000001","amount":"3.00",`+tt.body+`}`)
+
+			p := e.mockPayment(t, id, func(p map[string]any) bool { return p["reason_code"] != nil })
+			if p["reason_code"] != tt.code {
+				t.Errorf("the SPI says %v, want %s", p["reason_code"], tt.code)
+			}
+			if e.receivedBy(t, seed.AnaID, id) != nil || e.balance(t).AvailableCents != before.AvailableCents {
+				t.Error("a refused payment left a trace")
+			}
+		})
 	}
 }

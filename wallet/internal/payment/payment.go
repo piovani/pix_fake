@@ -118,6 +118,8 @@ type Accounts interface {
 	Settle(ctx context.Context, reservationID string) error
 	Release(ctx context.Context, reservationID string) error
 	Transfer(ctx context.Context, fromAccountID, toAccountID string, cents int64, reference string) error
+	Credit(ctx context.Context, accountID string, cents int64, reference string) error
+	AccountByNumber(ctx context.Context, branch, number string) (ledger.Account, error)
 }
 
 type Keys interface {

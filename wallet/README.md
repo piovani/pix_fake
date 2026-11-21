@@ -3,10 +3,10 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
+> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet and receiving payments are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
 > is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports. A customer can pay a key of another
-> institution or another customer of the wallet end to end; receiving, returning and the statement are next.
+> institution or another customer of the wallet, and receive payments, end to end; returning and the statement are next.
 
 ## Independence from the mocks
 
@@ -104,8 +104,21 @@ key of the wallet itself answers `Unimplemented` for now). `CreatePayment` reser
   after all of it was applied; one that fails is delivered again, and applying a status twice changes nothing.
 - **The timeout is the SPI's.** A payment nobody answers in 40 s comes back `RJCT` with `AB03`. The wallet never rejects on its own a
   payment the SPI may have taken, or the money could leave twice.
-- **Not handled yet by the worker:** received payments (`pacs.008`) and returns (`pacs.004`) are logged and skipped, so a payment made
-  to the wallet while the worker runs is not answered and times out at the payer.
+- **Not handled yet by the worker:** returns (`pacs.004`) are logged and skipped.
+
+## Receiving a payment
+
+The worker answers each `pacs.008` the SPI sends to the wallet. The account is found by branch and number: no such account is `AC03`,
+a tax id that is not the holder's is `BE01`, an account type that does not match is `AC14`. A refusal is only answered (`pacs.002`
+`RJCT`); nothing is recorded, since no money moved. An accepted order is recorded as an `INBOUND` payment, `PENDING`, and answered
+`ACSP`. The money is credited only when the SPI settles it (`ACCC`), by reference to the `EndToEndId`, and the payment becomes `SETTLED`;
+an `RJCT` from the SPI (such as `AB03`) rejects it with no credit.
+
+- **Delivered again.** The same order twice is answered again and recorded once; an order already settled or rejected is not answered.
+- **Answer that cannot be sent.** The batch is not acknowledged, so the SPI delivers it again and the answer is retried.
+- **The answer must reach the SPI within 40 s,** or the SPI rejects the payment with `AB03` at the payer.
+- **Not checked:** account status (the wallet has no closed or blocked accounts, so `AC06` and `AC07` never come from it), amount
+  limits (`AM02`) and salary accounts (`AG03`, which `AC14` covers since the wallet only has `CACC`, `SVGS` and `TRAN`).
 
 ## Paying another customer of the wallet (book transfer)
 
