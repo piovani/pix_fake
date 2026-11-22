@@ -11,7 +11,7 @@ not been agreed yet. Everything else comes from the project's scope (see the [RE
 ```mermaid
 flowchart LR
     P1["1. DICT mock<br/>Done"] --> P2["2. SPI mock<br/>Done"]
-    P2 --> P3["3. Wallet and<br/>Pix integration layer<br/>In progress"]
+    P2 --> P3["3. Wallet and<br/>Pix integration layer<br/>Done"]
     P3 --> P4["4. MED 2<br/>Later"]
     P1 -.-> P3
     X["Environment and quality<br/>make setup, CI, contract tests"] -.-> P2
@@ -22,7 +22,7 @@ flowchart LR
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
 | 2 | SPI mock: instant payment settlement | **Done** (payments, returns, reports, rejections, timeout; closing test `make e2e`) |
-| 3 | Digital wallet and Pix integration layer | **In progress** (every flow is built; the real-endpoints check is pending) |
+| 3 | Digital wallet and Pix integration layer | **Done** (every flow is built and tested end to end) |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | Mostly done: `make setup`, containers, CI workflow, DICT contract tests, failure simulation, control API; specification tracking pending |
 
@@ -135,7 +135,7 @@ an internal transaction is accepted. Query and cancellation messages (`camt.*`) 
 
 Listed in Phase 1: confirm the wallet's real ISPB. It does not block the SPI. (The `PI-EndToEndId` pattern is validated.)
 
-## Phase 3: Wallet and Pix integration layer (In progress)
+## Phase 3: Wallet and Pix integration layer (Done)
 
 **Goal:** wallet users can register keys, pay, receive and see their history, talking to the mocks only through the
 Bacen contracts.
@@ -202,7 +202,7 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
   `wallet/internal/ledger`: open an account, credit (idempotent by reference), reserve (idempotent and atomic, refuses an
   overdraft), settle and release, plus an append-only log of every movement. Tested on PostgreSQL, including concurrent
   reservations. `GetBalance` is the first gRPC call. The statement, which reads the log, comes with the features.
-- [ ] **Pix integration layer (participant side):**
+- [x] **Pix integration layer (participant side):**
   - [x] DICT client for the five implemented operations (`wallet/internal/pix`: `GetEntry`, `CreateEntry`, `UpdateEntry`,
     `DeleteEntry`, `CheckKeys`). Tested against a fake server and against the running mock (`WALLET_TEST_DICT_URL`, needs `make setup`)
   - [x] SPI client, first part (`wallet/internal/pix`): send messages, read and acknowledge the stream, build `pacs.008` and
@@ -216,7 +216,7 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     reports (`pacs.002`, `camt.025`, `admi.002`) become a `Rejection` with a cause, `TryAgain`, a message safe for the customer and
     `Alert()` (`ReasonOf`, `wallet/internal/pix/spi_reasons.go`)
 - [x] **Proto contract for keys, payments and the statement** (`account.proto`, `key.proto`, `payment.proto`).
-- [ ] **Features:**
+- [x] **Features:**
   - [x] Register and remove a Pix key (module `pixkey`: `RegisterKey`, `ListKeys`, `RemoveKey`). Registering validates, registers in
     the DICT with the client's `request_id` and stores the wallet's own copy; removing asks the DICT first and counts a key it no
     longer has as removed, so every call can be repeated after a failure. Tested on PostgreSQL and end to end through gRPC (`make e2e`,
@@ -259,10 +259,12 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     not `RESERVE` or `RELEASE`), paged by the ledger entry id, each entry joined in the `payment` module with its payment and
     counterparty by the movement's reference; a deposit has neither. `ListPayments` is the history with status. Tested on PostgreSQL,
     including that the entries add up to the balance, and end to end
-- [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow,
+- [x] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow,
   the book transfer, received payments, and returns sent and received (see above).
-- [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
-  on mock internals.
+- [x] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
+  on mock internals. `internal/platform/config/boundary_test.go` fails if a non-test source imports a mock, or hard-codes a URL,
+  `localhost`, a `/mock/` path or the ISPB of a simulated participant (only the config and the seed may); `internal/pix/config_only_test.go`
+  runs both clients behind another host, path prefix and ISPB and checks that no request touches a mock path
 
 **Done when:** the flows in [architecture.md](architecture.md) work end to end against the seeded institutions: pay a
 key of another bank, pay a key of another wallet user without touching the DICT or the SPI, receive from another bank,
