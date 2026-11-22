@@ -1,240 +1,73 @@
 # pix_fake
 
-A digital wallet with Pix integration, built against a **mocked** version of the Central Bank of Brazil (Bacen) Pix infrastructure.
+A Pix wallet built against mocks of the Bacen infrastructure. Only regulated participants can reach the real Pix, so
+this repo mocks the **DICT** (key directory) and the **SPI** (settlement) with the same contracts Bacen documents, and
+the wallet talks to them exactly as it would to the real thing. Going live is a config change.
 
-The real Pix ecosystem is only reachable by regulated participants. To develop and test a wallet without that access, this project first builds mocks that simulate the Bacen systems, using the **same message formats and contracts Bacen documents**. The wallet talks to the mocks exactly as it would talk to the real thing, so moving to the real infrastructure later is a configuration change rather than a rewrite.
-
-## Scope
-
-| Phase | Component | Status |
-|-------|-----------|--------|
-| 1 | **DICT mock**: Pix key directory | Implemented: entries and keys, with seed data ([`mock/dict`](mock/dict/README.md)) |
-| 2 | **SPI mock**: instant payment settlement | Implemented: payments, returns, reports of internal transactions ([`mock/spi`](mock/spi/README.md)) |
-| 3 | Digital wallet + Pix integration layer | Started: [`wallet/`](wallet/README.md) in Go + gRPC, independent of the mocks; the ledger with reservation is done, the Pix features are next |
-
-Mocks are built in this order, DICT first, then SPI. Each mock lives under `mock/` and has its own README. The wallet lives under `wallet/` and is independent of them: its own code, database and infrastructure. The full plan, with what comes next and what was left out on purpose, is in the [roadmap](docs/roadmap.md).
-
-### What the mocks do **not** do
-
-- No mutual TLS or ICP-Brasil certificate authentication between participants. Requests are accepted as-is.
-- No message signing (XML digital signatures on SPI messages).
-- No real settlement, reserve accounts or liquidity management on Bacen's side.
-
-Contracts, field names and flows follow the Bacen documentation. Security is intentionally simplified.
-
-The DICT mock also has no rate limiting (it never returns `429`), always returns zeroed anti-fraud statistics, and
-identifies the calling institution with an `X-Participant-ISPB` header instead of a certificate. Every deliberate
-simplification is listed in [`mock/dict/README.md`](mock/dict/README.md#deliberate-simplifications-and-mock-decisions).
-
-## Getting started
-
-The DICT mock is the only runnable piece so far. It needs Go 1.27.3+ and Docker.
-
-```sh
-cd mock/dict
-make run    # starts Postgres and the DICT mock on :8080
-make seed   # loads the test keys (idempotent, can be repeated)
-```
-
-A root `make setup` that starts every mock and loads the test data is planned, so the whole Pix environment is ready
-for testing with one command. See [`mock/dict/README.md`](mock/dict/README.md) for the seeded keys and a lookup example.
-
-## Architecture
+| Part | What | Docs |
+|------|------|------|
+| `mock/dict` | DICT API v2.13.0: Pix keys, HTTP + XML | [README](mock/dict/README.md) |
+| `mock/spi` | SPI: ISO 20022 payments, returns, reports | [README](mock/spi/README.md) |
+| `wallet` | The wallet: Go + gRPC, its own DB, independent of the mocks | [README](wallet/README.md) |
 
 ```mermaid
 flowchart LR
-    User([Wallet user]) --> Wallet
-
-    subgraph Ours["Our system"]
-        Wallet["Digital Wallet"]
-        PixInt["Pix integration layer"]
-        Wallet --> PixInt
-    end
-
-    subgraph Mocks["Mocked Bacen infrastructure"]
-        DICT["DICT mock<br/>Pix key directory"]
-        SPI["SPI mock<br/>Settlement"]
-    end
-
-    PixInt -- "key lookup / registration" --> DICT
-    PixInt -- "payments (ISO 20022)" --> SPI
-    SPI -- "status / incoming payments" --> PixInt
+    User([Wallet user]) -- gRPC --> Wallet
+    Wallet -- "key lookup / registration" --> DICT["DICT mock"]
+    Wallet -- "pacs.008, pacs.004, trck.002" --> SPI["SPI mock"]
+    SPI -- "pacs.002, pacs.008, camt.025" --> Wallet
 ```
 
-More diagrams (component view, outbound and inbound transfer flows) are in [docs/architecture.md](docs/architecture.md).
+Flows and diagrams: [architecture](docs/architecture.md). Building a participant against the mocks:
+[integration guide](docs/integration-guide.md). Plan and decisions: [roadmap](docs/roadmap.md).
 
-## Mocked systems
+## Running
 
-### 1. DICT: Directory of Transactional Account Identifiers
+Needs Go 1.27.3+ and Docker.
 
-**Status: implemented** in [`mock/dict`](mock/dict/README.md), following the Bacen DICT API v2.13.0.
-
-The DICT stores Pix keys and links each key to its owner and transactional account. Participants query it before a payment to resolve who is behind a key.
-
-| Operation | Endpoint (base path `/api/v2`) | Status |
-|-----------|--------------------------------|--------|
-| Create entry | `POST /entries` | Implemented |
-| Get entry | `GET /entries/{Key}` | Implemented |
-| Update entry | `PUT /entries/{Key}` | Implemented |
-| Delete entry | `POST /entries/{Key}/delete` | Implemented |
-| Check keys | `POST /keys/check` | Implemented |
-| Claims / portability | `/claims...` | Not implemented: not needed to pay or receive Pix, can be added later |
-| Fraud, refunds, reconciliation, statistics | various | Not implemented (full list in the mock README) |
-
-Key types: `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP` (random key, generated by the DICT).
-
-**Transport:** HTTP with **XML** bodies (no TLS), under `/api/v2`, the same base path as the real service, so moving to
-the real DICT is a base URL change. Errors use `application/problem+xml`.
-
-**Identifying the institution:** there is no mTLS. Every request carries `X-Participant-ISPB`, which is also used for
-simple authorization (only the participant that owns an entry can update or delete it).
-
-**Test data:** `make seed` loads 29 keys across the wallet and two other banks, covering every key type, so lookups
-already work for tests.
-
-**Contract (Get entry).** The schemas come from [`mock/dict/docs/openapi.json`](mock/dict/docs/openapi.json).
-
-```
-GET /api/v2/entries/{Key}
-X-Participant-ISPB: 99000001
-PI-RequestingParticipant: 99000001
-PI-PayerId: 52998224725            (CPF or CNPJ of the payer)
-PI-EndToEndId: E9900000120261111120000000000001
+```sh
+make up                # both mocks + the wallet's database (DICT :8080, SPI :8081, wallet DB :5434)
+cd wallet
+go run ./cmd/api       # gRPC on :9090
+go run ./cmd/worker    # in another terminal
+make down
 ```
 
-```xml
-<GetEntryResponse>
-    <Signature></Signature>
-    <ResponseTime>2026-11-11T20:19:49.107Z</ResponseTime>
-    <CorrelationId>b80368a1c5a6f8ee14479feb7480947a</CorrelationId>
-    <Entry>
-        <Key>+5521999990003</Key>
-        <KeyType>PHONE</KeyType>
-        <Account>
-            <Participant>99000002</Participant>   <!-- ISPB, 8 characters -->
-            <Branch>0001</Branch>
-            <AccountNumber>00456789</AccountNumber>
-            <AccountType>CACC</AccountType>       <!-- CACC | TRAN | SLRY | SVGS | OTHR -->
-            <OpeningDate>2020-03-10T03:00:00.000Z</OpeningDate>
-        </Account>
-        <Owner>
-            <Type>NATURAL_PERSON</Type>           <!-- NATURAL_PERSON | LEGAL_PERSON -->
-            <TaxIdNumber>39053344705</TaxIdNumber>
-            <Name>Carlos Mendes</Name>
-        </Owner>
-        <CreationDate>2026-11-11T20:00:00.000Z</CreationDate>
-        <KeyOwnershipDate>2026-11-11T20:00:00.000Z</KeyOwnershipDate>
-    </Entry>
-</GetEntryResponse>
-```
+| Target | |
+|--------|-|
+| `make setup` | only the mocks, with seed data |
+| `make check` | closing test against `make setup` |
+| `make reset` | mocks back to their seed |
+| `make test` | unit tests, no database |
+| `make test-integration` | everything on PostgreSQL |
+| `make e2e` | mocks + wallet end to end, on throwaway databases (stop `make up` first) |
+| `make coverage` | e2e + unit coverage of the wallet |
+| `make lint` | gofmt + go vet |
 
-A key that does not exist returns `404` with a `problem+xml` body. Note that `PI-EndToEndId` is required: the payment
-identifier must exist **before** the key lookup, and it is the same one later sent in the `pacs.008`.
+## What is simplified
 
-A key held by the participant that is asking (`PI-RequestingParticipant`) returns `400`
-`EntryCannotBeQueriedForBookTransfer`: payments between customers of the same institution are settled internally and
-do not query the DICT. They also do not go through the SPI, but must be reported to Bacen afterwards; see
-[Payments inside the same institution](docs/architecture.md#payments-inside-the-same-institution-book-transfer).
-
-### 2. SPI: Instant Payment System
-
-The SPI settles Pix payments in real time between participants. Payments are exchanged as **ISO 20022** XML messages.
-
-Messages to mock:
-
-| Message | Direction | Purpose |
-|---------|-----------|---------|
-| `pacs.008` | Participant → SPI, SPI → Participant | Credit transfer (the payment order) |
-| `pacs.002` | SPI → Participant, Participant → SPI | Payment status report (settled / rejected) |
-| `pacs.004` | Participant → SPI | Return of a settled payment (refund) |
-| `camt.*` | Both | Cancellation and status queries (later phase) |
-
-**Contract sketch (`pacs.008`, simplified):**
-
-```xml
-<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
-  <FIToFICstmrCdtTrf>
-    <GrpHdr>
-      <MsgId>M12345678202411061200abcdef12345</MsgId>
-      <CreDtTm>2024-11-06T12:00:00Z</CreDtTm>
-      <NbOfTxs>1</NbOfTxs>
-    </GrpHdr>
-    <CdtTrfTxInf>
-      <PmtId>
-        <EndToEndId>E1234567820241106120000000000001</EndToEndId>
-      </PmtId>
-      <IntrBkSttlmAmt Ccy="BRL">10.00</IntrBkSttlmAmt>
-      <Dbtr><Nm>Bob Souza</Nm></Dbtr>
-      <DbtrAcct>...</DbtrAcct>
-      <DbtrAgt>...</DbtrAgt>      <!-- payer ISPB -->
-      <CdtrAgt>...</CdtrAgt>      <!-- receiver ISPB -->
-      <Cdtr><Nm>Alice Silva</Nm></Cdtr>
-      <CdtrAcct>...</CdtrAcct>
-      <RmtInf><Ustrd>Lunch</Ustrd></RmtInf>
-    </CdtTrfTxInf>
-  </FIToFICstmrCdtTrf>
-</Document>
-```
-
-`EndToEndId` is the unique payment identifier: `E` + payer ISPB (8) + date/time `yyyyMMddHHmm` (12) + 11 alphanumeric characters = 32 characters.
-
-The `pacs.002` response carries the status of the transaction (`ACSC` to the payer's participant and `ACCC` to the receiver's once the payment is settled, or `RJCT` with a reason code).
-
-**Comparison with FedNow:** [FedNow](https://www.frbservices.org/financial-services/fednow), the instant payment service of the US Federal Reserve, also exchanges **ISO 20022** messages (`pacs.008` for the credit transfer, `pacs.002` for the status report, `pacs.004` for returns). The message families are the same as in the SPI, but the schemas, versions and business rules differ. This project mocks only the Pix contracts; FedNow is mentioned as a reference for how other instant payment systems use the same standard.
-
-## Official references
-
-Bacen documentation is the source of truth for every contract in this project. Links are listed so the mocks can be checked against the originals:
-
-- Pix, Bacen home: https://www.bcb.gov.br/estabilidadefinanceira/pix
-- DICT API specification (the version this mock follows is recorded in [`mock/dict/README.md`](mock/dict/README.md)): https://www.bcb.gov.br/content/estabilidadefinanceira/pix/API-DICT.html
-- Pix technical specifications and manuals (SPI, message catalog): https://www.bcb.gov.br/estabilidadefinanceira/pix, under "Documentação técnica"
-- Bacen Pix API (OpenAPI specs, GitHub): https://github.com/bacen/pix-api
-- ISO 20022 message catalog: https://www.iso20022.org/iso-20022-message-definitions
-- FedNow Service (US Federal Reserve), for comparison: https://www.frbservices.org/financial-services/fednow
-
-> **Note:** verify the links against the Bacen site, since it reorganizes its documentation pages from time to time. The old `bacen/pix-dict-api` GitHub repository is obsolete: current DICT specifications are published only on the Bacen site. Each mock keeps the specification it was built from under its own `docs/` folder and records the version and the date it was taken.
+No mTLS, ICP-Brasil certificates or XML signatures: the caller is identified by `X-Participant-ISPB` (DICT) or the
+`{ispb}` in the path (SPI). No real settlement or liquidity on Bacen's side. Each mock lists its own simplifications.
 
 ## Layout
 
 ```
-pix_fake/
-├── README.md
-├── Makefile                 # make setup, test, lint, e2e, check, reset...
-├── docker-compose.yml       # PostgreSQL + both mocks, with the seed data (make setup)
-├── .github/workflows/ci.yml # lint, unit, PostgreSQL, closing test, containers
-├── docs/
-│   ├── architecture.md      # diagrams and flows
-│   ├── integration-guide.md # how to build a participant against the mocks
-│   └── roadmap.md           # plan: phases, status, backlog, open decisions
-├── e2e/                     # closing test: both mocks together, over HTTP and XML
-├── scripts/e2e.sh           # starts both mocks and the wallet's API, runs the closing test and the wallet's e2e tests
-├── mock/
-│   ├── dict/                # DICT mock (Go + Postgres), see its README
-│   └── spi/                 # SPI mock (Go + Postgres), see its README
-└── wallet/                  # the wallet: own code, database, compose and tests; shares nothing with mock/
+mock/dict, mock/spi     the mocks, each with its own module, DB and README
+wallet/                 the wallet; shares nothing with mock/
+e2e/                    closing test of the two mocks together
+scripts/                e2e.sh, coverage.sh
+docs/                   architecture, integration guide, roadmap
 ```
 
-## Trying both mocks together
+## References
 
-```sh
-make setup   # builds and starts PostgreSQL and both mocks, with the seed data (needs Docker)
-make check   # the closing test against it
-make reset   # both mocks back to their seed data
-make down    # stop (the data stays)
-```
+- Pix at Bacen: https://www.bcb.gov.br/estabilidadefinanceira/pix (technical docs and the SPI manuals)
+- DICT API: https://www.bcb.gov.br/content/estabilidadefinanceira/pix/API-DICT.html
+- Bacen Pix API (OpenAPI): https://github.com/bacen/pix-api
+- ISO 20022 messages: https://www.iso20022.org/iso-20022-message-definitions
 
-DICT at `http://localhost:8080`, SPI at `http://localhost:8081`. Other targets: `make test` (unit and HTTP tests, no database),
-`make test-integration` (also on PostgreSQL), `make lint`, `make e2e` (the closing test and the wallet's end-to-end tests, on their own databases, as CI runs it; stop `make setup` first),
-`make logs`, `make status`.
-
-The closing test plays the wallet and a bank: it looks a seeded key up in the DICT, pays it through the SPI and gets the
-settled confirmation, gets rejections (closed and blocked accounts, eight more reasons, timeout), returns a payment,
-reports a payment between two customers of the wallet, and receives a payment from another bank.
-
-To build the wallet against the mocks, read the [integration guide](docs/integration-guide.md): the order of the calls,
-the messages, how to read what the SPI sends, what each rejection means, and the control API that makes a bank pay or
-return to the wallet, shows the state and breaks things on purpose (`429`, `503`, slow answers).
+Each mock keeps the spec it was built from in its `docs/`, with version and date. The old `bacen/pix-dict-api` repo is
+obsolete.
 
 ## License
 
