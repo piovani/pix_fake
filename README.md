@@ -43,6 +43,8 @@ make down
 | `make e2e` | mocks + wallet end to end, on throwaway databases (stop `make up` first) |
 | `make coverage` | e2e + unit coverage of the wallet |
 | `make lint` | gofmt + go vet |
+| `make staticcheck`, `make vuln` | staticcheck, govulncheck |
+| `make tidy`, `make proto-check` | go.mod and generated gRPC code are up to date |
 
 ## What is simplified
 

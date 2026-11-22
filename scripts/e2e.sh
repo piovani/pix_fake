@@ -13,6 +13,7 @@
 # `docker compose down` in wallet/.
 #
 # With WALLET_COVERDIR set, the wallet's binaries are built with -cover and write their coverage there (see coverage.sh).
+# With E2E_LOG_DIR set, the logs of the mocks, the API and the worker are copied there at the end.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,6 +32,7 @@ cleanup() {
   if [ -n "$SCHEMA" ]; then
     (cd "$ROOT/wallet" && docker compose exec -T postgres psql -q -U wallet -d wallet -c "DROP SCHEMA IF EXISTS $SCHEMA CASCADE") >/dev/null 2>&1 || true
   fi
+  if [ -n "${E2E_LOG_DIR:-}" ]; then mkdir -p "$E2E_LOG_DIR" && cp "$WORK"/*.log "$E2E_LOG_DIR"/ 2>/dev/null || true; fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT

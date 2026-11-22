@@ -76,7 +76,8 @@ Not built: a check that the DICT and the wallet's copy of the keys agree; pushin
 
 - [x] `make setup` / `up` / `down` / `reset`, containers for the mocks
 - [x] `make test`, `make test-integration`, `make e2e`, `make coverage`
-- [x] CI workflow ([`ci.yml`](../.github/workflows/ci.yml)), written but not run on GitHub yet
+- [x] CI workflow ([`ci.yml`](../.github/workflows/ci.yml)): lint, tidy, staticcheck, govulncheck (also every Saturday), generated code, unit, PostgreSQL, e2e with a coverage floor of 85%, containers. Not run on GitHub yet
+- [x] Dependabot for the Go modules and the actions, every Saturday
 - [x] Contract tests: DICT against `openapi.json`, SPI messages against the XSDs
 - [x] Failure simulation (`429`, `503`, slow answers) and a control API in both mocks
 - [x] [Integration guide](integration-guide.md)

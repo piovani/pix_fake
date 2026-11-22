@@ -32,3 +32,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# tools installed by make
+.bin/

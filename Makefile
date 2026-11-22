@@ -1,8 +1,10 @@
 MODULES := mock/dict mock/spi e2e wallet
 DICT_URL ?= http://localhost:8080
 SPI_URL  ?= http://localhost:8081
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.10.0
 
-.PHONY: up test test-integration lint e2e coverage setup down reset logs status check
+.PHONY: up test test-integration lint staticcheck vuln tidy proto-check e2e coverage setup down reset logs status check
 
 up: setup ## start everything: both mocks (make setup) and the wallet's own database
 	$(MAKE) -C wallet up
@@ -15,6 +17,18 @@ test-integration: ## all tests of both mocks and the wallet, including those on 
 
 lint: ## gofmt and go vet on every module
 	@for m in $(MODULES); do echo "==> $$m"; (cd $$m && test -z "$$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above need formatting"; exit 1; }; go vet ./...) || exit 1; done
+
+staticcheck: ## staticcheck on every module
+	@for m in $(MODULES); do echo "==> $$m"; (cd $$m && go run $(STATICCHECK) ./...) || exit 1; done
+
+vuln: ## govulncheck on every module: fails only on a vulnerability the code actually calls
+	@for m in $(MODULES); do echo "==> $$m"; (cd $$m && go run $(GOVULNCHECK) ./...) || exit 1; done
+
+tidy: ## fail if a go.mod or go.sum is not what go mod tidy makes
+	@for m in $(MODULES); do echo "==> $$m"; (cd $$m && go mod tidy -diff) || exit 1; done
+
+proto-check: ## fail if wallet/gen is not what the .proto files generate (needs protoc)
+	$(MAKE) -C wallet proto-check
 
 e2e: ## the closing test of the mocks and the wallet's end-to-end tests, on their own PostgreSQL (needs Docker; stop make setup first), see scripts/e2e.sh
 	./scripts/e2e.sh

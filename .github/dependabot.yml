@@ -17,3 +17,16 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: deps
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
