@@ -27,7 +27,7 @@ type DictClient struct {
 
 // baseURL includes /api/v2.
 func NewDictClient(baseURL, ispb string, opts ...DictOption) *DictClient {
-	c := &DictClient{baseURL: strings.TrimRight(baseURL, "/"), ispb: ispb, http: &http.Client{Timeout: dictTimeout}}
+	c := &DictClient{baseURL: strings.TrimRight(baseURL, "/"), ispb: ispb, http: &http.Client{Timeout: dictTimeout, Transport: tracedTransport()}}
 	for _, o := range opts {
 		o(c)
 	}

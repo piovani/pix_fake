@@ -21,6 +21,7 @@ make test-integration  # everything, on Postgres
 | `SPI_TIMEOUT` | `40s` | how long a payment waits for the receiver; shorten it to test `AB03` |
 | `SPI_RETENTION` | `168h` | read messages are deleted after this; unread ones stay |
 | `SPI_CONTROL` | on | `off` removes `/mock` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | | traces, metrics and logs; empty sends nothing. Metrics of its own: `spi.payments.finalized`, `spi.orders.refused` |
 
 ## Messages
 

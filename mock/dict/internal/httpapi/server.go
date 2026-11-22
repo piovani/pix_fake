@@ -161,7 +161,7 @@ func (s *Server) withCorrelationID(next http.Handler) http.Handler {
 		start := s.now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r.WithContext(ctx))
-		s.log.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
+		s.log.InfoContext(ctx, "request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
 			"duration", time.Since(start), "correlation_id", correlationID(ctx))
 	})
 }
@@ -170,7 +170,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				s.log.Error("panic", "panic", rec, "path", r.URL.Path)
+				s.log.ErrorContext(r.Context(), "panic", "panic", rec, "path", r.URL.Path)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}()

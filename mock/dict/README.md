@@ -19,6 +19,7 @@ make db-down
 | `DICT_ADDR` | `:8080` |
 | `DICT_DATABASE_URL` | `postgres://dict:dict@localhost:5432/dict?sslmode=disable` |
 | `DICT_CONTROL` | on; `off` removes `/mock` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty: no telemetry. Set, it sends traces, metrics and logs there |
 
 Migrations run at start; `GET /healthz` pings the database. `make setup` at the repo root starts both mocks.
 

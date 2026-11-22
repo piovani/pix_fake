@@ -7,6 +7,7 @@ import (
 )
 
 type Config struct {
+	OTLP        string        // OTEL_EXPORTER_OTLP_ENDPOINT: where traces, metrics and logs go; empty sends nothing
 	Addr        string        // SPI_ADDR
 	DatabaseURL string        // SPI_DATABASE_URL
 	PollWait    time.Duration // SPI_POLL_WAIT: how long a read waits for a message before answering 204
@@ -17,6 +18,7 @@ type Config struct {
 
 func Load() Config {
 	return Config{
+		OTLP:        os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		PollWait:    duration("SPI_POLL_WAIT", 5*time.Second),
 		Timeout:     duration("SPI_TIMEOUT", 40*time.Second),
 		Retention:   duration("SPI_RETENTION", 7*24*time.Hour),

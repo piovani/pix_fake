@@ -58,7 +58,7 @@ func (s *Service) answerReturn(ctx context.Context, r pix.PaymentReturn, status,
 	}
 	_, err = s.bank.Send(ctx, body)
 	if errors.Is(err, pix.ErrBadRequest) {
-		slog.Error("return answer refused by spi", "return_id", r.ReturnID, "err", err)
+		slog.ErrorContext(ctx, "return answer refused by spi", "return_id", r.ReturnID, "err", err)
 		return nil
 	}
 	return err

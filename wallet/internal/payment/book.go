@@ -68,11 +68,11 @@ func (s *Service) completeBookTransfer(ctx context.Context, p Payment) (Payment,
 	}); err != nil {
 		return p, fmt.Errorf("insert inbound side: %w", err)
 	}
-	if _, err := s.store.Close(ctx, p.ID, Settled, "", "", at); err != nil {
+	if err := s.close(ctx, p, Settled, "", "", at); err != nil {
 		return p, fmt.Errorf("close payment: %w", err)
 	}
 	if at.Sub(p.CreatedAt) > bookTransferLimit {
-		slog.Error("book transfer over 40s", "payment", p.ID, "took", at.Sub(p.CreatedAt).Round(time.Second))
+		slog.ErrorContext(ctx, "book transfer over 40s", "payment", p.ID, "took", at.Sub(p.CreatedAt).Round(time.Second))
 	}
 	p.Status, p.FinishedAt = Settled, at
 	return p, nil
@@ -87,7 +87,7 @@ func (s *Service) CompleteBookTransfers(ctx context.Context) (int, error) {
 	for _, p := range pending {
 		switch _, err := s.completeBookTransfer(ctx, p); {
 		case errors.Is(err, ledger.ErrInsufficientFunds), errors.Is(err, ledger.ErrAccountNotActive):
-			slog.Warn("dropped unfinished book transfer", "payment", p.ID)
+			slog.WarnContext(ctx, "dropped unfinished book transfer", "payment", p.ID)
 		case err != nil:
 			return done, err
 		default:
@@ -111,7 +111,7 @@ func (s *Service) ReportBookTransfers(ctx context.Context) (int, error) {
 			body, err := s.reportOf(ctx, p)
 			if err != nil {
 				if errors.Is(err, pix.ErrBadRequest) {
-					slog.Error("cannot build report", "payment", p.ID, "err", err)
+					slog.ErrorContext(ctx, "cannot build report", "payment", p.ID, "err", err)
 					if err := s.store.SetReport(ctx, p.ID, ReportRejected, "INVALID", s.now()); err != nil {
 						return sent, err
 					}
@@ -127,7 +127,7 @@ func (s *Service) ReportBookTransfers(ctx context.Context) (int, error) {
 		}
 
 		if _, err := s.bank.Send(ctx, bodies...); err != nil {
-			slog.Warn("send reports failed, will retry", "err", err)
+			slog.WarnContext(ctx, "send reports failed, will retry", "err", err)
 			return sent, nil
 		}
 		at := s.now()
@@ -192,7 +192,7 @@ func (s *Service) OnReceipt(ctx context.Context, r pix.Receipt) error {
 
 	rej := r.Rejection()
 	if rej.Alert() {
-		slog.Error("report refused by spi", "payment", p.ID, "code", rej.Code, "detail", r.Detail)
+		slog.ErrorContext(ctx, "report refused by spi", "payment", p.ID, "code", rej.Code, "detail", r.Detail)
 	}
 	if rej.TryAgain {
 		return s.store.SetReport(ctx, p.ID, "", rej.Code, s.now())

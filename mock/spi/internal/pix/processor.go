@@ -104,6 +104,7 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 			rj = p.checkTransaction(tx, sender)
 		}
 		if rj != nil {
+			countRefused(ctx, KindPayment, rj.code)
 			p.sendRejection(ctx, sender, e2e, e2e, rj.code, rj.detail)
 			continue
 		}
@@ -111,7 +112,7 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 		pay := p.newPayment(tx)
 		existing, created, err := p.payments.CreatePayment(ctx, pay)
 		if err != nil {
-			p.log.Error("store payment", "end_to_end_id", e2e, "error", err)
+			p.log.ErrorContext(ctx, "store payment", "end_to_end_id", e2e, "error", err)
 			continue
 		}
 		if !created {
@@ -120,7 +121,7 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 		}
 		body, err := iso.NewPacs008(SPIISPB, pay.PayeeISPB, newMsgID(), iso.FormatTime(p.now()), "HIGH", "PAGPRI", tx).Marshal()
 		if err != nil {
-			p.log.Error("encode pacs.008", "end_to_end_id", e2e, "error", err)
+			p.log.ErrorContext(ctx, "encode pacs.008", "end_to_end_id", e2e, "error", err)
 			continue
 		}
 		p.forward(ctx, pay, body)
@@ -170,7 +171,7 @@ func (p *Processor) forward(ctx context.Context, pay Payment, body []byte) {
 		return
 	}
 	if _, err := p.svc.Deliver(ctx, pay.PayeeISPB, body); err != nil {
-		p.log.Error("deliver order", "id", pay.ID, "error", err)
+		p.log.ErrorContext(ctx, "deliver order", "id", pay.ID, "error", err)
 	}
 }
 
@@ -192,11 +193,11 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 		id := st.OrgnlInstrID // the EndToEndId of a payment, the RtrId of a return
 		pay, err := p.payments.GetPayment(ctx, id)
 		if err != nil {
-			p.log.Warn("ignore status: unknown payment", "sender", sender, "id", id)
+			p.log.WarnContext(ctx, "ignore status: unknown payment", "sender", sender, "id", id)
 			continue
 		}
 		if pay.PayeeISPB != sender {
-			p.log.Warn("ignore status: not from the receiver", "sender", sender, "id", id)
+			p.log.WarnContext(ctx, "ignore status: not from the receiver", "sender", sender, "id", id)
 			continue
 		}
 		switch st.Status {
@@ -209,7 +210,7 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 			}
 			p.finalize(ctx, id, Decision{ReasonCode: code})
 		default:
-			p.log.Warn("ignore status: unsupported", "sender", sender, "id", id, "status", st.Status)
+			p.log.WarnContext(ctx, "ignore status: unsupported", "sender", sender, "id", id, "status", st.Status)
 		}
 	}
 }
@@ -222,12 +223,13 @@ func (p *Processor) finalize(ctx context.Context, id string, d Decision) {
 	}
 	pay, changed, err := p.payments.FinalizePayment(ctx, id, status, d.ReasonCode, d.Detail, p.now())
 	if err != nil {
-		p.log.Error("finalize payment", "id", id, "status", status, "error", err)
+		p.log.ErrorContext(ctx, "finalize payment", "id", id, "status", status, "error", err)
 		return
 	}
 	if !changed {
 		return // already settled or rejected
 	}
+	countFinalized(ctx, pay, status, d.ReasonCode)
 	if d.Accept {
 		p.sendSettled(ctx, pay)
 	} else {
@@ -240,7 +242,7 @@ func (p *Processor) finalize(ctx context.Context, id string, d Decision) {
 func (p *Processor) ExpirePending(ctx context.Context) int {
 	ids, err := p.payments.PendingBefore(ctx, p.now().Add(-p.Timeout))
 	if err != nil {
-		p.log.Error("expire pending", "error", err)
+		p.log.ErrorContext(ctx, "expire pending", "error", err)
 		return 0
 	}
 	for _, id := range ids {
@@ -266,15 +268,15 @@ func (p *Processor) RunExpiry(ctx context.Context, every time.Duration) {
 // sendError answers a message that cannot be processed with an admi.002 to its sender. The
 // message is referenced by the PI-ResourceId it was given when stored.
 func (p *Processor) sendError(ctx context.Context, to string, m spi.Message, reason, location, description string) {
-	p.log.Warn("message rejected", "sender", to, "resource_id", m.ResourceID, "reason", reason, "description", description)
+	p.log.WarnContext(ctx, "message rejected", "sender", to, "resource_id", m.ResourceID, "reason", reason, "description", description)
 	now := iso.FormatTime(p.now())
 	body, err := iso.NewAdmi002(SPIISPB, to, newMsgID(), now, m.ResourceID, reason, location, description).Marshal()
 	if err != nil {
-		p.log.Error("encode admi.002", "error", err)
+		p.log.ErrorContext(ctx, "encode admi.002", "error", err)
 		return
 	}
 	if _, err := p.svc.Deliver(ctx, to, body); err != nil {
-		p.log.Error("deliver admi.002", "error", err)
+		p.log.ErrorContext(ctx, "deliver admi.002", "error", err)
 	}
 }
 
@@ -317,11 +319,11 @@ func (p *Processor) sendStatus(ctx context.Context, to string, st iso.TxStatus) 
 	now := iso.FormatTime(p.now())
 	body, err := iso.NewPacs002(SPIISPB, to, newMsgID(), now, st).Marshal()
 	if err != nil {
-		p.log.Error("encode pacs.002", "id", st.OrgnlInstrID, "error", err)
+		p.log.ErrorContext(ctx, "encode pacs.002", "id", st.OrgnlInstrID, "error", err)
 		return
 	}
 	if _, err := p.svc.Deliver(ctx, to, body); err != nil {
-		p.log.Error("deliver pacs.002", "id", st.OrgnlInstrID, "error", err)
+		p.log.ErrorContext(ctx, "deliver pacs.002", "id", st.OrgnlInstrID, "error", err)
 	}
 }
 

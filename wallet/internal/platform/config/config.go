@@ -10,6 +10,7 @@ type Config struct {
 	DictBaseURL string
 	SPIBaseURL  string
 	ISPB        string // the wallet's ISPB as a Pix participant
+	OTLP        string // where traces, metrics and logs go; OTEL_SDK_DISABLED=true turns them off
 }
 
 // Load reads the environment, with the defaults of the local environment started by `make up`.
@@ -20,6 +21,7 @@ func Load() Config {
 		DictBaseURL: env("DICT_BASE_URL", "http://localhost:8080/api/v2"),
 		SPIBaseURL:  env("SPI_BASE_URL", "http://localhost:8081/api/v1"),
 		ISPB:        env("WALLET_ISPB", "99000001"),
+		OTLP:        env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
 	}
 }
 

@@ -57,13 +57,14 @@ func (p *Processor) handlePacs004(ctx context.Context, sender string, m spi.Mess
 			pay, rj = p.buildReturn(ctx, r, sender)
 		}
 		if rj != nil {
+			countRefused(ctx, KindReturn, rj.code)
 			p.sendRejection(ctx, sender, r.RtrID, r.OrgnlEndToEnd, rj.code, rj.detail)
 			continue
 		}
 
 		existing, created, err := p.payments.CreatePayment(ctx, pay)
 		if err != nil {
-			p.log.Error("store return", "id", r.RtrID, "error", err)
+			p.log.ErrorContext(ctx, "store return", "id", r.RtrID, "error", err)
 			continue
 		}
 		if !created {
@@ -72,7 +73,7 @@ func (p *Processor) handlePacs004(ctx context.Context, sender string, m spi.Mess
 		}
 		body, err := iso.NewPacs004(SPIISPB, pay.PayeeISPB, newMsgID(), iso.FormatTime(p.now()), r).Marshal()
 		if err != nil {
-			p.log.Error("encode pacs.004", "id", r.RtrID, "error", err)
+			p.log.ErrorContext(ctx, "encode pacs.004", "id", r.RtrID, "error", err)
 			continue
 		}
 		p.forward(ctx, pay, body)

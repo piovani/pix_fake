@@ -223,7 +223,7 @@ func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolu
 	case errors.Is(err, pix.ErrNotFound):
 		return Resolution{}, ErrKeyNotFound
 	case errors.Is(err, pix.ErrBookTransfer):
-		slog.Error("own key missing locally", "key", key)
+		slog.ErrorContext(ctx, "own key missing locally", "key", key)
 		return Resolution{}, ErrKeyNotRecorded
 	case errors.Is(err, pix.ErrBadRequest):
 		return Resolution{}, fmt.Errorf("%w: %v", ErrInvalid, err)
@@ -306,7 +306,7 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	if err != nil {
 		// Nothing was recorded, so the money must not stay held. If this fails too, repeating the call finishes it.
 		if rerr := s.accounts.Release(context.WithoutCancel(ctx), rsv.ID); rerr != nil {
-			slog.Error("release after failed insert", "end_to_end_id", res.EndToEndID, "err", rerr)
+			slog.ErrorContext(ctx, "release after failed insert", "end_to_end_id", res.EndToEndID, "err", rerr)
 		}
 		return Payment{}, err
 	}
@@ -342,10 +342,10 @@ func (s *Service) submit(ctx context.Context, p Payment) (Payment, error) {
 	ids, err := s.bank.Send(ctx, body)
 	switch {
 	case errors.Is(err, pix.ErrBadRequest):
-		slog.Error("order refused by spi", "payment", p.ID, "type", p.Type, "err", err)
+		slog.ErrorContext(ctx, "order refused by spi", "payment", p.ID, "type", string(p.Type), "err", err)
 		return s.reject(ctx, p, pix.Rejection{Code: "SPI400", Cause: pix.CauseWallet, Message: "The payment could not be processed. It was not made."})
 	case err != nil:
-		slog.Warn("spi unavailable, worker will resend", "payment", p.ID, "type", p.Type, "err", err)
+		slog.WarnContext(ctx, "spi unavailable, worker will resend", "payment", p.ID, "type", string(p.Type), "err", err)
 		return p, nil
 	}
 
@@ -356,7 +356,7 @@ func (s *Service) submit(ctx context.Context, p Payment) (Payment, error) {
 	}
 	if err := s.store.MarkSubmitted(ctx, p.ID, resource, at); err != nil {
 		// the SPI has it; the worker sends it once more and gets the same outcome
-		slog.Warn("mark submitted failed", "payment", p.ID, "err", err)
+		slog.WarnContext(ctx, "mark submitted failed", "payment", p.ID, "err", err)
 		return p, nil
 	}
 	p.ResourceID, p.SubmittedAt = resource, at

@@ -8,6 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/grpc"
 
 	"pixfake/wallet/internal/grpcapi"
 	"pixfake/wallet/internal/ledger"
@@ -16,10 +20,18 @@ import (
 	"pixfake/wallet/internal/pixkey"
 	"pixfake/wallet/internal/platform/config"
 	"pixfake/wallet/internal/platform/db"
+	"pixfake/wallet/internal/platform/telemetry"
 )
 
 func main() {
 	cfg := config.Load()
+	log, shutdown, err := telemetry.Setup(context.Background(), "wallet-api", cfg.OTLP)
+	if err != nil {
+		slog.Error("telemetry", "err", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(log)
+	defer flush(shutdown)
 
 	if err := db.Migrate(cfg.DatabaseURL); err != nil {
 		slog.Error("migrate", "err", err)
@@ -42,7 +54,7 @@ func main() {
 	dict := pix.NewDictClient(cfg.DictBaseURL, cfg.ISPB)
 	keys := pixkey.New(accounts, dict, pixkey.NewPostgres(pool), cfg.ISPB)
 	payments := payment.New(accounts, keys, dict, pix.NewSPIClient(cfg.SPIBaseURL, cfg.ISPB), payment.NewPostgres(pool), cfg.ISPB)
-	srv := grpcapi.New(accounts, keys, payments)
+	srv := grpcapi.New(accounts, keys, payments, grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -55,6 +67,13 @@ func main() {
 	slog.Info("listening", "addr", cfg.GRPCAddr)
 	if err := srv.Serve(lis); err != nil {
 		slog.Error("serve", "err", err)
-		os.Exit(1)
+	}
+}
+
+func flush(shutdown func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		slog.Warn("telemetry flush", "err", err)
 	}
 }

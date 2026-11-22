@@ -20,19 +20,27 @@ import (
 	"pixfake/mock/dict/internal/httpapi"
 	"pixfake/mock/dict/internal/postgres"
 	"pixfake/mock/dict/internal/seed"
+	"pixfake/mock/dict/internal/telemetry"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := run(log); err != nil {
+	cfg := config.Load()
+	log, shutdown, err := telemetry.Setup(context.Background(), "dict-mock", cfg.OTLP)
+	if err != nil {
+		slog.Error("telemetry", "error", err)
+		os.Exit(1)
+	}
+	err = run(cfg, log)
+	flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = shutdown(flushCtx)
+	if err != nil {
 		log.Error("fatal", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
-	cfg := config.Load()
-
+func run(cfg config.Config, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -58,7 +66,7 @@ func run(log *slog.Logger) error {
 	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.Handler(),
+		Handler:           telemetry.Handler(api.Handler(), "dict-mock"),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

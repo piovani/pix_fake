@@ -26,7 +26,7 @@ Flows and diagrams: [architecture](docs/architecture.md). Building a participant
 Needs Go 1.27.3+ and Docker.
 
 ```sh
-make up                # both mocks + the wallet's database (DICT :8080, SPI :8081, wallet DB :5434)
+make up                # mocks, the wallet's database and Grafana (DICT :8080, SPI :8081, DB :5434, Grafana :3000)
 cd wallet
 go run ./cmd/api       # gRPC on :9090
 go run ./cmd/worker    # in another terminal
@@ -46,6 +46,18 @@ make down
 | `make staticcheck`, `make vuln` | staticcheck, govulncheck |
 | `make tidy`, `make proto-check` | go.mod and generated gRPC code are up to date |
 
+## Monitoring
+
+`make up` also starts Grafana at http://localhost:3000 (no login), with Prometheus, Loki and Tempo behind an
+OpenTelemetry collector (`grafana/otel-lgtm`). The mocks and the wallet send traces, metrics and logs over OTLP
+(`localhost:4318`); the **Pix overview** dashboard (folder `pix_fake`, in [`monitoring/dashboards`](monitoring/dashboards))
+shows payments by status and reason, gRPC and HTTP rates and latency, the SPI's outcomes, runtime, and the warnings and
+errors with their traces. A trace follows a call from the wallet's API into the DICT or the SPI; logs carry its
+`trace_id`. The worker's reading of the SPI stream is not traced (it's a long poll every few seconds).
+
+The mocks export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (the compose file does it). The wallet exports to
+`localhost:4318` by default; `OTEL_SDK_DISABLED=true` turns it off (`make e2e` does).
+
 ## What is simplified
 
 No mTLS, ICP-Brasil certificates or XML signatures: the caller is identified by `X-Participant-ISPB` (DICT) or the
@@ -58,6 +70,7 @@ mock/dict, mock/spi     the mocks, each with its own module, DB and README
 wallet/                 the wallet; shares nothing with mock/
 e2e/                    closing test of the two mocks together
 scripts/                e2e.sh, coverage.sh
+monitoring/             Grafana dashboards
 docs/                   architecture, integration guide, roadmap
 ```
 

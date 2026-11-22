@@ -75,7 +75,7 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	})
 	if err != nil {
 		if rerr := s.accounts.Release(context.WithoutCancel(ctx), rsv.ID); rerr != nil {
-			slog.Error("release after failed insert", "request_id", in.RequestID, "err", rerr)
+			slog.ErrorContext(ctx, "release after failed insert", "request_id", in.RequestID, "err", rerr)
 		}
 		return Payment{}, err
 	}

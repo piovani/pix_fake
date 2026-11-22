@@ -99,11 +99,11 @@ func (p *Processor) handleTrck002(ctx context.Context, sender string, m spi.Mess
 	}
 	body, err := iso.NewCamt025(SPIISPB, sender, newMsgID(), iso.FormatTime(p.now()), receipts).Marshal()
 	if err != nil {
-		p.log.Error("encode camt.025", "error", err)
+		p.log.ErrorContext(ctx, "encode camt.025", "error", err)
 		return
 	}
 	if _, err := p.svc.Deliver(ctx, sender, body); err != nil {
-		p.log.Error("deliver camt.025", "error", err)
+		p.log.ErrorContext(ctx, "deliver camt.025", "error", err)
 	}
 }
 
@@ -129,7 +129,7 @@ func (p *Processor) storeReported(ctx context.Context, tx iso.TrackedTx, sender 
 		return rj
 	}
 	if _, err := p.reports.AddReported(ctx, rep); err != nil {
-		p.log.Error("store reported transaction", "id", rep.ID, "error", err)
+		p.log.ErrorContext(ctx, "store reported transaction", "id", rep.ID, "error", err)
 		return reject("ED05", "could not record the transaction")
 	}
 	return nil

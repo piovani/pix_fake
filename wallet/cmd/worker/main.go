@@ -18,12 +18,26 @@ import (
 	"pixfake/wallet/internal/pixkey"
 	"pixfake/wallet/internal/platform/config"
 	"pixfake/wallet/internal/platform/db"
+	"pixfake/wallet/internal/platform/telemetry"
 )
 
 const everyTick = 5 * time.Second
 
 func main() {
 	cfg := config.Load()
+	log, shutdown, err := telemetry.Setup(context.Background(), "wallet-worker", cfg.OTLP)
+	if err != nil {
+		slog.Error("telemetry", "err", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(log)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			slog.Warn("telemetry flush", "err", err)
+		}
+	}()
 
 	if err := db.Migrate(cfg.DatabaseURL); err != nil {
 		slog.Error("migrate", "err", err)

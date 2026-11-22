@@ -34,7 +34,7 @@ type SPIClient struct {
 }
 
 func NewSPIClient(baseURL, ispb string, opts ...SPIOption) *SPIClient {
-	c := &SPIClient{baseURL: strings.TrimRight(baseURL, "/"), ispb: ispb, http: &http.Client{Timeout: spiTimeout}}
+	c := &SPIClient{baseURL: strings.TrimRight(baseURL, "/"), ispb: ispb, http: &http.Client{Timeout: spiTimeout, Transport: tracedTransport()}}
 	if u, err := url.Parse(baseURL); err == nil {
 		c.origin = u.Scheme + "://" + u.Host
 	}

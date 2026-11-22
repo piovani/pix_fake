@@ -66,8 +66,8 @@ func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanc
 	return &walletv1.GetBalanceResponse{AvailableCents: b.AvailableCents, ReservedCents: b.ReservedCents}, nil
 }
 
-func New(l Ledger, keys Keys, payments Payments) *grpc.Server {
-	s := grpc.NewServer()
+func New(l Ledger, keys Keys, payments Payments, opts ...grpc.ServerOption) *grpc.Server {
+	s := grpc.NewServer(opts...)
 	walletv1.RegisterAccountServiceServer(s, &accountService{ledger: l, payments: payments})
 	if keys != nil {
 		walletv1.RegisterKeyServiceServer(s, &keyService{keys: keys})

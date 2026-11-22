@@ -4,7 +4,7 @@ A digital wallet that is a Pix participant: accounts, a ledger, Pix keys, and pa
 the SPI. The mocks in `../mock` stand in for Bacen; the wallet talks to them over HTTP/XML only and never imports their
 code, so pointing it at the real endpoints is a config change (`DICT_BASE_URL`, `SPI_BASE_URL`, `WALLET_ISPB`).
 
-Go, gRPC, pgx, golang-migrate. One module, two processes: the API (`cmd/api`) and the worker (`cmd/worker`), which reads
+Go, gRPC, pgx, golang-migrate, OpenTelemetry. One module, two processes: the API (`cmd/api`) and the worker (`cmd/worker`), which reads
 the SPI stream and runs the periodic jobs. Its own PostgreSQL on `:5434`.
 
 ## Layout
@@ -22,6 +22,7 @@ internal/pixkey        the wallet's keys, registered in the DICT
 internal/payment       payment flows and their status
 internal/pix           DICT and SPI clients, ISO 20022 messages
 internal/grpcapi       gRPC adapter, no business rules
+internal/platform      config, db, telemetry (OTLP traces, metrics, logs)
 ```
 
 Modules only use each other's exported API, never each other's tables.
@@ -36,6 +37,10 @@ make proto               # after changing a .proto
 ```
 
 `docker compose down -v` in `wallet/` starts the database from scratch.
+
+Both processes send traces, metrics and logs to `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`, the
+Grafana of `make up`); `OTEL_SDK_DISABLED=true` turns it off. Metrics of its own: `wallet.payments.finished` (by
+direction, type, status, reason) and `wallet.payments.amount`.
 
 ## API
 
@@ -94,4 +99,4 @@ make coverage            # repo root: e2e and unit coverage, merged
 
 ## Ports
 
-8080 DICT mock · 8081 SPI mock · 5432/5433 mocks' PostgreSQL · 5434 wallet's PostgreSQL · 9090 wallet API
+8080 DICT mock · 8081 SPI mock · 5432/5433 mocks' PostgreSQL · 5434 wallet's PostgreSQL · 9090 wallet API · 3000 Grafana · 4318 OTLP

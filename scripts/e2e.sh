@@ -15,6 +15,7 @@
 # With WALLET_COVERDIR set, the wallet's binaries are built with -cover and write their coverage there (see coverage.sh).
 # With E2E_LOG_DIR set, the logs of the mocks, the API and the worker are copied there at the end.
 set -euo pipefail
+export OTEL_SDK_DISABLED="${OTEL_SDK_DISABLED:-true}" # the throwaway run has no collector
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DICT_PORT="${DICT_PORT:-18080}"

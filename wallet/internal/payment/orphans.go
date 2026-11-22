@@ -28,7 +28,7 @@ func (s *Service) ReleaseOrphans(ctx context.Context) (int, error) {
 		if err := s.accounts.Release(ctx, r.ID); err != nil {
 			return released, err
 		}
-		slog.Warn("released orphan reservation", "reservation", r.ID, "reference", r.Reference)
+		slog.WarnContext(ctx, "released orphan reservation", "reservation", r.ID, "reference", r.Reference)
 		released++
 	}
 	return released, nil

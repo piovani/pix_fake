@@ -6,6 +6,10 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"pixfake/wallet/internal/ledger"
 	"pixfake/wallet/internal/pix"
 )
@@ -45,7 +49,7 @@ func (s *Service) onOutboundStatus(ctx context.Context, p Payment, st pix.TxStat
 	case pix.StatusRejected:
 		rej := st.Rejection()
 		if rej.Alert() {
-			slog.Error("payment rejected, check reason", "payment", p.ID, "code", rej.Code, "detail", st.Detail)
+			slog.ErrorContext(ctx, "payment rejected, check reason", "payment", p.ID, "code", rej.Code, "detail", st.Detail)
 		}
 		_, err := s.reject(ctx, p, rej)
 		return err
@@ -60,22 +64,22 @@ func (s *Service) OnNotification(ctx context.Context, n pix.Notification) error 
 		return err
 	}
 	if !found {
-		slog.Warn("admi.002 for unknown message", "ref", n.Ref, "reason", n.Reason)
+		slog.WarnContext(ctx, "admi.002 for unknown message", "ref", n.Ref, "reason", n.Reason)
 		return nil
 	}
-	slog.Error("spi could not process order", "payment", p.ID, "reason", n.Reason, "description", n.Description)
+	slog.ErrorContext(ctx, "spi could not process order", "payment", p.ID, "reason", n.Reason, "description", n.Description)
 	_, err = s.reject(ctx, p, n.Rejection())
 	return err
 }
 
 func (s *Service) settle(ctx context.Context, p Payment, at time.Time) error {
 	if p.Status == Rejected {
-		slog.Error("settled after reject", "payment", p.ID, "end_to_end_id", p.EndToEndID)
+		slog.ErrorContext(ctx, "settled after reject", "payment", p.ID, "end_to_end_id", p.EndToEndID)
 		return nil
 	}
 	if err := s.accounts.Settle(ctx, p.ReservationID); err != nil {
 		if errors.Is(err, ledger.ErrReservationClosed) {
-			slog.Error("settled but reservation released", "payment", p.ID, "end_to_end_id", p.EndToEndID)
+			slog.ErrorContext(ctx, "settled but reservation released", "payment", p.ID, "end_to_end_id", p.EndToEndID)
 			return nil
 		}
 		return err
@@ -83,24 +87,23 @@ func (s *Service) settle(ctx context.Context, p Payment, at time.Time) error {
 	if at.IsZero() {
 		at = s.now()
 	}
-	_, err := s.store.Close(ctx, p.ID, Settled, "", "", at)
-	return err
+	return s.close(ctx, p, Settled, "", "", at)
 }
 
 func (s *Service) reject(ctx context.Context, p Payment, rej pix.Rejection) (Payment, error) {
 	if p.Status == Settled {
-		slog.Error("rejected after settle", "payment", p.ID, "code", rej.Code)
+		slog.ErrorContext(ctx, "rejected after settle", "payment", p.ID, "code", rej.Code)
 		return p, nil
 	}
 	if err := s.accounts.Release(ctx, p.ReservationID); err != nil {
 		if errors.Is(err, ledger.ErrReservationClosed) {
-			slog.Error("rejected but reservation settled", "payment", p.ID, "code", rej.Code)
+			slog.ErrorContext(ctx, "rejected but reservation settled", "payment", p.ID, "code", rej.Code)
 			return p, nil
 		}
 		return p, err
 	}
 	at := s.now()
-	if _, err := s.store.Close(ctx, p.ID, Rejected, rej.Code, rej.Message, at); err != nil {
+	if err := s.close(ctx, p, Rejected, rej.Code, rej.Message, at); err != nil {
 		return p, err
 	}
 	p.Status, p.RejectCode, p.RejectReason, p.FinishedAt = Rejected, rej.Code, rej.Message, at
@@ -127,17 +130,26 @@ func (s *Service) SendPending(ctx context.Context) (int, error) {
 }
 
 // An unreadable message can never succeed, so it is skipped; an error means it should be delivered again.
-func (s *Service) Handle(ctx context.Context, m pix.Message) error {
-	kind, err := pix.MessageKind(m.Body)
+func (s *Service) Handle(ctx context.Context, m pix.Message) (err error) {
+	kind, kerr := pix.MessageKind(m.Body)
+	ctx, span := tracer.Start(ctx, "spi.handle "+kind, trace.WithAttributes(attribute.String("spi.resource_id", m.ResourceID)))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	err = kerr
 	if err != nil {
-		slog.Error("skip unreadable message", "resource", m.ResourceID, "err", err)
+		slog.ErrorContext(ctx, "skip unreadable message", "resource", m.ResourceID, "err", err)
 		return nil
 	}
 	switch kind {
 	case pix.KindPacs002:
 		sts, err := pix.ParsePacs002(m.Body)
 		if err != nil {
-			slog.Error("skip bad pacs.002", "resource", m.ResourceID, "err", err)
+			slog.ErrorContext(ctx, "skip bad pacs.002", "resource", m.ResourceID, "err", err)
 			return nil
 		}
 		for _, st := range sts {
@@ -148,7 +160,7 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	case pix.KindPacs008:
 		orders, err := pix.ParsePacs008(m.Body)
 		if err != nil {
-			slog.Error("skip bad pacs.008", "resource", m.ResourceID, "err", err)
+			slog.ErrorContext(ctx, "skip bad pacs.008", "resource", m.ResourceID, "err", err)
 			return nil
 		}
 		for _, o := range orders {
@@ -159,7 +171,7 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	case pix.KindPacs004:
 		returns, err := pix.ParsePacs004(m.Body)
 		if err != nil {
-			slog.Error("skip bad pacs.004", "resource", m.ResourceID, "err", err)
+			slog.ErrorContext(ctx, "skip bad pacs.004", "resource", m.ResourceID, "err", err)
 			return nil
 		}
 		for _, r := range returns {
@@ -170,7 +182,7 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	case pix.KindCamt025:
 		receipts, err := pix.ParseCamt025(m.Body)
 		if err != nil {
-			slog.Error("skip bad camt.025", "resource", m.ResourceID, "err", err)
+			slog.ErrorContext(ctx, "skip bad camt.025", "resource", m.ResourceID, "err", err)
 			return nil
 		}
 		for _, r := range receipts {
@@ -181,12 +193,12 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	case pix.KindAdmi002:
 		n, err := pix.ParseAdmi002(m.Body)
 		if err != nil {
-			slog.Error("skip bad admi.002", "resource", m.ResourceID, "err", err)
+			slog.ErrorContext(ctx, "skip bad admi.002", "resource", m.ResourceID, "err", err)
 			return nil
 		}
 		return s.OnNotification(ctx, n)
 	default:
-		slog.Warn("skip unhandled message", "kind", kind, "resource", m.ResourceID)
+		slog.WarnContext(ctx, "skip unhandled message", "kind", kind, "resource", m.ResourceID)
 	}
 	return nil
 }
@@ -210,7 +222,7 @@ func (s *Service) Consume(ctx context.Context, stream Stream) error {
 			next = ""
 			continue
 		case err != nil:
-			slog.Warn("pull failed, retrying", "err", err)
+			slog.WarnContext(ctx, "pull failed, retrying", "err", err)
 			next = ""
 			sleep(ctx, retryDelay)
 			continue
@@ -221,13 +233,13 @@ func (s *Service) Consume(ctx context.Context, stream Stream) error {
 		}
 
 		if err := s.handleAll(ctx, msgs); err != nil {
-			slog.Error("batch failed, not acked", "err", err)
+			slog.ErrorContext(ctx, "batch failed, not acked", "err", err)
 			next = ""
 			sleep(ctx, retryDelay)
 			continue
 		}
 		if err := stream.Ack(ctx, following); err != nil && ctx.Err() == nil {
-			slog.Warn("ack failed", "err", err)
+			slog.WarnContext(ctx, "ack failed", "err", err)
 		}
 		next = "" // a stream is closed by its acknowledgement; the next batch comes from a new one
 	}

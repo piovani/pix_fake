@@ -68,7 +68,7 @@ func (s *Service) answer(ctx context.Context, endToEndID, status, reason string)
 	}
 	_, err = s.bank.Send(ctx, body)
 	if errors.Is(err, pix.ErrBadRequest) {
-		slog.Error("answer refused by spi", "end_to_end_id", endToEndID, "err", err)
+		slog.ErrorContext(ctx, "answer refused by spi", "end_to_end_id", endToEndID, "err", err)
 		return nil
 	}
 	return err
@@ -78,7 +78,7 @@ func (s *Service) onInboundStatus(ctx context.Context, p Payment, st pix.TxStatu
 	switch st.Status {
 	case pix.StatusCredit:
 		if p.Status == Rejected {
-			slog.Error("inbound settled after reject", "payment", p.ID, "end_to_end_id", p.EndToEndID)
+			slog.ErrorContext(ctx, "inbound settled after reject", "payment", p.ID, "end_to_end_id", p.EndToEndID)
 			return nil
 		}
 		if err := s.accounts.Credit(ctx, p.AccountID, p.AmountCents, p.EndToEndID); err != nil {
@@ -88,16 +88,14 @@ func (s *Service) onInboundStatus(ctx context.Context, p Payment, st pix.TxStatu
 		if at.IsZero() {
 			at = s.now()
 		}
-		_, err := s.store.Close(ctx, p.ID, Settled, "", "", at)
-		return err
+		return s.close(ctx, p, Settled, "", "", at)
 	case pix.StatusRejected:
 		if p.Status == Settled {
-			slog.Error("inbound rejected after settle", "payment", p.ID, "code", st.ReasonCode)
+			slog.ErrorContext(ctx, "inbound rejected after settle", "payment", p.ID, "code", st.ReasonCode)
 			return nil
 		}
 		rej := st.Rejection()
-		_, err := s.store.Close(ctx, p.ID, Rejected, rej.Code, rej.Message, s.now())
-		return err
+		return s.close(ctx, p, Rejected, rej.Code, rej.Message, s.now())
 	}
 	return nil
 }

@@ -39,6 +39,7 @@ services:
       DICT_ADDR: ":8080"
       DICT_DATABASE_URL: postgres://dict:dict@postgres-dict:5432/dict?sslmode=disable
       DICT_CONTROL: ${DICT_CONTROL:-on}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
     ports:
       - "8080:8080"
     depends_on:
@@ -60,6 +61,7 @@ services:
       # waits for a message before answering that there is none.
       SPI_TIMEOUT: ${SPI_TIMEOUT:-40s}
       SPI_POLL_WAIT: ${SPI_POLL_WAIT:-5s}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
     ports:
       - "8081:8081"
     depends_on:
@@ -71,6 +73,29 @@ services:
       timeout: 3s
       retries: 15
 
+  # Grafana with Prometheus (metrics), Loki (logs) and Tempo (traces) behind an OpenTelemetry collector, in one image
+  # meant for development. The wallet, run with go run, sends to localhost:4318.
+  lgtm:
+    image: grafana/otel-lgtm:0.41.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports:
+      - "3000:3000" # Grafana
+      - "4318:4318" # OTLP over HTTP
+    volumes:
+      - ./monitoring/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/pixfake.yaml:ro
+      - ./monitoring/dashboards:/otel-lgtm/pixfake-dashboards:ro
+      - lgtm-data:/data
+    # the stack takes a minute or two to start, longer than the image's own check allows
+    healthcheck:
+      test: ["CMD", "/otel-lgtm/docker/healthcheck.sh"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 3m
+
 volumes:
+  lgtm-data:
   dict-pgdata:
   spi-pgdata:
