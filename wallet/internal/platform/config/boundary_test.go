@@ -50,7 +50,7 @@ func sources(t *testing.T) map[string]*ast.File {
 	return out
 }
 
-func TestTheWalletDoesNotImportTheMocks(t *testing.T) {
+func TestNoMockImports(t *testing.T) {
 	for name, f := range sources(t) {
 		for _, imp := range f.Imports {
 			if strings.Contains(imp.Path.Value, "pixfake/mock") {
@@ -68,7 +68,7 @@ func TestTheWalletDoesNotImportTheMocks(t *testing.T) {
 }
 
 // Only the configuration and the seed (fake customers, which the real thing does not have) may name a place or a participant.
-func TestNoEndpointOrParticipantIsHardCoded(t *testing.T) {
+func TestNoHardCodedEndpoints(t *testing.T) {
 	allowed := func(name string) bool {
 		return name == "internal/platform/config/config.go" || strings.HasPrefix(name, "internal/seed/")
 	}

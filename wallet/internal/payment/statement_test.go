@@ -27,7 +27,7 @@ func (f *fixture) allEntries(t *testing.T, account string, pageSize int) []Entry
 	return nil
 }
 
-func TestStatementListsTheMoneyThatMoved(t *testing.T) {
+func TestStatement(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
@@ -116,7 +116,7 @@ func TestStatementValidation(t *testing.T) {
 	}
 }
 
-func TestStatementOfAnAccountWithoutMovements(t *testing.T) {
+func TestStatementEmpty(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.ledger.Open(context.Background(), ledger.Account{ID: "0a1b2c3d-0003-4000-8000-000000000003", Branch: "0001", Number: "00345678", HolderName: "Padaria", TaxID: "11222333000181"}); err != nil {
 		t.Fatal(err)

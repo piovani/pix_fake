@@ -28,12 +28,12 @@ type Page struct {
 
 func (s *Service) List(ctx context.Context, in ListInput) (Page, error) {
 	if in.AccountID == "" {
-		return Page{}, fmt.Errorf("%w: account is required", ErrInvalid)
+		return Page{}, fmt.Errorf("%w: account required", ErrInvalid)
 	}
 	size := in.PageSize
 	switch {
 	case size < 0 || size > maxPageSize:
-		return Page{}, fmt.Errorf("%w: page size must be between 0 and %d", ErrInvalid, maxPageSize)
+		return Page{}, fmt.Errorf("%w: page size must be 0..%d", ErrInvalid, maxPageSize)
 	case size == 0:
 		size = defaultPageSize
 	}
@@ -69,12 +69,12 @@ func decodeToken(token string) (*Cursor, error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return nil, fmt.Errorf("%w: page token is not valid", ErrInvalid)
+		return nil, fmt.Errorf("%w: bad page token", ErrInvalid)
 	}
 	at, id, ok := strings.Cut(string(raw), "|")
 	t, terr := time.Parse(time.RFC3339Nano, at)
 	if !ok || terr != nil || id == "" {
-		return nil, fmt.Errorf("%w: page token is not valid", ErrInvalid)
+		return nil, fmt.Errorf("%w: bad page token", ErrInvalid)
 	}
 	return &Cursor{CreatedAt: t, ID: id}, nil
 }

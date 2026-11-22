@@ -28,7 +28,7 @@ func main() {
 	ctx := context.Background()
 	pool, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("connect to the database", "err", err)
+		slog.Error("connect db", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()

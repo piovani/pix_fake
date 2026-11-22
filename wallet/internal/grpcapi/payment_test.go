@@ -107,7 +107,7 @@ func TestResolveKeyAndCreatePayment(t *testing.T) {
 	}
 }
 
-func TestResolveKeyOfAnotherCustomerOfTheWallet(t *testing.T) {
+func TestResolveKeyBookTransfer(t *testing.T) {
 	f := &fakePayments{resolution: payment.Resolution{ID: "res-2", BookTransfer: true, Payee: testPayee}}
 	r, err := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, f)).ResolveKey(ctx5(t), &walletv1.ResolveKeyRequest{AccountId: "acc", Key: "k"})
 	if err != nil || !r.GetBookTransfer() || r.GetResolutionId() != "res-2" {
@@ -115,7 +115,7 @@ func TestResolveKeyOfAnotherCustomerOfTheWallet(t *testing.T) {
 	}
 }
 
-func TestGetPaymentShowsARejection(t *testing.T) {
+func TestGetPaymentRejected(t *testing.T) {
 	finished := time.Date(2026, 11, 21, 12, 0, 5, 0, time.UTC)
 	f := &fakePayments{payment: payment.Payment{
 		ID: "pay-1", Status: payment.Rejected, RejectCode: "AC07", RejectReason: "The receiving account is closed.", FinishedAt: finished,
@@ -217,7 +217,7 @@ func TestReturnPayment(t *testing.T) {
 	}
 }
 
-func TestReceivedPaymentShowsWhatWasReturned(t *testing.T) {
+func TestGetPaymentReturnedCents(t *testing.T) {
 	f := &fakePayments{payment: payment.Payment{ID: "pay-1", Direction: payment.Inbound, Type: payment.TypePix, Status: payment.Settled, AmountCents: 1050, ReturnedCents: 400}}
 	res, err := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, f)).GetPayment(ctx5(t), &walletv1.GetPaymentRequest{PaymentId: "pay-1"})
 	if err != nil || res.GetPayment().GetReturnedCents() != 400 {
@@ -256,7 +256,7 @@ func TestGetStatement(t *testing.T) {
 	}
 }
 
-func TestGetStatementNeedsThePaymentModule(t *testing.T) {
+func TestGetStatementUnimplemented(t *testing.T) {
 	_, err := walletv1.NewAccountServiceClient(dial(t, fakeLedger{})).GetStatement(ctx5(t), &walletv1.GetStatementRequest{AccountId: "acc"})
 	if status.Code(err) != codes.Unimplemented {
 		t.Errorf("err = %v", err)

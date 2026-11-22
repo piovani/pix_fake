@@ -18,7 +18,7 @@ func liveClient(t *testing.T) *DictClient {
 	return NewDictClient(base, "99000001")
 }
 
-func TestLiveLookupOfAnotherBanksKey(t *testing.T) {
+func TestLiveLookup(t *testing.T) {
 	c := liveClient(t)
 	e2e, err := NewEndToEndID("99000001", time.Now())
 	if err != nil {
@@ -52,7 +52,7 @@ func TestLiveErrors(t *testing.T) {
 	}
 }
 
-func TestLiveRegisterAndRemoveAKey(t *testing.T) {
+func TestLiveRegisterRemove(t *testing.T) {
 	c := liveClient(t)
 	ctx := context.Background()
 	reqID, _ := NewRequestID()

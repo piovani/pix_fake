@@ -74,7 +74,7 @@ func (f *fixture) returnedOf(t *testing.T, orig Payment) int64 {
 	return p.ReturnedCents
 }
 
-func TestReturnAReceivedPayment(t *testing.T) {
+func TestReturn(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)
@@ -121,7 +121,7 @@ func TestReturnAReceivedPayment(t *testing.T) {
 	}
 }
 
-func TestPartialReturnsAddUpToTheOriginal(t *testing.T) {
+func TestReturnPartial(t *testing.T) {
 	f := newFixture(t)
 	orig := f.receivedAndSettled(t)
 
@@ -139,7 +139,7 @@ func TestPartialReturnsAddUpToTheOriginal(t *testing.T) {
 	}
 }
 
-func TestAReturnTheSPIRejectsFreesWhatItHeld(t *testing.T) {
+func TestReturnRejected(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)
@@ -163,7 +163,7 @@ func TestAReturnTheSPIRejectsFreesWhatItHeld(t *testing.T) {
 	}
 }
 
-func TestReturnIsIdempotentByRequestID(t *testing.T) {
+func TestReturnIdempotent(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)
@@ -190,7 +190,7 @@ func TestReturnIsIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-func TestPaymentsThatCannotBeReturned(t *testing.T) {
+func TestReturnNotAllowed(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)
@@ -240,7 +240,7 @@ func TestReturnValidation(t *testing.T) {
 	}
 }
 
-func TestReturnWithoutEnoughMoney(t *testing.T) {
+func TestReturnNoFunds(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)
@@ -257,7 +257,7 @@ func TestReturnWithoutEnoughMoney(t *testing.T) {
 	}
 }
 
-func TestReturnWhileTheSPIIsDown(t *testing.T) {
+func TestReturnSPIDown(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)
@@ -280,7 +280,7 @@ func TestReturnWhileTheSPIIsDown(t *testing.T) {
 	}
 }
 
-func TestReturnTheSPIRefusesAsMalformedIsRejected(t *testing.T) {
+func TestReturnSPIBadRequest(t *testing.T) {
 	f := newFixture(t)
 	orig := f.receivedAndSettled(t)
 	f.bank.err = &pix.SPIError{Status: 400, Kind: "bad-request"}
@@ -294,7 +294,7 @@ func TestReturnTheSPIRefusesAsMalformedIsRejected(t *testing.T) {
 	}
 }
 
-func TestReturnsAtTheSameTimeNeverExceedTheOriginal(t *testing.T) {
+func TestReturnConcurrent(t *testing.T) {
 	f := newFixture(t)
 	orig := f.receivedAndSettled(t)
 
@@ -326,7 +326,7 @@ func TestReturnsAtTheSameTimeNeverExceedTheOriginal(t *testing.T) {
 	}
 }
 
-func TestTheSameReturnAtTheSameTimeIsOneReturn(t *testing.T) {
+func TestReturnConcurrentSameRequest(t *testing.T) {
 	f := newFixture(t)
 	orig := f.receivedAndSettled(t)
 	in := ReturnInput{PaymentID: orig.ID, AmountCents: 1050, RequestID: requestID(t)}

@@ -35,7 +35,7 @@ func (s *seen) all() []string {
 	return append([]string(nil), s.paths...)
 }
 
-func TestTheSPIClientNeedsOnlyTheBaseURLAndTheISPB(t *testing.T) {
+func TestSPIClientConfigOnly(t *testing.T) {
 	var got seen
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got.add(r)
@@ -80,7 +80,7 @@ func TestTheSPIClientNeedsOnlyTheBaseURLAndTheISPB(t *testing.T) {
 	}
 }
 
-func TestTheDICTClientNeedsOnlyTheBaseURLAndTheISPB(t *testing.T) {
+func TestDICTClientConfigOnly(t *testing.T) {
 	var got seen
 	var ispb string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +104,7 @@ func TestTheDICTClientNeedsOnlyTheBaseURLAndTheISPB(t *testing.T) {
 	}
 }
 
-func TestNoRequestTouchesAMockPath(t *testing.T) {
+func TestNoMockPaths(t *testing.T) {
 	var got seen
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got.add(r)

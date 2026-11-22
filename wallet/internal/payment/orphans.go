@@ -28,7 +28,7 @@ func (s *Service) ReleaseOrphans(ctx context.Context) (int, error) {
 		if err := s.accounts.Release(ctx, r.ID); err != nil {
 			return released, err
 		}
-		slog.Warn("released money held for a payment that was never recorded", "reservation", r.ID, "reference", r.Reference)
+		slog.Warn("released orphan reservation", "reservation", r.ID, "reference", r.Reference)
 		released++
 	}
 	return released, nil

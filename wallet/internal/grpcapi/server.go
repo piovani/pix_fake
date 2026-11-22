@@ -61,7 +61,7 @@ func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanc
 	case errors.Is(err, ledger.ErrAccountNotFound):
 		return nil, status.Error(codes.NotFound, "account not found")
 	case err != nil:
-		return nil, status.Error(codes.Internal, "could not read the balance")
+		return nil, status.Error(codes.Internal, "internal error")
 	}
 	return &walletv1.GetBalanceResponse{AvailableCents: b.AvailableCents, ReservedCents: b.ReservedCents}, nil
 }

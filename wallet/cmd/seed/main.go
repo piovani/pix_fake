@@ -32,5 +32,5 @@ func main() {
 		slog.Error("seed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("wallet accounts and keys loaded")
+	slog.Info("seed done")
 }

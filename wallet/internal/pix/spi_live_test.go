@@ -43,7 +43,7 @@ func readUntil(t *testing.T, c *SPIClient, found func(kind string, body []byte) 
 	t.Fatal("the expected message did not arrive")
 }
 
-func TestLivePayAKeyOfAnotherBank(t *testing.T) {
+func TestLivePay(t *testing.T) {
 	spi := liveSPI(t)
 	dict := liveClient(t)
 	ctx := context.Background()
@@ -85,7 +85,7 @@ func TestLivePayAKeyOfAnotherBank(t *testing.T) {
 	})
 }
 
-func TestLiveReceiveAPayment(t *testing.T) {
+func TestLiveReceive(t *testing.T) {
 	spi := liveSPI(t)
 	base := strings.Replace(os.Getenv("WALLET_TEST_SPI_URL"), "/api/v1", "", 1)
 	ctx := context.Background()
@@ -186,7 +186,7 @@ func amountCents(t *testing.T, s string) int64 {
 	return c
 }
 
-func TestLiveReturnAReceivedPayment(t *testing.T) {
+func TestLiveReturn(t *testing.T) {
 	spi := liveSPI(t)
 	ctx := context.Background()
 	received := receiveAPayment(t, spi, "12.34")
@@ -219,7 +219,7 @@ func TestLiveReturnAReceivedPayment(t *testing.T) {
 	})
 }
 
-func TestLiveReportABookTransfer(t *testing.T) {
+func TestLiveReport(t *testing.T) {
 	spi := liveSPI(t)
 	ctx := context.Background()
 

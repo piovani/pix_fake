@@ -34,12 +34,12 @@ type Statement struct {
 // Payments in flight are not in it: their money is reserved, not moved.
 func (s *Service) Statement(ctx context.Context, in StatementInput) (Statement, error) {
 	if in.AccountID == "" {
-		return Statement{}, fmt.Errorf("%w: account is required", ErrInvalid)
+		return Statement{}, fmt.Errorf("%w: account required", ErrInvalid)
 	}
 	size := in.PageSize
 	switch {
 	case size < 0 || size > maxPageSize:
-		return Statement{}, fmt.Errorf("%w: page size must be between 0 and %d", ErrInvalid, maxPageSize)
+		return Statement{}, fmt.Errorf("%w: page size must be 0..%d", ErrInvalid, maxPageSize)
 	case size == 0:
 		size = defaultPageSize
 	}
@@ -102,5 +102,5 @@ func decodeStatementToken(token string) (int64, error) {
 			return id, nil
 		}
 	}
-	return 0, fmt.Errorf("%w: page token is not valid", ErrInvalid)
+	return 0, fmt.Errorf("%w: bad page token", ErrInvalid)
 }

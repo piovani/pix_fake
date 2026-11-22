@@ -73,7 +73,7 @@ func (e env) waitFinished(t *testing.T, id string, within time.Duration) *wallet
 	}
 }
 
-func TestPayAKeyOfAnotherBank(t *testing.T) {
+func TestPayOtherBank(t *testing.T) {
 	e := setup(t)
 	before := e.balance(t)
 
@@ -121,7 +121,7 @@ func TestPayAKeyOfAnotherBank(t *testing.T) {
 	}
 }
 
-func TestRejectedPaymentsGiveTheMoneyBack(t *testing.T) {
+func TestPayRejected(t *testing.T) {
 	e := setup(t)
 	tests := []struct {
 		name, key, code string
@@ -187,7 +187,7 @@ func TestPayErrors(t *testing.T) {
 	wantCode(t, "unknown account", err, codes.NotFound)
 }
 
-func TestPaymentMadeWhileTheSPIIsDownIsSentByTheWorker(t *testing.T) {
+func TestPaySPIDown(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")
@@ -233,7 +233,7 @@ func (e env) clearSPIFaults(t *testing.T) {
 	}
 }
 
-func TestPayAnotherCustomerOfTheWallet(t *testing.T) {
+func TestBookTransfer(t *testing.T) {
 	e := setup(t)
 	ana, bruno := e.balance(t), e.balanceOf(t, seed.BrunoID)
 
@@ -298,7 +298,7 @@ func (e env) spiStatus(t *testing.T, path string) int {
 	return resp.StatusCode
 }
 
-func TestPayAnotherCustomerWithoutEnoughMoney(t *testing.T) {
+func TestBookTransferNoFunds(t *testing.T) {
 	e := setup(t)
 	ana, bruno := e.balance(t), e.balanceOf(t, seed.BrunoID)
 
@@ -375,7 +375,7 @@ func (e env) waitReceived(t *testing.T, endToEndID string) *walletv1.Payment {
 	return got
 }
 
-func TestReceiveAPaymentFromAnotherBank(t *testing.T) {
+func TestReceive(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")
@@ -395,7 +395,7 @@ func TestReceiveAPaymentFromAnotherBank(t *testing.T) {
 	}
 }
 
-func TestPaymentsTheWalletRefusesToReceive(t *testing.T) {
+func TestReceiveRefused(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")
@@ -421,7 +421,7 @@ func TestPaymentsTheWalletRefusesToReceive(t *testing.T) {
 	}
 }
 
-func TestReturnAReceivedPayment(t *testing.T) {
+func TestReturn(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")
@@ -479,7 +479,7 @@ func TestReturnAReceivedPayment(t *testing.T) {
 	wantCode(t, "after returning everything", err, codes.FailedPrecondition)
 }
 
-func TestPaymentsThatCannotBeReturned(t *testing.T) {
+func TestReturnNotAllowed(t *testing.T) {
 	e := setup(t)
 	r := e.resolve(t, "+5511999990002")
 	sent, err := e.pay(t, r.ResolutionId, 100, "")
@@ -534,7 +534,7 @@ func TestStatement(t *testing.T) {
 	wantCode(t, "bad token", err, codes.InvalidArgument)
 }
 
-func TestAnotherBankReturnsAPaymentTheWalletMade(t *testing.T) {
+func TestReturnReceived(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")

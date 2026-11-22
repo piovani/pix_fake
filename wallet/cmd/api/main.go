@@ -28,7 +28,7 @@ func main() {
 
 	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("connect to the database", "err", err)
+		slog.Error("connect db", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
@@ -52,7 +52,7 @@ func main() {
 		srv.GracefulStop()
 	}()
 
-	slog.Info("gRPC API listening", "addr", cfg.GRPCAddr)
+	slog.Info("listening", "addr", cfg.GRPCAddr)
 	if err := srv.Serve(lis); err != nil {
 		slog.Error("serve", "err", err)
 		os.Exit(1)

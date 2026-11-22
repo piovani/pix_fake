@@ -37,7 +37,7 @@ func TestSendOneMessage(t *testing.T) {
 	}
 }
 
-func TestSendSeveralMessagesAsMultipart(t *testing.T) {
+func TestSendMultipart(t *testing.T) {
 	c := newTestSPI(t, func(w http.ResponseWriter, r *http.Request) {
 		mt, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mt != "multipart/mixed" {
@@ -65,7 +65,7 @@ func TestSendSeveralMessagesAsMultipart(t *testing.T) {
 	}
 }
 
-func TestSendValidatesCount(t *testing.T) {
+func TestSendCount(t *testing.T) {
 	c := newTestSPI(t, func(http.ResponseWriter, *http.Request) { t.Error("the SPI must not be called") })
 	if _, err := c.Send(context.Background()); !errors.Is(err, ErrBadRequest) {
 		t.Errorf("none: %v", err)
@@ -75,7 +75,7 @@ func TestSendValidatesCount(t *testing.T) {
 	}
 }
 
-func TestPullSingleMessage(t *testing.T) {
+func TestPullSingle(t *testing.T) {
 	var paths []string
 	c := newTestSPI(t, func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
@@ -173,7 +173,7 @@ func TestSPIErrorMapping(t *testing.T) {
 	}
 }
 
-func TestSPINetworkFailureIsUnavailable(t *testing.T) {
+func TestSPINetworkError(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL
 	srv.Close()

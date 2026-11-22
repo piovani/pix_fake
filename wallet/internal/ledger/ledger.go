@@ -20,10 +20,10 @@ var (
 	ErrInvalidAmount       = errors.New("ledger: amount must be positive")
 	ErrInvalidReference    = errors.New("ledger: reference is required")
 	ErrReservationNotFound = errors.New("ledger: reservation not found")
-	ErrReservationClosed   = errors.New("ledger: reservation already closed the other way")
-	ErrReferenceConflict   = errors.New("ledger: reference already used with a different account or amount")
-	ErrSameAccount         = errors.New("ledger: a transfer needs two different accounts")
-	ErrAccountNotActive    = errors.New("ledger: the account is blocked or closed")
+	ErrReservationClosed   = errors.New("ledger: reservation already closed")
+	ErrReferenceConflict   = errors.New("ledger: reference reused with other data")
+	ErrSameAccount         = errors.New("ledger: same account on both sides")
+	ErrAccountNotActive    = errors.New("ledger: account not active")
 )
 
 // Branch and Number match what the DICT holds, so the wallet recognizes its own keys.

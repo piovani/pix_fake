@@ -83,7 +83,7 @@ func TestGetBalance(t *testing.T) {
 	}
 }
 
-func TestGetBalanceHidesInternalErrors(t *testing.T) {
+func TestGetBalanceInternalError(t *testing.T) {
 	client := walletv1.NewAccountServiceClient(dial(t, fakeLedger{err: errors.New("connection refused to 10.0.0.5")}))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

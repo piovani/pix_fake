@@ -34,7 +34,7 @@ const entryAnswer = `<GetEntryResponse><ResponseTime>2026-11-19T12:00:00.000Z</R
 <Owner><Type>NATURAL_PERSON</Type><TaxIdNumber>39053344705</TaxIdNumber><Name>Carlos Mendes</Name></Owner>
 <CreationDate>2026-01-02T10:00:00.000Z</CreationDate><KeyOwnershipDate>2026-01-02T10:00:00.000Z</KeyOwnershipDate></Entry></GetEntryResponse>`
 
-func TestGetEntrySendsHeadersAndDecodes(t *testing.T) {
+func TestGetEntry(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/api/v2/entries/%2B5521999990003" {
 			t.Errorf("request: %s %s", r.Method, r.URL.EscapedPath())
@@ -68,7 +68,7 @@ func TestGetEntrySendsHeadersAndDecodes(t *testing.T) {
 	}
 }
 
-func TestCreateEntryBodyAndIdempotencyKey(t *testing.T) {
+func TestCreateEntry(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var req createEntryRequestXML
@@ -101,7 +101,7 @@ func TestCreateEntryBodyAndIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestUpdateDeleteAndCheckKeys(t *testing.T) {
+func TestUpdateDeleteCheck(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		switch {
@@ -137,7 +137,7 @@ func TestUpdateDeleteAndCheckKeys(t *testing.T) {
 	}
 }
 
-func TestInputValidatedBeforeCalling(t *testing.T) {
+func TestDictValidation(t *testing.T) {
 	c := newTestClient(t, func(http.ResponseWriter, *http.Request) { t.Error("the DICT must not be called") })
 	ctx := context.Background()
 
@@ -160,7 +160,7 @@ func problem(kind, title string, status int, extra string) string {
 		title + `</title><status>` + strconv.Itoa(status) + `</status><correlationId>c0ffee</correlationId>` + extra + `</problem>`
 }
 
-func TestErrorMapping(t *testing.T) {
+func TestDictErrors(t *testing.T) {
 	tests := []struct {
 		name       string
 		status     int
@@ -228,7 +228,7 @@ func TestProblemDetails(t *testing.T) {
 	}
 }
 
-func TestNetworkFailureIsUnavailable(t *testing.T) {
+func TestDictNetworkError(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL
 	srv.Close() // nobody listens any more

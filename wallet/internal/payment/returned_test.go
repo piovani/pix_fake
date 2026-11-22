@@ -41,7 +41,7 @@ func (f *fixture) lastAnswer(t *testing.T) pix.TxStatus {
 	return all[len(all)-1]
 }
 
-func TestAReturnOfAPaymentTheWalletMadeCreditsThePayer(t *testing.T) {
+func TestReturnReceived(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.paidAndSettled(t, 2590)
@@ -75,7 +75,7 @@ func TestAReturnOfAPaymentTheWalletMadeCreditsThePayer(t *testing.T) {
 	}
 }
 
-func TestTheSameReturnTwiceCreditsOnce(t *testing.T) {
+func TestReturnReceivedTwice(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.paidAndSettled(t, 2590)
@@ -100,7 +100,7 @@ func TestTheSameReturnTwiceCreditsOnce(t *testing.T) {
 	}
 }
 
-func TestAReturnTheWalletCannotMatchIsRefused(t *testing.T) {
+func TestReturnReceivedRefused(t *testing.T) {
 	orig := func(f *fixture, t *testing.T) Payment { return f.paidAndSettled(t, 2590) }
 	for name, tc := range map[string]struct {
 		change func(*pix.PaymentReturn)
@@ -133,7 +133,7 @@ func TestAReturnTheWalletCannotMatchIsRefused(t *testing.T) {
 	}
 }
 
-func TestAReturnOfAPaymentNotSettledIsRefused(t *testing.T) {
+func TestReturnReceivedNotSettled(t *testing.T) {
 	f := newFixture(t)
 	pending := f.pay(t, f.resolve(t), 500)
 
@@ -145,7 +145,7 @@ func TestAReturnOfAPaymentNotSettledIsRefused(t *testing.T) {
 	}
 }
 
-func TestReturnsCannotAddUpToMoreThanWasPaid(t *testing.T) {
+func TestReturnReceivedAboveTotal(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.paidAndSettled(t, 1000)
@@ -163,7 +163,7 @@ func TestReturnsCannotAddUpToMoreThanWasPaid(t *testing.T) {
 	}
 }
 
-func TestARejectedReturnCreditsNothing(t *testing.T) {
+func TestReturnReceivedRejected(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.paidAndSettled(t, 1000)
@@ -185,7 +185,7 @@ func TestARejectedReturnCreditsNothing(t *testing.T) {
 	}
 }
 
-func TestAReturnComesThroughTheStream(t *testing.T) {
+func TestHandlePacs004(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.paidAndSettled(t, 1000)

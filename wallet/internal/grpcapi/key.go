@@ -75,18 +75,18 @@ func keyError(op string, err error) error {
 	case errors.Is(err, ledger.ErrAccountNotFound):
 		return status.Error(codes.NotFound, "account not found")
 	case errors.Is(err, pixkey.ErrKeyNotFound):
-		return status.Error(codes.NotFound, "the key does not belong to this account")
+		return status.Error(codes.NotFound, "key not found for this account")
 	case errors.Is(err, pixkey.ErrKeyTaken):
-		return status.Error(codes.AlreadyExists, "the key is already registered")
+		return status.Error(codes.AlreadyExists, "key already registered")
 	case errors.Is(err, pixkey.ErrRequestConflict):
-		return status.Error(codes.AlreadyExists, "request_id was already used with other data")
+		return status.Error(codes.AlreadyExists, "request_id reused with other data")
 	case errors.Is(err, pix.ErrRateLimited):
-		return status.Error(codes.ResourceExhausted, "the DICT is limiting requests, try again later")
+		return status.Error(codes.ResourceExhausted, "dict rate limit, try again later")
 	case errors.Is(err, pix.ErrUnavailable):
-		return status.Error(codes.Unavailable, "the DICT is unavailable, try again later")
+		return status.Error(codes.Unavailable, "dict unavailable, try again later")
 	}
 	slog.Error(op, "err", err)
-	return status.Error(codes.Internal, "could not complete the request")
+	return status.Error(codes.Internal, "internal error")
 }
 
 func toProtoKey(k pixkey.Key) *walletv1.Key {

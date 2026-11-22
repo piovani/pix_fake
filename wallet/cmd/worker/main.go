@@ -31,7 +31,7 @@ func main() {
 	}
 	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("connect to the database", "err", err)
+		slog.Error("connect db", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
@@ -51,7 +51,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		if err := payments.Consume(ctx, spi); err != nil {
-			slog.Error("reading the SPI stream", "err", err)
+			slog.Error("consume stopped", "err", err)
 			stop()
 		}
 	}()
@@ -64,10 +64,10 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				sweep(ctx, "sent pending payments", payments.SendPending)
-				sweep(ctx, "finished book transfers", payments.CompleteBookTransfers)
-				sweep(ctx, "reported book transfers", payments.ReportBookTransfers)
-				sweep(ctx, "released orphaned reservations", payments.ReleaseOrphans)
+				sweep(ctx, "resend", payments.SendPending)
+				sweep(ctx, "finish-book", payments.CompleteBookTransfers)
+				sweep(ctx, "report-book", payments.ReportBookTransfers)
+				sweep(ctx, "orphans", payments.ReleaseOrphans)
 			}
 		}
 	}()
@@ -78,8 +78,8 @@ func main() {
 func sweep(ctx context.Context, did string, job func(context.Context) (int, error)) {
 	switch n, err := job(ctx); {
 	case err != nil && ctx.Err() == nil:
-		slog.Warn("worker job failed", "job", did, "err", err)
+		slog.Warn("job failed", "job", did, "err", err)
 	case n > 0:
-		slog.Info(did, "count", n)
+		slog.Info("job done", "job", did, "count", n)
 	}
 }

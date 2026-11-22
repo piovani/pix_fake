@@ -38,7 +38,7 @@ func (f *fixture) balanceOf(t *testing.T, id string) int64 {
 	return b.AvailableCents
 }
 
-func TestResolveKeyOfAnotherCustomerOfTheWallet(t *testing.T) {
+func TestResolveOwnKey(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolveBook(t)
 
@@ -57,7 +57,7 @@ func TestResolveKeyOfAnotherCustomerOfTheWallet(t *testing.T) {
 	}
 }
 
-func TestAKeyOfThePayingAccountIsRefused(t *testing.T) {
+func TestResolvePayerKey(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.svc.ResolveKey(context.Background(), anaID, anaKey); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("err = %v", err)
@@ -67,7 +67,7 @@ func TestAKeyOfThePayingAccountIsRefused(t *testing.T) {
 	}
 }
 
-func TestPayAnotherCustomerOfTheWalletSettlesAtOnce(t *testing.T) {
+func TestBookTransfer(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolveBook(t)
@@ -110,7 +110,7 @@ func TestPayAnotherCustomerOfTheWalletSettlesAtOnce(t *testing.T) {
 	}
 }
 
-func TestPayAnotherCustomerWithoutEnoughMoney(t *testing.T) {
+func TestBookTransferNoFunds(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolveBook(t)
@@ -136,7 +136,7 @@ func TestPayAnotherCustomerWithoutEnoughMoney(t *testing.T) {
 	}
 }
 
-func TestPayAnotherCustomerAtTheSameTimeMovesTheMoneyOnce(t *testing.T) {
+func TestBookTransferConcurrent(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolveBook(t)
 
@@ -182,7 +182,7 @@ func (f *fixture) stopHalfway(t *testing.T, cents int64) (Resolution, Payment) {
 	return r, p
 }
 
-func TestRepeatingPayFinishesATransferThatStoppedHalfway(t *testing.T) {
+func TestBookTransferResumeOnRetry(t *testing.T) {
 	f := newFixture(t)
 	r, p := f.stopHalfway(t, 2590)
 
@@ -198,7 +198,7 @@ func TestRepeatingPayFinishesATransferThatStoppedHalfway(t *testing.T) {
 	}
 }
 
-func TestTheWorkerFinishesATransferThatStoppedHalfway(t *testing.T) {
+func TestBookTransferResumeByWorker(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	_, p := f.stopHalfway(t, 2590)
@@ -221,7 +221,7 @@ func TestTheWorkerFinishesATransferThatStoppedHalfway(t *testing.T) {
 	}
 }
 
-func TestATransferThatCannotBeMadeAnyMoreIsForgotten(t *testing.T) {
+func TestBookTransferDropped(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolveBook(t)
@@ -243,7 +243,7 @@ func TestATransferThatCannotBeMadeAnyMoreIsForgotten(t *testing.T) {
 	}
 }
 
-func TestBookTransfersAreReportedToTheSPI(t *testing.T) {
+func TestReportBookTransfers(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolveBook(t)
@@ -299,7 +299,7 @@ func TestBookTransfersAreReportedToTheSPI(t *testing.T) {
 	}
 }
 
-func TestOnlyTheSentSideOfABookTransferIsReported(t *testing.T) {
+func TestReportOutboundOnly(t *testing.T) {
 	f := newFixture(t)
 	f.pay(t, f.resolveBook(t), 100)
 	f.pay(t, f.resolve(t), 100)
@@ -309,7 +309,7 @@ func TestOnlyTheSentSideOfABookTransferIsReported(t *testing.T) {
 	}
 }
 
-func TestReportsWaitForTheSPI(t *testing.T) {
+func TestReportWaitsForSPI(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	p := f.pay(t, f.resolveBook(t), 100)
@@ -327,7 +327,7 @@ func TestReportsWaitForTheSPI(t *testing.T) {
 	}
 }
 
-func TestAReportTheSPIRefuses(t *testing.T) {
+func TestReportRefused(t *testing.T) {
 	for _, tt := range []struct {
 		code   string
 		status string
@@ -363,7 +363,7 @@ func TestAReportTheSPIRefuses(t *testing.T) {
 	}
 }
 
-func TestReceiptsThatAreNotForABookTransferAreIgnored(t *testing.T) {
+func TestReceiptIgnored(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	p := f.pay(t, f.resolve(t), 100)
@@ -382,7 +382,7 @@ func TestReceiptsThatAreNotForABookTransferAreIgnored(t *testing.T) {
 	}
 }
 
-func TestHandleReadsTheReceiptOfAReport(t *testing.T) {
+func TestHandleCamt025(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolveBook(t)
@@ -403,7 +403,7 @@ func TestHandleReadsTheReceiptOfAReport(t *testing.T) {
 	}
 }
 
-func TestARefusedReportCanBeSentAgainByHand(t *testing.T) {
+func TestResendReport(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolveBook(t)
@@ -436,7 +436,7 @@ func TestARefusedReportCanBeSentAgainByHand(t *testing.T) {
 	}
 }
 
-func TestATransferThatTakesMoreThan40SecondsIsStillSettledButLogged(t *testing.T) {
+func TestBookTransferOver40s(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r, p := f.stopHalfway(t, 400)
@@ -453,7 +453,7 @@ func TestATransferThatTakesMoreThan40SecondsIsStillSettledButLogged(t *testing.T
 	if got, _ := f.svc.Get(ctx, p.ID); got.Status != Settled {
 		t.Fatalf("status %s: the money may have moved, so it is settled", got.Status)
 	}
-	if !strings.Contains(logged.String(), "after the 40 s limit") {
+	if !strings.Contains(logged.String(), "book transfer over 40s") {
 		t.Fatalf("not logged: %q", logged.String())
 	}
 }

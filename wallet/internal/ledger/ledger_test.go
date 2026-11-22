@@ -62,7 +62,7 @@ func TestOpenAndBalance(t *testing.T) {
 	}
 }
 
-func TestCreditIsIdempotentByReference(t *testing.T) {
+func TestCreditIdempotent(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	id := account(t, l, "001", 0)
@@ -139,7 +139,7 @@ func TestReserveRelease(t *testing.T) {
 	}
 }
 
-func TestReserveInsufficientFundsChangesNothing(t *testing.T) {
+func TestReserveNoFunds(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	id := account(t, l, "001", 1000)
@@ -159,7 +159,7 @@ func TestReserveInsufficientFundsChangesNothing(t *testing.T) {
 	}
 }
 
-func TestReserveIsIdempotentByReference(t *testing.T) {
+func TestReserveIdempotent(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	id := account(t, l, "001", 10000)
@@ -188,7 +188,7 @@ func TestReserveIsIdempotentByReference(t *testing.T) {
 }
 
 // Many payments at once against one balance: exactly as many as the money allows succeed, and the total never moves.
-func TestConcurrentReservationsNeverSpendTheSameMoney(t *testing.T) {
+func TestReserveConcurrent(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	id := account(t, l, "001", 500)
@@ -223,7 +223,7 @@ func TestConcurrentReservationsNeverSpendTheSameMoney(t *testing.T) {
 	}
 }
 
-func TestAccountReturnsItsData(t *testing.T) {
+func TestAccount(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 
@@ -248,7 +248,7 @@ func TestAccountReturnsItsData(t *testing.T) {
 	}
 }
 
-func TestTransferMovesMoneyBetweenAccounts(t *testing.T) {
+func TestTransfer(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	payer, payee := account(t, l, "001", 10000), account(t, l, "002", 500)
@@ -264,7 +264,7 @@ func TestTransferMovesMoneyBetweenAccounts(t *testing.T) {
 	}
 }
 
-func TestTransferIsIdempotentByReference(t *testing.T) {
+func TestTransferIdempotent(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	payer, payee := account(t, l, "001", 10000), account(t, l, "002", 0)
@@ -291,7 +291,7 @@ func TestTransferIsIdempotentByReference(t *testing.T) {
 	}
 }
 
-func TestTransferInsufficientFundsChangesNothing(t *testing.T) {
+func TestTransferNoFunds(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	payer, payee := account(t, l, "001", 1000), account(t, l, "002", 0)
@@ -347,7 +347,7 @@ func TestTransferValidation(t *testing.T) {
 	}
 }
 
-func TestConcurrentTransfersNeverSpendTheSameMoney(t *testing.T) {
+func TestTransferConcurrent(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	payer, payee := account(t, l, "001", 1000), account(t, l, "002", 0)
@@ -394,7 +394,7 @@ func TestAccountByNumber(t *testing.T) {
 	}
 }
 
-func TestMovementsAreTheMoneyThatMoved(t *testing.T) {
+func TestMovements(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	a, b := account(t, l, "001", 10000), account(t, l, "002", 0)
@@ -449,7 +449,7 @@ func TestMovementsAreTheMoneyThatMoved(t *testing.T) {
 	}
 }
 
-func TestABlockedOrClosedAccountCannotSpendOrBePaid(t *testing.T) {
+func TestInactiveAccount(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	from := account(t, l, "101", 1000)
@@ -493,7 +493,7 @@ func TestABlockedOrClosedAccountCannotSpendOrBePaid(t *testing.T) {
 	}
 }
 
-func TestReceiveLimitOfAnAccount(t *testing.T) {
+func TestSetReceiveLimit(t *testing.T) {
 	ctx := context.Background()
 	l := newLedger(t)
 	id := account(t, l, "201", 0)

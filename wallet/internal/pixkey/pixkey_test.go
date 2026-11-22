@@ -113,7 +113,7 @@ func setup() (*Service, *fakeDict, *memStore) {
 	return New(fakeAccounts{ana.ID: ana, padaria.ID: padaria}, d, st, "99000001"), d, st
 }
 
-func TestRegisterSendsTheAccountToTheDICTAndStoresTheKey(t *testing.T) {
+func TestRegister(t *testing.T) {
 	s, d, st := setup()
 
 	k, err := s.Register(context.Background(), RegisterInput{AccountID: ana.ID, Type: pix.KeyEmail, Key: "ana.souza@example.com", RequestID: req1})
@@ -134,7 +134,7 @@ func TestRegisterSendsTheAccountToTheDICTAndStoresTheKey(t *testing.T) {
 	}
 }
 
-func TestRegisterRandomKeyUsesWhatTheDICTGenerates(t *testing.T) {
+func TestRegisterEVP(t *testing.T) {
 	s, d, _ := setup()
 	k, err := s.Register(context.Background(), RegisterInput{AccountID: ana.ID, Type: pix.KeyEVP, RequestID: req1})
 	if err != nil || k.Key != d.evpKey || d.calls[0].Key != "" {
@@ -152,7 +152,7 @@ func TestRegisterLegalPerson(t *testing.T) {
 	}
 }
 
-func TestRegisterRepeatedRequestReturnsTheSameKeyWithoutCallingTheDICT(t *testing.T) {
+func TestRegisterIdempotent(t *testing.T) {
 	s, d, st := setup()
 	in := RegisterInput{AccountID: ana.ID, Type: pix.KeyEVP, RequestID: req1}
 	first, _ := s.Register(context.Background(), in)
@@ -163,7 +163,7 @@ func TestRegisterRepeatedRequestReturnsTheSameKeyWithoutCallingTheDICT(t *testin
 	}
 }
 
-func TestRegisterSameRequestWithOtherDataIsRefused(t *testing.T) {
+func TestRegisterRequestConflict(t *testing.T) {
 	s, _, _ := setup()
 	ctx := context.Background()
 	if _, err := s.Register(ctx, RegisterInput{AccountID: ana.ID, Type: pix.KeyPhone, Key: "+5511999990001", RequestID: req1}); err != nil {
@@ -180,7 +180,7 @@ func TestRegisterSameRequestWithOtherDataIsRefused(t *testing.T) {
 	}
 }
 
-func TestRegisterKeyAlreadyStoredIsTakenWithoutCallingTheDICT(t *testing.T) {
+func TestRegisterKeyTaken(t *testing.T) {
 	s, d, _ := setup()
 	ctx := context.Background()
 	if _, err := s.Register(ctx, RegisterInput{AccountID: ana.ID, Type: pix.KeyEmail, Key: "a@example.com", RequestID: req1}); err != nil {
@@ -192,7 +192,7 @@ func TestRegisterKeyAlreadyStoredIsTakenWithoutCallingTheDICT(t *testing.T) {
 	}
 }
 
-func TestRegisterDICTRefusals(t *testing.T) {
+func TestRegisterDICTErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -212,7 +212,7 @@ func TestRegisterDICTRefusals(t *testing.T) {
 	}
 }
 
-func TestRegisterRetryAfterTheDICTWasDown(t *testing.T) {
+func TestRegisterRetry(t *testing.T) {
 	s, d, st := setup()
 	in := RegisterInput{AccountID: ana.ID, Type: pix.KeyPhone, Key: "+5511999990001", RequestID: req1}
 
@@ -271,7 +271,7 @@ func registered(t *testing.T, s *Service, account string, typ pix.KeyType, key, 
 	return k
 }
 
-func TestListReturnsTheKeysOfTheAccount(t *testing.T) {
+func TestList(t *testing.T) {
 	s, _, _ := setup()
 	ctx := context.Background()
 	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
@@ -289,7 +289,7 @@ func TestListReturnsTheKeysOfTheAccount(t *testing.T) {
 	}
 }
 
-func TestRemoveDeletesInTheDICTAndLocally(t *testing.T) {
+func TestRemove(t *testing.T) {
 	s, d, st := setup()
 	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
 
@@ -301,14 +301,14 @@ func TestRemoveDeletesInTheDICTAndLocally(t *testing.T) {
 	}
 }
 
-func TestRemoveAKeyThatIsAlreadyGoneIsNotAnError(t *testing.T) {
+func TestRemoveGone(t *testing.T) {
 	s, d, _ := setup()
 	if err := s.Remove(context.Background(), ana.ID, "never@example.com"); err != nil || len(d.deleted) != 0 {
 		t.Fatalf("err = %v, DICT deletes = %v", err, d.deleted)
 	}
 }
 
-func TestRemoveRetryAfterTheDICTAlreadyDeletedIt(t *testing.T) {
+func TestRemoveRetry(t *testing.T) {
 	s, d, st := setup()
 	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
 
@@ -318,7 +318,7 @@ func TestRemoveRetryAfterTheDICTAlreadyDeletedIt(t *testing.T) {
 	}
 }
 
-func TestRemoveWhenTheDICTIsDownKeepsTheKey(t *testing.T) {
+func TestRemoveDICTDown(t *testing.T) {
 	s, d, st := setup()
 	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
 
@@ -332,7 +332,7 @@ func TestRemoveWhenTheDICTIsDownKeepsTheKey(t *testing.T) {
 	}
 }
 
-func TestRemoveAKeyOfAnotherAccountIsRefused(t *testing.T) {
+func TestRemoveOtherAccount(t *testing.T) {
 	s, d, st := setup()
 	registered(t, s, ana.ID, pix.KeyEmail, "a@example.com", req1)
 

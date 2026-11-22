@@ -26,11 +26,11 @@ type ReturnInput struct {
 func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	switch {
 	case in.PaymentID == "":
-		return Payment{}, fmt.Errorf("%w: payment is required", ErrInvalid)
+		return Payment{}, fmt.Errorf("%w: payment required", ErrInvalid)
 	case in.AmountCents <= 0:
 		return Payment{}, fmt.Errorf("%w: amount must be positive", ErrInvalid)
 	case !uuidV4.MatchString(in.RequestID):
-		return Payment{}, fmt.Errorf("%w: request id must be a UUID v4", ErrInvalid)
+		return Payment{}, fmt.Errorf("%w: request id must be uuid v4", ErrInvalid)
 	}
 	if existing, found, err := s.store.ByRequestID(ctx, in.RequestID); err != nil {
 		return Payment{}, err
@@ -75,7 +75,7 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	})
 	if err != nil {
 		if rerr := s.accounts.Release(context.WithoutCancel(ctx), rsv.ID); rerr != nil {
-			slog.Error("release after a return that was not stored", "request_id", in.RequestID, "err", rerr)
+			slog.Error("release after failed insert", "request_id", in.RequestID, "err", rerr)
 		}
 		return Payment{}, err
 	}
@@ -88,11 +88,11 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 func (s *Service) checkReturnable(orig Payment, cents int64) error {
 	switch {
 	case orig.Direction != Inbound || orig.Type != TypePix:
-		return fmt.Errorf("%w: only a payment received through the SPI can be returned", ErrNotReturnable)
+		return fmt.Errorf("%w: only inbound pix payments", ErrNotReturnable)
 	case orig.Status != Settled:
-		return fmt.Errorf("%w: the payment is not settled", ErrNotReturnable)
+		return fmt.Errorf("%w: not settled", ErrNotReturnable)
 	case s.now().Sub(orig.FinishedAt) > returnDeadline:
-		return fmt.Errorf("%w: it was settled more than 90 days ago", ErrNotReturnable)
+		return fmt.Errorf("%w: older than 90 days", ErrNotReturnable)
 	case cents > orig.AmountCents-orig.ReturnedCents:
 		return ErrReturnTooLarge
 	}
@@ -115,7 +115,7 @@ func (s *Service) returnOrderOf(ctx context.Context, p Payment) ([]byte, error) 
 		return nil, err
 	}
 	if !found {
-		return nil, fmt.Errorf("the payment %s that %s returns is gone", p.OriginalPaymentID, p.ID)
+		return nil, fmt.Errorf("original %s of return %s missing", p.OriginalPaymentID, p.ID)
 	}
 	_, body, err := pix.NewPacs004(s.ispb, pix.PaymentReturn{
 		ReturnID: p.EndToEndID, EndToEndID: orig.EndToEndID, AmountCents: p.AmountCents, To: orig.Counterparty.Participant,

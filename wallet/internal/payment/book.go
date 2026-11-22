@@ -39,10 +39,10 @@ func (s *Service) payInside(ctx context.Context, res Resolution, in PayInput) (P
 func (s *Service) completeBookTransfer(ctx context.Context, p Payment) (Payment, error) {
 	res, found, err := s.store.Resolution(ctx, p.ResolutionID)
 	if err != nil {
-		return p, fmt.Errorf("read the resolution: %w", err)
+		return p, fmt.Errorf("read resolution: %w", err)
 	}
 	if !found {
-		return p, fmt.Errorf("the resolution %s of payment %s is gone", p.ResolutionID, p.ID)
+		return p, fmt.Errorf("resolution %s of payment %s missing", p.ResolutionID, p.ID)
 	}
 
 	err = s.accounts.Transfer(ctx, p.AccountID, res.PayeeAccountID, p.AmountCents, p.EndToEndID)
@@ -54,25 +54,25 @@ func (s *Service) completeBookTransfer(ctx context.Context, p Payment) (Payment,
 		return Payment{}, err
 	}
 	if err != nil {
-		return p, fmt.Errorf("move the money: %w", err)
+		return p, fmt.Errorf("transfer: %w", err)
 	}
 
 	payer, err := s.accounts.Account(ctx, p.AccountID)
 	if err != nil {
-		return p, fmt.Errorf("read the payer: %w", err)
+		return p, fmt.Errorf("read payer: %w", err)
 	}
 	at := s.now()
 	if _, _, err := s.store.Insert(ctx, Payment{
 		AccountID: res.PayeeAccountID, Direction: Inbound, Type: TypeBookTransfer, Status: Settled, AmountCents: p.AmountCents,
 		EndToEndID: p.EndToEndID, Counterparty: s.partyOf(payer, ""), Message: p.Message, CreatedAt: p.CreatedAt, FinishedAt: at,
 	}); err != nil {
-		return p, fmt.Errorf("record the payment the payee receives: %w", err)
+		return p, fmt.Errorf("insert inbound side: %w", err)
 	}
 	if _, err := s.store.Close(ctx, p.ID, Settled, "", "", at); err != nil {
-		return p, fmt.Errorf("close the payment: %w", err)
+		return p, fmt.Errorf("close payment: %w", err)
 	}
 	if at.Sub(p.CreatedAt) > bookTransferLimit {
-		slog.Error("a book transfer settled after the 40 s limit", "payment", p.ID, "took", at.Sub(p.CreatedAt).Round(time.Second))
+		slog.Error("book transfer over 40s", "payment", p.ID, "took", at.Sub(p.CreatedAt).Round(time.Second))
 	}
 	p.Status, p.FinishedAt = Settled, at
 	return p, nil
@@ -87,7 +87,7 @@ func (s *Service) CompleteBookTransfers(ctx context.Context) (int, error) {
 	for _, p := range pending {
 		switch _, err := s.completeBookTransfer(ctx, p); {
 		case errors.Is(err, ledger.ErrInsufficientFunds), errors.Is(err, ledger.ErrAccountNotActive):
-			slog.Warn("a book transfer that stopped halfway cannot be made any more; forgotten", "payment", p.ID)
+			slog.Warn("dropped unfinished book transfer", "payment", p.ID)
 		case err != nil:
 			return done, err
 		default:
@@ -111,7 +111,7 @@ func (s *Service) ReportBookTransfers(ctx context.Context) (int, error) {
 			body, err := s.reportOf(ctx, p)
 			if err != nil {
 				if errors.Is(err, pix.ErrBadRequest) {
-					slog.Error("a book transfer cannot be reported", "payment", p.ID, "err", err)
+					slog.Error("cannot build report", "payment", p.ID, "err", err)
 					if err := s.store.SetReport(ctx, p.ID, ReportRejected, "INVALID", s.now()); err != nil {
 						return sent, err
 					}
@@ -127,7 +127,7 @@ func (s *Service) ReportBookTransfers(ctx context.Context) (int, error) {
 		}
 
 		if _, err := s.bank.Send(ctx, bodies...); err != nil {
-			slog.Warn("the SPI did not take the reports of book transfers; they are sent again later", "err", err)
+			slog.Warn("send reports failed, will retry", "err", err)
 			return sent, nil
 		}
 		at := s.now()
@@ -156,7 +156,7 @@ func (s *Service) reportOf(ctx context.Context, p Payment) ([]byte, error) {
 		return nil, err
 	}
 	if !found {
-		return nil, fmt.Errorf("%w: the resolution of payment %s is gone", pix.ErrBadRequest, p.ID)
+		return nil, fmt.Errorf("%w: resolution of payment %s missing", pix.ErrBadRequest, p.ID)
 	}
 	payer, err := s.accounts.Account(ctx, p.AccountID)
 	if err != nil {
@@ -192,7 +192,7 @@ func (s *Service) OnReceipt(ctx context.Context, r pix.Receipt) error {
 
 	rej := r.Rejection()
 	if rej.Alert() {
-		slog.Error("the SPI refused the report of a book transfer", "payment", p.ID, "code", rej.Code, "detail", r.Detail)
+		slog.Error("report refused by spi", "payment", p.ID, "code", rej.Code, "detail", r.Detail)
 	}
 	if rej.TryAgain {
 		return s.store.SetReport(ctx, p.ID, "", rej.Code, s.now())

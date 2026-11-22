@@ -268,7 +268,7 @@ func TestRegistrationRefusals(t *testing.T) {
 	wantCode(t, "listing an unknown account", err, codes.NotFound)
 }
 
-func TestRemoveAKeyOfAnotherAccountIsRefused(t *testing.T) {
+func TestRemoveOtherAccountKey(t *testing.T) {
 	e := setup(t)
 	email := uniqueEmail(t)
 	if _, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, email, requestID(t)); err != nil {
@@ -282,7 +282,7 @@ func TestRemoveAKeyOfAnotherAccountIsRefused(t *testing.T) {
 	}
 }
 
-func TestRegisterWhenTheDICTFails(t *testing.T) {
+func TestRegisterDICTDown(t *testing.T) {
 	e := setup(t)
 
 	for name, tt := range map[string]struct {
@@ -312,7 +312,7 @@ func TestRegisterWhenTheDICTFails(t *testing.T) {
 	}
 }
 
-func TestRemoveWhenTheDICTFailsKeepsTheKey(t *testing.T) {
+func TestRemoveDICTDown(t *testing.T) {
 	e := setup(t)
 	email := uniqueEmail(t)
 	if _, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, email, requestID(t)); err != nil {
@@ -337,7 +337,7 @@ func TestRemoveWhenTheDICTFailsKeepsTheKey(t *testing.T) {
 	}
 }
 
-func TestRemoveAKeyThatTheDICTAlreadyLost(t *testing.T) {
+func TestRemoveKeyMissingInDICT(t *testing.T) {
 	e := setup(t)
 	email := uniqueEmail(t)
 	if _, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, email, requestID(t)); err != nil {

@@ -16,12 +16,12 @@ var (
 	ErrInvalid            = errors.New("payment: invalid request")
 	ErrKeyNotFound        = errors.New("payment: key not found")
 	ErrResolutionNotFound = errors.New("payment: resolution not found or expired")
-	ErrResolutionConflict = errors.New("payment: resolution already used with another amount or message")
+	ErrResolutionConflict = errors.New("payment: resolution reused with other data")
 	ErrPaymentNotFound    = errors.New("payment: payment not found")
-	ErrNotReturnable      = errors.New("payment: the payment cannot be returned")
-	ErrReturnTooLarge     = errors.New("payment: more than what is left to return")
+	ErrNotReturnable      = errors.New("payment: not returnable")
+	ErrReturnTooLarge     = errors.New("payment: amount above what is left")
 	ErrRequestConflict    = errors.New("payment: request id already used with other data")
-	ErrKeyNotRecorded     = errors.New("payment: the DICT says the key is the wallet's but the wallet has no record of it")
+	ErrKeyNotRecorded     = errors.New("payment: own key not recorded")
 )
 
 type (
@@ -188,7 +188,7 @@ func New(accounts Accounts, keys Keys, dict Directory, bank Bank, store Store, i
 // A key of another customer of the wallet never goes to the DICT.
 func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolution, error) {
 	if accountID == "" || key == "" {
-		return Resolution{}, fmt.Errorf("%w: account and key are required", ErrInvalid)
+		return Resolution{}, fmt.Errorf("%w: account and key required", ErrInvalid)
 	}
 	acct, err := s.accounts.Account(ctx, accountID)
 	if err != nil {
@@ -207,7 +207,7 @@ func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolu
 	}
 	if own {
 		if owner == acct.ID {
-			return Resolution{}, fmt.Errorf("%w: the key belongs to the paying account", ErrInvalid)
+			return Resolution{}, fmt.Errorf("%w: key belongs to the payer", ErrInvalid)
 		}
 		payee, err := s.accounts.Account(ctx, owner)
 		if err != nil {
@@ -223,7 +223,7 @@ func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolu
 	case errors.Is(err, pix.ErrNotFound):
 		return Resolution{}, ErrKeyNotFound
 	case errors.Is(err, pix.ErrBookTransfer):
-		slog.Error("the DICT says a key is the wallet's but the wallet has no record of it", "key", key)
+		slog.Error("own key missing locally", "key", key)
 		return Resolution{}, ErrKeyNotRecorded
 	case errors.Is(err, pix.ErrBadRequest):
 		return Resolution{}, fmt.Errorf("%w: %v", ErrInvalid, err)
@@ -255,11 +255,11 @@ type PayInput struct {
 func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	switch {
 	case in.ResolutionID == "":
-		return Payment{}, fmt.Errorf("%w: resolution is required", ErrInvalid)
+		return Payment{}, fmt.Errorf("%w: resolution required", ErrInvalid)
 	case in.AmountCents <= 0:
 		return Payment{}, fmt.Errorf("%w: amount must be positive", ErrInvalid)
 	case utf8.RuneCountInString(in.Message) > MaxMessage:
-		return Payment{}, fmt.Errorf("%w: message is longer than %d characters", ErrInvalid, MaxMessage)
+		return Payment{}, fmt.Errorf("%w: message over %d chars", ErrInvalid, MaxMessage)
 	}
 
 	res, found, err := s.store.Resolution(ctx, in.ResolutionID)
@@ -306,7 +306,7 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	if err != nil {
 		// Nothing was recorded, so the money must not stay held. If this fails too, repeating the call finishes it.
 		if rerr := s.accounts.Release(context.WithoutCancel(ctx), rsv.ID); rerr != nil {
-			slog.Error("release after a payment that was not stored", "end_to_end_id", res.EndToEndID, "err", rerr)
+			slog.Error("release after failed insert", "end_to_end_id", res.EndToEndID, "err", rerr)
 		}
 		return Payment{}, err
 	}
@@ -342,10 +342,10 @@ func (s *Service) submit(ctx context.Context, p Payment) (Payment, error) {
 	ids, err := s.bank.Send(ctx, body)
 	switch {
 	case errors.Is(err, pix.ErrBadRequest):
-		slog.Error("the SPI refused the order", "payment", p.ID, "type", p.Type, "err", err)
+		slog.Error("order refused by spi", "payment", p.ID, "type", p.Type, "err", err)
 		return s.reject(ctx, p, pix.Rejection{Code: "SPI400", Cause: pix.CauseWallet, Message: "The payment could not be processed. It was not made."})
 	case err != nil:
-		slog.Warn("the SPI did not take the order; the worker sends it again", "payment", p.ID, "type", p.Type, "err", err)
+		slog.Warn("spi unavailable, worker will resend", "payment", p.ID, "type", p.Type, "err", err)
 		return p, nil
 	}
 
@@ -356,7 +356,7 @@ func (s *Service) submit(ctx context.Context, p Payment) (Payment, error) {
 	}
 	if err := s.store.MarkSubmitted(ctx, p.ID, resource, at); err != nil {
 		// the SPI has it; the worker sends it once more and gets the same outcome
-		slog.Warn("could not record that the SPI took the order", "payment", p.ID, "err", err)
+		slog.Warn("mark submitted failed", "payment", p.ID, "err", err)
 		return p, nil
 	}
 	p.ResourceID, p.SubmittedAt = resource, at
@@ -391,7 +391,7 @@ func (s *Service) orderOf(ctx context.Context, p Payment) ([]byte, error) {
 
 func (s *Service) Get(ctx context.Context, id string) (Payment, error) {
 	if id == "" {
-		return Payment{}, fmt.Errorf("%w: payment is required", ErrInvalid)
+		return Payment{}, fmt.Errorf("%w: payment required", ErrInvalid)
 	}
 	p, found, err := s.store.ByID(ctx, id)
 	if err != nil {

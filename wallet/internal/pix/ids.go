@@ -23,7 +23,7 @@ func NewEndToEndID(ispb string, now time.Time) (string, error) {
 	}
 	id := "E" + ispb + now.UTC().Format("200601021504") + suffix
 	if !endToEndRe.MatchString(id) {
-		return "", fmt.Errorf("pix: invalid EndToEndId %q (is the ISPB numeric?)", id)
+		return "", fmt.Errorf("pix: bad EndToEndId %q", id)
 	}
 	return id, nil
 }
@@ -69,7 +69,7 @@ func NewReturnID(ispb string, now time.Time) (string, error) {
 	}
 	id := "D" + ispb + now.UTC().Format("200601021504") + suffix
 	if !returnIDRe.MatchString(id) {
-		return "", fmt.Errorf("pix: invalid RtrId %q (is the ISPB numeric?)", id)
+		return "", fmt.Errorf("pix: bad RtrId %q", id)
 	}
 	return id, nil
 }
@@ -84,7 +84,7 @@ func NewMessageID(ispb string) (string, error) {
 	}
 	id := "M" + ispb + suffix
 	if !messageIDRe.MatchString(id) {
-		return "", fmt.Errorf("pix: invalid MsgId %q (is the ISPB 8 characters of 0-9 A-Z?)", id)
+		return "", fmt.Errorf("pix: bad MsgId %q", id)
 	}
 	return id, nil
 }

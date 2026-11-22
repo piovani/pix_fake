@@ -51,14 +51,14 @@ func NewPacs004(ispb string, r PaymentReturn, now time.Time) (msgID string, body
 	case r.AmountCents <= 0:
 		return "", nil, fmt.Errorf("%w: amount must be positive", ErrBadRequest)
 	case !returnIDRe.MatchString(r.ReturnID):
-		return "", nil, fmt.Errorf("%w: RtrId %q is malformed (see NewReturnID)", ErrBadRequest, r.ReturnID)
+		return "", nil, fmt.Errorf("%w: bad RtrId %q", ErrBadRequest, r.ReturnID)
 	case !endToEndRe.MatchString(r.EndToEndID):
-		return "", nil, fmt.Errorf("%w: EndToEndId %q is malformed", ErrBadRequest, r.EndToEndID)
+		return "", nil, fmt.Errorf("%w: bad EndToEndId %q", ErrBadRequest, r.EndToEndID)
 	case len(r.To) != 8:
-		return "", nil, fmt.Errorf("%w: the ISPB of the receiving participant must have 8 digits, got %q", ErrBadRequest, r.To)
+		return "", nil, fmt.Errorf("%w: bad ISPB %q", ErrBadRequest, r.To)
 	case r.To == ispb:
 		// the SPI rejects it with AG12; a return inside the institution is a ledger movement, not a message
-		return "", nil, fmt.Errorf("%w: a return to the same participant does not go through the SPI", ErrBadRequest)
+		return "", nil, fmt.Errorf("%w: return to own ISPB", ErrBadRequest)
 	}
 	if msgID, err = NewMessageID(ispb); err != nil {
 		return "", nil, err
@@ -148,7 +148,7 @@ type ReportedTx struct {
 // The SPI answers with a camt.025 whose receipts name that MsgId.
 func NewTrck002(ispb string, txs []ReportedTx, now time.Time) (msgID string, body []byte, err error) {
 	if len(txs) < 1 || len(txs) > maxReportedTxs {
-		return "", nil, fmt.Errorf("%w: a report takes 1 to %d transactions, got %d", ErrBadRequest, maxReportedTxs, len(txs))
+		return "", nil, fmt.Errorf("%w: report takes 1..%d txs, got %d", ErrBadRequest, maxReportedTxs, len(txs))
 	}
 	wire := make([]reportedTxXML, 0, len(txs))
 	for i, t := range txs {
@@ -188,30 +188,30 @@ func (t ReportedTx) wire(now time.Time) (reportedTxXML, error) {
 	case t.AmountCents <= 0:
 		return reportedTxXML{}, fmt.Errorf("%w: amount must be positive", ErrBadRequest)
 	case !endToEndRe.MatchString(t.EndToEndID):
-		return reportedTxXML{}, fmt.Errorf("%w: EndToEndId %q is malformed", ErrBadRequest, t.EndToEndID)
+		return reportedTxXML{}, fmt.Errorf("%w: bad EndToEndId %q", ErrBadRequest, t.EndToEndID)
 	case t.ReturnID != "" && !returnIDRe.MatchString(t.ReturnID):
-		return reportedTxXML{}, fmt.Errorf("%w: RtrId %q is malformed", ErrBadRequest, t.ReturnID)
+		return reportedTxXML{}, fmt.Errorf("%w: bad RtrId %q", ErrBadRequest, t.ReturnID)
 	case t.ReturnID != "" && initiation != "MANU":
-		return reportedTxXML{}, fmt.Errorf("%w: a return is initiated as MANU, not %s", ErrBadRequest, initiation)
+		return reportedTxXML{}, fmt.Errorf("%w: return must be MANU, got %s", ErrBadRequest, initiation)
 	case !slices.Contains(initiationsWithKey, initiation) && !slices.Contains(initiationsNoKey, initiation):
 		return reportedTxXML{}, fmt.Errorf("%w: unknown initiation %q", ErrBadRequest, initiation)
 	case slices.Contains(initiationsNoKey, initiation) && t.Key != "":
-		return reportedTxXML{}, fmt.Errorf("%w: a %s payment carries no Pix key", ErrBadRequest, initiation)
+		return reportedTxXML{}, fmt.Errorf("%w: %s takes no key", ErrBadRequest, initiation)
 	case slices.Contains(initiationsWithKey, initiation) && t.Key == "":
-		return reportedTxXML{}, fmt.Errorf("%w: a %s payment needs its Pix key", ErrBadRequest, initiation)
+		return reportedTxXML{}, fmt.Errorf("%w: %s needs a key", ErrBadRequest, initiation)
 	case t.Receiver.AccountType == AccountSalary:
-		return reportedTxXML{}, fmt.Errorf("%w: the receiving account cannot be a salary account", ErrBadRequest)
+		return reportedTxXML{}, fmt.Errorf("%w: salary account not allowed", ErrBadRequest)
 	case t.SettledAt.IsZero() || t.SettledAt.After(now):
-		return reportedTxXML{}, fmt.Errorf("%w: the settlement time is missing or in the future", ErrBadRequest)
+		return reportedTxXML{}, fmt.Errorf("%w: bad settlement time", ErrBadRequest)
 	case now.Sub(t.SettledAt) > maxReportAge:
-		return reportedTxXML{}, fmt.Errorf("%w: settled more than 30 days ago, too late to report", ErrBadRequest)
+		return reportedTxXML{}, fmt.Errorf("%w: older than 30 days", ErrBadRequest)
 	case t.Payer.TaxID == "" || t.Receiver.TaxID == "" || t.Payer.ISPB == "" || t.Receiver.ISPB == "":
-		return reportedTxXML{}, fmt.Errorf("%w: both parties need a tax ID and an ISPB", ErrBadRequest)
+		return reportedTxXML{}, fmt.Errorf("%w: party missing tax id or ISPB", ErrBadRequest)
 	}
 	scenario := t.Scenario
 	if scenario == "" {
 		if t.Payer.ISPB != t.Receiver.ISPB {
-			return reportedTxXML{}, fmt.Errorf("%w: the parties belong to different participants; say the scenario", ErrBadRequest)
+			return reportedTxXML{}, fmt.Errorf("%w: different ISPBs, scenario required", ErrBadRequest)
 		}
 		scenario = ScenarioSameParticipant
 	}

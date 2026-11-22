@@ -297,5 +297,4 @@ Notes:
 
 ## Next steps
 
-Phase 2 is done. The next phase of the [roadmap](../../docs/roadmap.md#phase-3-wallet-and-pix-integration-layer-next) is the
-wallet and its Pix integration layer, which will talk to this mock and to the DICT mock only through the Bacen contracts.
+The wallet (phase 3) is built on top of this mock. Next on the [roadmap](../../docs/roadmap.md#phase-4-med-2-funds-recovery-later) is MED 2.

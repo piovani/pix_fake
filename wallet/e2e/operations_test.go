@@ -46,7 +46,7 @@ func database(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func TestPaymentsToAnAccountThatCannotTakeThemAreRefused(t *testing.T) {
+func TestReceiveRefusedByAccount(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")
@@ -89,7 +89,7 @@ func TestPaymentsToAnAccountThatCannotTakeThemAreRefused(t *testing.T) {
 	}
 }
 
-func TestABlockedAccountCannotPay(t *testing.T) {
+func TestPayFromBlockedAccount(t *testing.T) {
 	e := setup(t)
 	r := e.resolve(t, carlosPhone)
 	run(t, "accounts", "status", seed.AnaID, "BLOCKED")
@@ -128,7 +128,7 @@ func waitReport(t *testing.T, pool *pgxpool.Pool, paymentID, want string) {
 	}
 }
 
-func TestARefusedReportIsSentAgainByHand(t *testing.T) {
+func TestResendRefusedReport(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {
 		t.Skip("WALLET_E2E_SPI_URL is not set")

@@ -13,7 +13,7 @@ var contractCodes = []string{
 	"AG01", // reports
 }
 
-func TestEveryCodeOfTheContractIsMapped(t *testing.T) {
+func TestReasonsCoverContract(t *testing.T) {
 	for _, code := range contractCodes {
 		r := ReasonOf(code)
 		if r.Cause == CauseUnknown || r.Code != code || r.Message == "" {
@@ -54,7 +54,7 @@ func TestReasonCauses(t *testing.T) {
 }
 
 // Only a transient problem, or a liquidity one that operations fix, is worth trying again.
-func TestOnlyTransientAndLiquidityCanBeTriedAgain(t *testing.T) {
+func TestTryAgain(t *testing.T) {
 	for code, r := range reasons {
 		if r.TryAgain && r.Cause != CauseTransient && code != "AM04" {
 			t.Errorf("%s (%s) says to try again", code, r.Cause)
@@ -65,7 +65,7 @@ func TestOnlyTransientAndLiquidityCanBeTriedAgain(t *testing.T) {
 	}
 }
 
-func TestMessagesAreSafeForTheCustomer(t *testing.T) {
+func TestMessagesSafe(t *testing.T) {
 	for code, r := range reasons {
 		low := strings.ToLower(r.Message)
 		if strings.Contains(low, "fraud") {
@@ -84,7 +84,7 @@ func TestMessagesAreSafeForTheCustomer(t *testing.T) {
 	}
 }
 
-func TestUnknownCodeStillClosesThePayment(t *testing.T) {
+func TestUnknownCode(t *testing.T) {
 	r := ReasonOf("ZZ99")
 	if r.Cause != CauseUnknown || r.Code != "ZZ99" || r.TryAgain || !r.Alert() || r.Message == "" {
 		t.Fatalf("%+v", r)
@@ -94,7 +94,7 @@ func TestUnknownCodeStillClosesThePayment(t *testing.T) {
 	}
 }
 
-func TestRejectionOfAStatus(t *testing.T) {
+func TestStatusRejection(t *testing.T) {
 	rejected := TxStatus{EndToEndID: testE2E, Status: StatusRejected, ReasonCode: "AC07", Detail: "free text from another bank, never shown"}
 	r := rejected.Rejection()
 	if r.Code != "AC07" || r.Cause != CauseRecipient || strings.Contains(r.Message, "free text") {
@@ -107,7 +107,7 @@ func TestRejectionOfAStatus(t *testing.T) {
 	}
 }
 
-func TestRejectionOfAReceipt(t *testing.T) {
+func TestReceiptRejection(t *testing.T) {
 	rs, err := ParseCamt025([]byte(camt025FromSPI))
 	if err != nil || len(rs) != 2 {
 		t.Fatalf("%+v, %v", rs, err)
@@ -120,7 +120,7 @@ func TestRejectionOfAReceipt(t *testing.T) {
 	}
 }
 
-func TestRejectionOfANotification(t *testing.T) {
+func TestNotificationRejection(t *testing.T) {
 	if r := (Notification{Ref: "res123", Reason: "Invalid XML"}).Rejection(); r.Cause != CauseWallet || !r.Alert() || r.Message == "" {
 		t.Fatalf("%+v", r)
 	}

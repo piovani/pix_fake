@@ -21,7 +21,7 @@ func TestNewEndToEndID(t *testing.T) {
 	}
 }
 
-func TestNewEndToEndIDRejectsBadISPB(t *testing.T) {
+func TestNewEndToEndIDBadISPB(t *testing.T) {
 	for _, ispb := range []string{"", "1234567", "123456789", "abcdefgh"} {
 		if _, err := NewEndToEndID(ispb, time.Now()); err == nil {
 			t.Errorf("ISPB %q was accepted", ispb)
@@ -29,7 +29,7 @@ func TestNewEndToEndIDRejectsBadISPB(t *testing.T) {
 	}
 }
 
-func TestNewRequestIDIsUUIDv4(t *testing.T) {
+func TestNewRequestID(t *testing.T) {
 	re := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 	seen := map[string]bool{}
 	for range 50 {

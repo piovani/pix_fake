@@ -92,28 +92,28 @@ func paymentError(op string, err error) error {
 	case errors.Is(err, ledger.ErrAccountNotFound):
 		return status.Error(codes.NotFound, "account not found")
 	case errors.Is(err, payment.ErrKeyNotFound):
-		return status.Error(codes.NotFound, "the key is not registered")
+		return status.Error(codes.NotFound, "key not registered")
 	case errors.Is(err, payment.ErrResolutionNotFound):
-		return status.Error(codes.NotFound, "the resolution is unknown or has expired; resolve the key again")
+		return status.Error(codes.NotFound, "resolution not found or expired")
 	case errors.Is(err, payment.ErrPaymentNotFound):
 		return status.Error(codes.NotFound, "payment not found")
 	case errors.Is(err, payment.ErrResolutionConflict):
-		return status.Error(codes.AlreadyExists, "the resolution was already used with another amount or message")
+		return status.Error(codes.AlreadyExists, "resolution reused with other data")
 	case errors.Is(err, payment.ErrRequestConflict):
-		return status.Error(codes.AlreadyExists, "request_id was already used with other data")
+		return status.Error(codes.AlreadyExists, "request_id reused with other data")
 	case errors.Is(err, payment.ErrNotReturnable), errors.Is(err, payment.ErrReturnTooLarge):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ledger.ErrInsufficientFunds):
 		return status.Error(codes.FailedPrecondition, "insufficient funds")
 	case errors.Is(err, ledger.ErrAccountNotActive):
-		return status.Error(codes.FailedPrecondition, "the account is blocked or closed")
+		return status.Error(codes.FailedPrecondition, "account blocked or closed")
 	case errors.Is(err, pix.ErrRateLimited):
-		return status.Error(codes.ResourceExhausted, "the DICT is limiting requests, try again later")
+		return status.Error(codes.ResourceExhausted, "dict rate limit, try again later")
 	case errors.Is(err, pix.ErrUnavailable):
-		return status.Error(codes.Unavailable, "the DICT is unavailable, try again later")
+		return status.Error(codes.Unavailable, "dict unavailable, try again later")
 	}
 	slog.Error(op, "err", err)
-	return status.Error(codes.Internal, "could not complete the request")
+	return status.Error(codes.Internal, "internal error")
 }
 
 func toProtoPayee(p payment.Payee) *walletv1.Payee {

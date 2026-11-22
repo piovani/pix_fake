@@ -68,7 +68,7 @@ func TestPacs004BuildAndParse(t *testing.T) {
 	}
 }
 
-func TestPacs004WithoutOptionalText(t *testing.T) {
+func TestPacs004Minimal(t *testing.T) {
 	r := testReturn()
 	r.Detail, r.Message = "", ""
 	_, body, err := NewPacs004("99000001", r, testNow)
@@ -115,7 +115,7 @@ func TestNewReturnID(t *testing.T) {
 }
 
 // The pacs.002 that answers a return names it by its RtrId.
-func TestPacs002AnswersAReturnByItsRtrID(t *testing.T) {
+func TestPacs002ForReturn(t *testing.T) {
 	_, body, err := NewPacs002("99000001", TxStatus{InstrID: testReturnID, EndToEndID: testE2E, Status: StatusAccepted}, testNow)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func testReported() ReportedTx {
 	}
 }
 
-func TestTrck002BuildBookTransfer(t *testing.T) {
+func TestTrck002BookTransfer(t *testing.T) {
 	msgID, body, err := NewTrck002("99000001", []ReportedTx{testReported()}, testNow)
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestTrck002BuildBookTransfer(t *testing.T) {
 	}
 }
 
-func TestTrck002ManualPaymentHasNoKey(t *testing.T) {
+func TestTrck002Manual(t *testing.T) {
 	tx := testReported()
 	tx.Key = ""
 	_, body, err := NewTrck002("99000001", []ReportedTx{tx}, testNow)

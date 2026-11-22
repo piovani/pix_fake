@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestMoneyHeldForAPaymentThatWasNeverRecordedIsReleased(t *testing.T) {
+func TestReleaseOrphans(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	before := f.balance(t)
@@ -35,7 +35,7 @@ func TestMoneyHeldForAPaymentThatWasNeverRecordedIsReleased(t *testing.T) {
 	}
 }
 
-func TestARequestWhoseMoneyWasReleasedAsAnOrphanCannotBeUsed(t *testing.T) {
+func TestReturnAfterOrphanReleased(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	orig := f.receivedAndSettled(t)

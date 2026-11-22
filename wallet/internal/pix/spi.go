@@ -57,7 +57,7 @@ type Message struct {
 // The result of a payment comes through the stream.
 func (c *SPIClient) Send(ctx context.Context, bodies ...[]byte) ([]string, error) {
 	if len(bodies) < 1 || len(bodies) > maxMessages {
-		return nil, fmt.Errorf("%w: Send takes 1 to %d messages, got %d", ErrBadRequest, maxMessages, len(bodies))
+		return nil, fmt.Errorf("%w: send takes 1..%d messages, got %d", ErrBadRequest, maxMessages, len(bodies))
 	}
 	body, contentType := bodies[0], xmlType
 	if len(bodies) > 1 {
@@ -104,7 +104,7 @@ func (c *SPIClient) Pull(ctx context.Context, next string) (msgs []Message, next
 
 func (c *SPIClient) Ack(ctx context.Context, next string) error {
 	if next == "" {
-		return fmt.Errorf("%w: Ack needs the next path of a Pull", ErrBadRequest)
+		return fmt.Errorf("%w: ack needs a next path", ErrBadRequest)
 	}
 	resp, raw, err := c.do(ctx, http.MethodDelete, c.origin+next, nil, "", "")
 	if err != nil {

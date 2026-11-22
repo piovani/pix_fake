@@ -61,7 +61,7 @@ func NewPacs008(ispb string, o PaymentOrder, now time.Time) (msgID string, body 
 		return "", nil, fmt.Errorf("%w: amount must be positive", ErrBadRequest)
 	}
 	if o.EndToEndID == "" {
-		return "", nil, fmt.Errorf("%w: EndToEndId is required", ErrBadRequest)
+		return "", nil, fmt.Errorf("%w: EndToEndId required", ErrBadRequest)
 	}
 	if msgID, err = NewMessageID(ispb); err != nil {
 		return "", nil, err
@@ -157,10 +157,10 @@ func (s TxStatus) Rejected() bool { return s.Status == StatusRejected }
 
 func NewPacs002(ispb string, st TxStatus, now time.Time) (msgID string, body []byte, err error) {
 	if st.EndToEndID == "" || st.Status == "" {
-		return "", nil, fmt.Errorf("%w: EndToEndId and status are required", ErrBadRequest)
+		return "", nil, fmt.Errorf("%w: EndToEndId and status required", ErrBadRequest)
 	}
 	if st.Status == StatusRejected && st.ReasonCode == "" {
-		return "", nil, fmt.Errorf("%w: a rejection needs a reason code", ErrBadRequest)
+		return "", nil, fmt.Errorf("%w: rejection needs a reason", ErrBadRequest)
 	}
 	if msgID, err = NewMessageID(ispb); err != nil {
 		return "", nil, err

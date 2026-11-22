@@ -202,7 +202,7 @@ func TestResolveKeyErrors(t *testing.T) {
 	}
 }
 
-func TestPaySendsTheOrderAndReservesTheMoney(t *testing.T) {
+func TestPay(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	p := f.pay(t, r, 2590)
@@ -241,7 +241,7 @@ func TestPaySendsTheOrderAndReservesTheMoney(t *testing.T) {
 	}
 }
 
-func TestPayWithoutEnoughMoney(t *testing.T) {
+func TestPayNoFunds(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	ctx := context.Background()
@@ -265,7 +265,7 @@ func TestPayWithoutEnoughMoney(t *testing.T) {
 	}
 }
 
-func TestPayRepeatedIsTheSamePayment(t *testing.T) {
+func TestPayIdempotent(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	first := f.pay(t, r, 2590)
@@ -289,7 +289,7 @@ func TestPayRepeatedIsTheSamePayment(t *testing.T) {
 	}
 }
 
-func TestPayAtTheSameTimeMakesOnePayment(t *testing.T) {
+func TestPayConcurrent(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 
@@ -315,7 +315,7 @@ func TestPayAtTheSameTimeMakesOnePayment(t *testing.T) {
 	}
 }
 
-func TestPayValidationAndResolution(t *testing.T) {
+func TestPayValidation(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	ctx := context.Background()
@@ -360,7 +360,7 @@ func (f *fixture) resolveAt(t *testing.T, at time.Time) Resolution {
 	return f.resolve(t)
 }
 
-func TestPayWhileTheSPIIsDownKeepsThePaymentForTheWorker(t *testing.T) {
+func TestPaySPIDown(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	f.bank.err = fmt.Errorf("%w: connection refused", pix.ErrUnavailable)
@@ -396,7 +396,7 @@ func TestPayWhileTheSPIIsDownKeepsThePaymentForTheWorker(t *testing.T) {
 	}
 }
 
-func TestRepeatingPayFinishesAnUnsentPayment(t *testing.T) {
+func TestPayRetrySendsUnsent(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	f.bank.err = pix.ErrUnavailable
@@ -409,7 +409,7 @@ func TestRepeatingPayFinishesAnUnsentPayment(t *testing.T) {
 	}
 }
 
-func TestPayRefusedBySPIAsMalformedIsRejected(t *testing.T) {
+func TestPaySPIBadRequest(t *testing.T) {
 	f := newFixture(t)
 	r := f.resolve(t)
 	f.bank.err = &pix.SPIError{Status: 400, Kind: "bad-request"}
@@ -431,7 +431,7 @@ func rejected(e2e, code string) pix.TxStatus {
 	return pix.TxStatus{InstrID: e2e, EndToEndID: e2e, Status: pix.StatusRejected, ReasonCode: code, Detail: "text of the other bank"}
 }
 
-func TestSettledPaymentTakesTheMoneyOut(t *testing.T) {
+func TestOnStatusSettled(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	p := f.pay(t, f.resolve(t), 2590)
@@ -464,7 +464,7 @@ func TestSettledPaymentTakesTheMoneyOut(t *testing.T) {
 	}
 }
 
-func TestRejectedPaymentGivesTheMoneyBack(t *testing.T) {
+func TestOnStatusRejected(t *testing.T) {
 	for _, tt := range []struct {
 		code  string
 		cause pix.Cause
@@ -504,7 +504,7 @@ func TestRejectedPaymentGivesTheMoneyBack(t *testing.T) {
 	}
 }
 
-func TestStatusesThatAreNotForThisModuleAreIgnored(t *testing.T) {
+func TestOnStatusUnknown(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	p := f.pay(t, f.resolve(t), 2590)
@@ -529,7 +529,7 @@ func TestStatusesThatAreNotForThisModuleAreIgnored(t *testing.T) {
 	}
 }
 
-func TestNotificationRejectsThePaymentItNames(t *testing.T) {
+func TestOnNotification(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	p := f.pay(t, f.resolve(t), 2590)
@@ -625,7 +625,7 @@ func (s *fakeStream) Ack(_ context.Context, next string) error {
 	return nil
 }
 
-func TestConsumeAppliesAndAcknowledges(t *testing.T) {
+func TestConsume(t *testing.T) {
 	f := newFixture(t)
 	p := f.pay(t, f.resolve(t), 2590)
 
@@ -663,7 +663,7 @@ func (l *failingLedger) Settle(ctx context.Context, id string) error {
 	return l.Ledger.Settle(ctx, id)
 }
 
-func TestConsumeDoesNotAcknowledgeWhatFailed(t *testing.T) {
+func TestConsumeFailureNotAcked(t *testing.T) {
 	f := newFixture(t)
 	p := f.pay(t, f.resolve(t), 2590)
 	flaky := &failingLedger{Ledger: f.ledger, failures: 1}
@@ -741,7 +741,7 @@ func TestList(t *testing.T) {
 	}
 }
 
-func TestGetUnknownPayment(t *testing.T) {
+func TestGetNotFound(t *testing.T) {
 	f := newFixture(t)
 	for _, id := range []string{"0a1b2c3d-9999-4000-8000-000000000009", "not-a-uuid"} {
 		if _, err := f.svc.Get(context.Background(), id); !errors.Is(err, ErrPaymentNotFound) {
@@ -762,7 +762,7 @@ func (f *fixture) settledBookTransferID(t *testing.T) string {
 	return f.pay(t, r, 100).EndToEndID
 }
 
-func TestInsertReturnsWhatAlreadyExists(t *testing.T) {
+func TestInsertExisting(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolve(t)

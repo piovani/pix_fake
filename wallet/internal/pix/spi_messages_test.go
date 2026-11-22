@@ -62,7 +62,7 @@ func TestPacs008BuildAndParse(t *testing.T) {
 	}
 }
 
-func TestPacs008ManualPaymentHasNoKey(t *testing.T) {
+func TestPacs008Manual(t *testing.T) {
 	o := testOrder()
 	o.Key, o.Message = "", ""
 	_, body, err := NewPacs008("99000001", o, testNow)
@@ -138,7 +138,7 @@ const settledFromSPI = `<?xml version="1.0" encoding="UTF-8"?>
   </FIToFIPmtStsRpt></Document>
 </Envelope>`
 
-func TestParsePacs002FromSPI(t *testing.T) {
+func TestParsePacs002(t *testing.T) {
 	st, err := ParsePacs002([]byte(settledFromSPI))
 	if err != nil || len(st) != 1 {
 		t.Fatalf("%+v, %v", st, err)

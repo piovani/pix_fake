@@ -47,7 +47,7 @@ type GetEntryParams struct {
 // ErrBookTransfer means the wallet holds the key itself.
 func (c *DictClient) GetEntry(ctx context.Context, p GetEntryParams) (Entry, error) {
 	if p.Key == "" {
-		return Entry{}, fmt.Errorf("%w: key is required", ErrBadRequest)
+		return Entry{}, fmt.Errorf("%w: key required", ErrBadRequest)
 	}
 	h := http.Header{}
 	h.Set("PI-RequestingParticipant", c.ispb)
@@ -64,7 +64,7 @@ func (c *DictClient) GetEntry(ctx context.Context, p GetEntryParams) (Entry, err
 // For KeyEVP leave Entry.Key empty and the DICT generates it.
 func (c *DictClient) CreateEntry(ctx context.Context, e Entry, requestID string) (Entry, error) {
 	if requestID == "" {
-		return Entry{}, fmt.Errorf("%w: request id is required", ErrBadRequest)
+		return Entry{}, fmt.Errorf("%w: request id required", ErrBadRequest)
 	}
 	body := createEntryRequestXML{
 		Entry:     entryXML{Key: e.Key, KeyType: string(e.KeyType), Account: e.Account.toXML(), Owner: e.Owner.toXML()},
@@ -87,7 +87,7 @@ type UpdateEntryParams struct {
 
 func (c *DictClient) UpdateEntry(ctx context.Context, p UpdateEntryParams) (Entry, error) {
 	if p.Key == "" {
-		return Entry{}, fmt.Errorf("%w: key is required", ErrBadRequest)
+		return Entry{}, fmt.Errorf("%w: key required", ErrBadRequest)
 	}
 	body := updateEntryRequestXML{Key: p.Key, Reason: string(orDefault(p.Reason))}
 	if p.Account != nil {
@@ -108,7 +108,7 @@ func (c *DictClient) UpdateEntry(ctx context.Context, p UpdateEntryParams) (Entr
 // DeleteEntry removes a key. The reason defaults to USER_REQUESTED.
 func (c *DictClient) DeleteEntry(ctx context.Context, key string, reason EntryReason) error {
 	if key == "" {
-		return fmt.Errorf("%w: key is required", ErrBadRequest)
+		return fmt.Errorf("%w: key required", ErrBadRequest)
 	}
 	body := deleteEntryRequestXML{Key: key, Participant: c.ispb, Reason: string(orDefault(reason))}
 	var out deleteEntryResponseXML
@@ -117,7 +117,7 @@ func (c *DictClient) DeleteEntry(ctx context.Context, key string, reason EntryRe
 
 func (c *DictClient) CheckKeys(ctx context.Context, keys []string) ([]KeyStatus, error) {
 	if len(keys) < 1 || len(keys) > 200 {
-		return nil, fmt.Errorf("%w: CheckKeys takes 1 to 200 keys, got %d", ErrBadRequest, len(keys))
+		return nil, fmt.Errorf("%w: check takes 1..200 keys, got %d", ErrBadRequest, len(keys))
 	}
 	var body checkKeysRequestXML
 	body.Keys.Key = keys

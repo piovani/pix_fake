@@ -59,7 +59,7 @@ func credited(e2e string) pix.TxStatus {
 	return pix.TxStatus{InstrID: e2e, EndToEndID: e2e, Status: pix.StatusCredit, SettledAt: time.Date(2026, 11, 21, 12, 0, 2, 0, time.UTC)}
 }
 
-func TestAcceptedPaymentIsCreditedWhenTheSPISettlesIt(t *testing.T) {
+func TestReceive(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
@@ -100,7 +100,7 @@ func TestAcceptedPaymentIsCreditedWhenTheSPISettlesIt(t *testing.T) {
 	}
 }
 
-func TestPaymentOrdersTheWalletCannotTake(t *testing.T) {
+func TestReceiveRefused(t *testing.T) {
 	for name, tt := range map[string]struct {
 		mutate func(*pix.PaymentOrder)
 		code   string
@@ -130,7 +130,7 @@ func TestPaymentOrdersTheWalletCannotTake(t *testing.T) {
 	}
 }
 
-func TestTheSameOrderDeliveredAgain(t *testing.T) {
+func TestReceiveRedelivered(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
@@ -160,7 +160,7 @@ func TestTheSameOrderDeliveredAgain(t *testing.T) {
 	}
 }
 
-func TestAnswerThatCannotBeSentIsRetried(t *testing.T) {
+func TestReceiveAnswerRetry(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.bank.err = fmt.Errorf("%w: connection refused", pix.ErrUnavailable)
@@ -180,7 +180,7 @@ func TestAnswerThatCannotBeSentIsRetried(t *testing.T) {
 	}
 }
 
-func TestSPIRejectsAPaymentTheWalletAccepted(t *testing.T) {
+func TestReceiveRejectedBySPI(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	if err := f.svc.OnPaymentOrder(ctx, anaOrder()); err != nil {
@@ -202,7 +202,7 @@ func TestSPIRejectsAPaymentTheWalletAccepted(t *testing.T) {
 	}
 }
 
-func TestStatusOfAPaymentWeNeverSawIsIgnored(t *testing.T) {
+func TestReceiveUnknownStatus(t *testing.T) {
 	f := newFixture(t)
 	if err := f.svc.OnStatus(context.Background(), credited("E99000002202611211200zzzzzzzzzzz")); err != nil {
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestStatusOfAPaymentWeNeverSawIsIgnored(t *testing.T) {
 	}
 }
 
-func TestHandleAnswersAPaymentOrderFromTheStream(t *testing.T) {
+func TestHandlePacs008(t *testing.T) {
 	f := newFixture(t)
 	_, body, err := pix.NewPacs008(bancoAlfa, anaOrder(), time.Now())
 	if err != nil {
@@ -229,7 +229,7 @@ func TestHandleAnswersAPaymentOrderFromTheStream(t *testing.T) {
 	}
 }
 
-func TestPaymentsToABlockedOrClosedAccountAreRefused(t *testing.T) {
+func TestReceiveInactiveAccount(t *testing.T) {
 	for status, reason := range map[ledger.AccountStatus]string{ledger.Blocked: "AC06", ledger.Closed: "AC07"} {
 		t.Run(string(status), func(t *testing.T) {
 			f := newFixture(t)
@@ -249,7 +249,7 @@ func TestPaymentsToABlockedOrClosedAccountAreRefused(t *testing.T) {
 	}
 }
 
-func TestABlockedAccountCannotPay(t *testing.T) {
+func TestPayFromBlockedAccount(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	r := f.resolve(t)
@@ -264,7 +264,7 @@ func TestABlockedAccountCannotPay(t *testing.T) {
 	}
 }
 
-func TestAPaymentAboveTheLimitOfTheAccountIsRefused(t *testing.T) {
+func TestReceiveAboveLimit(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	if err := f.ledger.SetReceiveLimit(ctx, anaID, 1049); err != nil {
