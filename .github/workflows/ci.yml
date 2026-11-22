@@ -16,7 +16,8 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION_FILE: wallet/go.mod
+  # the newest 1.27 patch: go-version-file would pin the go directive (1.27.3), which has fixed vulnerabilities
+  GO_VERSION: "1.27"
 
 jobs:
   lint:
@@ -25,10 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       - run: make lint
       - run: make tidy
@@ -39,10 +41,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       - run: make staticcheck
 
@@ -51,10 +54,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       - run: make vuln
 
@@ -64,10 +68,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       - uses: arduino/setup-protoc@v3
         with:
@@ -81,10 +86,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       # the SPI tests check the messages it writes against the official XSDs with xmllint
       - run: sudo apt-get update && sudo apt-get install -y libxml2-utils
@@ -96,10 +102,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       - run: sudo apt-get update && sudo apt-get install -y libxml2-utils
       - run: make test-integration
@@ -110,10 +117,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       # make coverage runs make e2e with covered binaries, then the unit tests, and merges both
       - run: make coverage
@@ -121,13 +129,13 @@ jobs:
           COVERAGE_MIN: "85"
           E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: .coverage/
           if-no-files-found: ignore
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-logs
           path: ${{ runner.temp }}/e2e-logs/
@@ -139,10 +147,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ env.GO_VERSION_FILE }}
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache-dependency-path: "**/go.sum"
       - run: make setup
       - run: make check
