@@ -1,0 +1,13 @@
+# Who reviews what. GitHub asks these owners for a review on every pull request that touches the paths; the last
+# matching line wins.
+
+*                   @piovani
+
+/wallet/            @piovani
+/mock/dict/         @piovani
+/mock/spi/          @piovani
+/simulator/         @piovani
+/monitoring/        @piovani
+
+# CI, dependencies and repository settings
+/.github/           @piovani
