@@ -59,6 +59,7 @@ type Reservation struct {
 	AmountCents int64
 	Reference   string
 	Status      ReservationStatus
+	CreatedAt   time.Time // set when listed by HeldBefore
 }
 
 type entryKind string
@@ -301,6 +302,26 @@ func (l *Ledger) Settle(ctx context.Context, reservationID string) error {
 // timed out). Releasing one already released does nothing; a settled one returns ErrReservationClosed.
 func (l *Ledger) Release(ctx context.Context, reservationID string) error {
 	return l.close(ctx, reservationID, Released, kindRelease)
+}
+
+// HeldBefore lists the reservations still held that were made before the given time, oldest first.
+func (l *Ledger) HeldBefore(ctx context.Context, before time.Time, limit int) ([]Reservation, error) {
+	rows, err := l.pool.Query(ctx, `
+		SELECT id, account_id, amount_cents, reference, status, created_at FROM reservations
+		WHERE status = 'HELD' AND created_at < $1 ORDER BY created_at LIMIT $2`, before, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Reservation
+	for rows.Next() {
+		var r Reservation
+		if err := rows.Scan(&r.ID, &r.AccountID, &r.AmountCents, &r.Reference, &r.Status, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (l *Ledger) close(ctx context.Context, reservationID string, to ReservationStatus, kind entryKind) error {

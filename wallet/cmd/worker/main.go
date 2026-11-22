@@ -67,6 +67,7 @@ func main() {
 				sweep(ctx, "sent pending payments", payments.SendPending)
 				sweep(ctx, "finished book transfers", payments.CompleteBookTransfers)
 				sweep(ctx, "reported book transfers", payments.ReportBookTransfers)
+				sweep(ctx, "released orphaned reservations", payments.ReleaseOrphans)
 			}
 		}
 	}()

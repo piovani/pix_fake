@@ -229,8 +229,8 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     sends again what the SPI did not take while it was down. The 40-second timeout is the SPI's (`AB03`): the wallet never rejects a
     payment the SPI may have taken. Tested on PostgreSQL and end to end (`make e2e`, [`wallet/e2e`](../wallet/e2e/payments_test.go)):
     settled, the seven rejections the SPI mock can force, and the SPI down.
-    Known gaps: a crash between reserving and storing the payment leaves money reserved until the call is repeated (nothing sweeps
-    it yet); the worker skips what it does not handle (returns)
+    A crash between reserving and storing the payment is covered by the worker: `ReleaseOrphans` gives back, after 10 minutes (more
+    than a resolution lives), a reservation no payment points to; a call that reuses a released reservation is refused
   - [x] Pay a key of another wallet user (book transfer). `ResolveKey` recognizes the wallet's own keys from its own records
     (`pixkey.AccountOf`, loaded by the seed) and never asks the DICT; `CreatePayment` moves the money in one transaction
     (`ledger.Transfer`, idempotent by `EndToEndId`), records the payment each side sees (a sent and a received payment with the same

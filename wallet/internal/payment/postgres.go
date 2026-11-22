@@ -188,6 +188,10 @@ func (p *Postgres) ByResource(ctx context.Context, id string) (Payment, bool, er
 	return p.one(ctx, `resource_id = $1`, id)
 }
 
+func (p *Postgres) ByReservation(ctx context.Context, id string) (Payment, bool, error) {
+	return p.one(ctx, `reservation_id = $1`, id)
+}
+
 func (p *Postgres) ByRequestID(ctx context.Context, id string) (Payment, bool, error) {
 	return p.one(ctx, `request_id = $1`, id)
 }

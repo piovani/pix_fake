@@ -65,6 +65,9 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	if err != nil {
 		return Payment{}, err
 	}
+	if rsv.Status != ledger.Held {
+		return Payment{}, ErrRequestConflict // released by the sweep of orphans: this request id is spent
+	}
 
 	stored, created, err := s.store.InsertReturn(ctx, Payment{
 		AccountID: orig.AccountID, Direction: Outbound, Type: TypeReturn, Status: Pending, AmountCents: in.AmountCents,
