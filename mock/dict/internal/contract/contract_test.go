@@ -123,7 +123,7 @@ func conforms(t *testing.T, sp *spec, method, specPath string, r reply) {
 
 // Every example in the file must be valid against its own schema. This is what proves the validator reads the file
 // the way its authors meant, before it is trusted to judge the mock.
-func TestExamplesOfTheSpecFollowTheirSchemas(t *testing.T) {
+func TestSpecExamples(t *testing.T) {
 	sp := loadSpec(t)
 	checked := 0
 	for _, o := range operations {
@@ -160,7 +160,7 @@ func TestExamplesOfTheSpecFollowTheirSchemas(t *testing.T) {
 }
 
 // The mock must accept the requests that the file gives as examples, in the order of a key's life.
-func TestMockAcceptsTheRequestsOfTheSpec(t *testing.T) {
+func TestSpecRequests(t *testing.T) {
 	sp := loadSpec(t)
 	s := newServer(t)
 
@@ -271,7 +271,7 @@ func createBody(entry, reason, requestID string) string {
 	return `<CreateEntryRequest>` + entry + `<Reason>` + reason + `</Reason><RequestId>` + requestID + `</RequestId></CreateEntryRequest>`
 }
 
-func TestMockAnswersFollowTheSpec(t *testing.T) {
+func TestSpecAnswers(t *testing.T) {
 	sp := loadSpec(t)
 	s := newServer(t)
 	asHolder := map[string]string{httpapi.ParticipantHeader: holder}
@@ -333,7 +333,7 @@ func TestMockAnswersFollowTheSpec(t *testing.T) {
 }
 
 // The failures a test can ask for (429 and 503) are answered the way the file documents them.
-func TestSimulatedFailuresFollowTheSpec(t *testing.T) {
+func TestSpecFaults(t *testing.T) {
 	sp := loadSpec(t)
 	s := newServer(t)
 
@@ -363,7 +363,7 @@ func TestSimulatedFailuresFollowTheSpec(t *testing.T) {
 }
 
 // Every operation the mock implements is in the file, with the same method and path.
-func TestImplementedOperationsExistInTheSpec(t *testing.T) {
+func TestSpecOperations(t *testing.T) {
 	sp := loadSpec(t)
 	for _, o := range operations {
 		if sp.operation(o.method, o.path) == nil {

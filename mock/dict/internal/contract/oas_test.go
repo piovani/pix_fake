@@ -447,7 +447,7 @@ func tiny(t *testing.T, schemas string) *spec {
 	return &spec{doc: map[string]any{"components": map[string]any{"schemas": schemasMap}}}
 }
 
-func TestValidatorFindsWhatIsWrong(t *testing.T) {
+func TestValidatorErrors(t *testing.T) {
 	s := tiny(t, `{
 	  "Thing": {"type":"object","required":["Name","Kind"],"properties":{
 	    "Name":{"type":"string","maxLength":5,"pattern":"^[a-z]+$"},
@@ -486,7 +486,7 @@ func TestValidatorFindsWhatIsWrong(t *testing.T) {
 	}
 }
 
-func TestValidatorHandlesAllOfOneOfAndAttributes(t *testing.T) {
+func TestValidatorComposition(t *testing.T) {
 	s := tiny(t, `{
 	  "Key": {"type":"string","maxLength":5},
 	  "ExtKey": {"allOf":[{"$ref":"#/components/schemas/Key"},{"type":"string","xml":{"name":"Key"},"properties":{"hasEntry":{"type":"boolean","xml":{"attribute":true}}},"required":["hasEntry"]}]},

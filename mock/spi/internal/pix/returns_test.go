@@ -121,7 +121,7 @@ func paidToWallet(t *testing.T) *env {
 
 // --- Happy paths ---
 
-func TestReturnToTheWalletWaitsForItsAnswer(t *testing.T) {
+func TestReturnWaitsForReceiver(t *testing.T) {
 	e := paidByWallet(t)
 	e.sendReturn(returnReq{})
 
@@ -162,7 +162,7 @@ func TestReturnToTheWalletWaitsForItsAnswer(t *testing.T) {
 	}
 }
 
-func TestReturnToASimulatedBankSettlesAtOnce(t *testing.T) {
+func TestReturnToBank(t *testing.T) {
 	e := paidToWallet(t)
 	// The wallet returns what Carlos Mendes paid; Banco Alfa is simulated.
 	e.sendReturn(returnReq{sender: wallet, destinatario: alfa})
@@ -176,7 +176,7 @@ func TestReturnToASimulatedBankSettlesAtOnce(t *testing.T) {
 	}
 }
 
-func TestPartialReturnsAddUpToTheOriginalAmount(t *testing.T) {
+func TestReturnPartial(t *testing.T) {
 	e := paidToWallet(t)
 	e.sendReturn(returnReq{id: rtr1, sender: wallet, destinatario: alfa, amount: "5.00"})
 	e.sendReturn(returnReq{id: rtr2, sender: wallet, destinatario: alfa, amount: "5.00"})
@@ -201,7 +201,7 @@ func TestPartialReturnsAddUpToTheOriginalAmount(t *testing.T) {
 
 // --- Rejection by the participant that receives the return ---
 
-func TestWalletCanRejectAReturn(t *testing.T) {
+func TestReturnRejectedByReceiver(t *testing.T) {
 	e := paidByWallet(t)
 	e.sendReturn(returnReq{})
 	e.read(wallet)
@@ -217,7 +217,7 @@ func TestWalletCanRejectAReturn(t *testing.T) {
 	}
 }
 
-func TestReturnToAClosedAccountIsRejectedByTheBank(t *testing.T) {
+func TestReturnClosedAccount(t *testing.T) {
 	e := newRulesEnv(t)
 	// Eduardo Teixeira paid the wallet from an account that has since been closed.
 	e.sendOrder(order{sender: alfa, payee: wallet, mutateTx: func(tx *iso.CreditTransfer) {
@@ -234,7 +234,7 @@ func TestReturnToAClosedAccountIsRejectedByTheBank(t *testing.T) {
 	}
 }
 
-func TestReturnTimesOutLikeAPayment(t *testing.T) {
+func TestReturnTimeout(t *testing.T) {
 	e := paidByWallet(t)
 	e.sendReturn(returnReq{})
 	e.read(wallet)
@@ -254,7 +254,7 @@ func TestReturnTimesOutLikeAPayment(t *testing.T) {
 
 // --- Rejection by the SPI ---
 
-func TestReturnsTheSPIRejects(t *testing.T) {
+func TestReturnRejected(t *testing.T) {
 	tests := []struct {
 		name string
 		req  returnReq
@@ -302,7 +302,7 @@ func TestReturnsTheSPIRejects(t *testing.T) {
 	}
 }
 
-func TestReturnOfAPaymentThatDidNotSettleIsRejected(t *testing.T) {
+func TestReturnNotSettled(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendOrder(order{sender: alfa, payee: wallet}) // the wallet has not answered: still pending
 	e.read(wallet)
@@ -313,7 +313,7 @@ func TestReturnOfAPaymentThatDidNotSettleIsRejected(t *testing.T) {
 	}
 }
 
-func TestReturnAfterNinetyDaysIsRejectedBySPI(t *testing.T) {
+func TestReturnAfter90Days(t *testing.T) {
 	e := paidByWallet(t)
 	e.advance(89 * 24 * time.Hour)
 	late := "D99000002" + e.clock.Format("200601021504") + "RETURNLATE1"
@@ -332,7 +332,7 @@ func TestReturnAfterNinetyDaysIsRejectedBySPI(t *testing.T) {
 	e.noPayment(tooLate)
 }
 
-func TestAReturnCannotBeReturned(t *testing.T) {
+func TestReturnOfReturn(t *testing.T) {
 	e := paidByWallet(t)
 	e.sendReturn(returnReq{})
 	e.read(wallet)
@@ -352,7 +352,7 @@ func TestAReturnCannotBeReturned(t *testing.T) {
 
 // --- Idempotency and bad messages ---
 
-func TestRepeatedReturnGetsTheSameOutcome(t *testing.T) {
+func TestRepeatedReturn(t *testing.T) {
 	e := paidToWallet(t)
 	req := returnReq{sender: wallet, destinatario: alfa}
 	e.sendReturn(req)
@@ -370,7 +370,7 @@ func TestRepeatedReturnGetsTheSameOutcome(t *testing.T) {
 	}
 }
 
-func TestRepeatedPendingReturnIsNotForwardedTwice(t *testing.T) {
+func TestRepeatedPendingReturn(t *testing.T) {
 	e := paidByWallet(t)
 	e.sendReturn(returnReq{})
 	e.sendReturn(returnReq{})
@@ -379,7 +379,7 @@ func TestRepeatedPendingReturnIsNotForwardedTwice(t *testing.T) {
 	}
 }
 
-func TestMalformedReturnIdentifiersGetAnErrorNotification(t *testing.T) {
+func TestReturnBadIDs(t *testing.T) {
 	for name, req := range map[string]returnReq{
 		"RtrId":      {id: "not-a-return-id"},
 		"EndToEndId": {e2e: "not-an-end-to-end-id"},
@@ -408,7 +408,7 @@ func TestReturnIDHelper(t *testing.T) {
 
 // --- Idempotency window (24 hours) ---
 
-func TestRepeatedOrderIsIdempotentOnlyForTwentyFourHours(t *testing.T) {
+func TestOrderIdempotencyWindow(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendOrder(order{})
 	e.readStatuses(wallet)
@@ -433,7 +433,7 @@ func TestRepeatedOrderIsIdempotentOnlyForTwentyFourHours(t *testing.T) {
 	}
 }
 
-func TestRepeatedReturnIsIdempotentOnlyForTwentyFourHours(t *testing.T) {
+func TestReturnIdempotencyWindow(t *testing.T) {
 	e := paidToWallet(t)
 	req := returnReq{sender: wallet, destinatario: alfa}
 	e.sendReturn(req)

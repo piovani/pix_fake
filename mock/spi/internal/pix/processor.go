@@ -192,11 +192,11 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 		id := st.OrgnlInstrID // the EndToEndId of a payment, the RtrId of a return
 		pay, err := p.payments.GetPayment(ctx, id)
 		if err != nil {
-			p.log.Warn("status for an unknown payment ignored", "sender", sender, "id", id)
+			p.log.Warn("ignore status: unknown payment", "sender", sender, "id", id)
 			continue
 		}
 		if pay.PayeeISPB != sender {
-			p.log.Warn("status from a participant that is not the receiver ignored", "sender", sender, "id", id)
+			p.log.Warn("ignore status: not from the receiver", "sender", sender, "id", id)
 			continue
 		}
 		switch st.Status {
@@ -209,7 +209,7 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 			}
 			p.finalize(ctx, id, Decision{ReasonCode: code})
 		default:
-			p.log.Warn("status not supported from a participant", "sender", sender, "id", id, "status", st.Status)
+			p.log.Warn("ignore status: unsupported", "sender", sender, "id", id, "status", st.Status)
 		}
 	}
 }
@@ -240,7 +240,7 @@ func (p *Processor) finalize(ctx context.Context, id string, d Decision) {
 func (p *Processor) ExpirePending(ctx context.Context) int {
 	ids, err := p.payments.PendingBefore(ctx, p.now().Add(-p.Timeout))
 	if err != nil {
-		p.log.Error("look for expired payments", "error", err)
+		p.log.Error("expire pending", "error", err)
 		return 0
 	}
 	for _, id := range ids {

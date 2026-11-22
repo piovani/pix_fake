@@ -96,7 +96,7 @@ func TestEntriesAreListed(t *testing.T) {
 	}
 }
 
-func TestResetRemovesWhatWasRegisteredAndLoadsTheSeedAgain(t *testing.T) {
+func TestReset(t *testing.T) {
 	e := newEnv(t)
 	// A participant registers a key of its own.
 	create := `<CreateEntryRequest><Entry><KeyType>PHONE</KeyType><Key>+5511988887777</Key><Account><Participant>99000001</Participant><Branch>0001</Branch>` +
@@ -134,7 +134,7 @@ func mustList(t *testing.T, e *env) []any {
 	return out["entries"].([]any)
 }
 
-func TestFaultsMakeTheDICTAnswer429And503(t *testing.T) {
+func TestFaults(t *testing.T) {
 	e := newEnv(t)
 	status, out, _ := e.call("POST", "/mock/faults", map[string]any{"path_prefix": "/api/v2/entries", "status": 429, "retry_after": 5, "count": 1}, nil)
 	if status != 201 || out["id"] == nil {
@@ -166,7 +166,7 @@ func TestFaultsMakeTheDICTAnswer429And503(t *testing.T) {
 	}
 }
 
-func TestFaultsAreValidatedListedAndCleared(t *testing.T) {
+func TestFaultsAdmin(t *testing.T) {
 	e := newEnv(t)
 	if s, _, _ := e.call("POST", "/mock/faults", map[string]any{"status": 500}, nil); s != 422 {
 		t.Fatalf("status 500 = %d, want 422", s)

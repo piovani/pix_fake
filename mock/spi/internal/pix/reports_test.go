@@ -101,7 +101,7 @@ func (e *env) notReported(id string) {
 
 // --- Accepted ---
 
-func TestBookTransferIsRecordedAndAcknowledged(t *testing.T) {
+func TestReport(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendReport(report{})
 
@@ -120,7 +120,7 @@ func TestBookTransferIsRecordedAndAcknowledged(t *testing.T) {
 	}
 }
 
-func TestOneReceiptPerTransaction(t *testing.T) {
+func TestReportReceipts(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendReport(report{txs: []iso.TrackedTx{
 		bookTx(e2eBook1),
@@ -143,7 +143,7 @@ func TestOneReceiptPerTransaction(t *testing.T) {
 	e.notReported(e2eBook2)
 }
 
-func TestReportedKeyAndDICTInitiation(t *testing.T) {
+func TestReportKey(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendReport(report{txs: []iso.TrackedTx{bookTx(e2eBook1, func(tx *iso.TrackedTx) {
 		tx.SetCreditor("11144477735", wallet, "0001", "00234567", "SVGS", "11144477735")
@@ -165,7 +165,7 @@ func TestReportedReturn(t *testing.T) {
 	}
 }
 
-func TestReportingTwiceIsAccepted(t *testing.T) {
+func TestReportTwice(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendReport(report{})
 	e.readReceipts(wallet)
@@ -182,7 +182,7 @@ func TestReportingTwiceIsAccepted(t *testing.T) {
 	}
 }
 
-func TestReportAtTheEdgeOfTheLimit(t *testing.T) {
+func TestReportDeadline(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendReport(report{txs: []iso.TrackedTx{bookTx(e2eBook1, func(tx *iso.TrackedTx) {
 		tx.ReqdExctnDt.DtTm = iso.FormatTime(now.Add(-29*24*time.Hour - 23*time.Hour))
@@ -194,7 +194,7 @@ func TestReportAtTheEdgeOfTheLimit(t *testing.T) {
 
 // --- Rejected ---
 
-func TestReportsTheSPIRejects(t *testing.T) {
+func TestReportRejected(t *testing.T) {
 	tests := []struct {
 		name string
 		rep  report
@@ -265,7 +265,7 @@ func TestReportsTheSPIRejects(t *testing.T) {
 	}
 }
 
-func TestReportOfAPaymentThatWentThroughTheSPIIsRejected(t *testing.T) {
+func TestReportOfSPIPayment(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendOrder(order{}) // wallet to Banco Alfa: settled through the SPI under e2eA
 	e.read(wallet)
@@ -279,7 +279,7 @@ func TestReportOfAPaymentThatWentThroughTheSPIIsRejected(t *testing.T) {
 	e.notReported(e2eA)
 }
 
-func TestReportWithNoTransactionsOrTooMany(t *testing.T) {
+func TestReportCount(t *testing.T) {
 	// Zero transactions: nothing to answer per transaction, so the SPI sends nothing.
 	e := newRulesEnv(t)
 	e.sendReport(report{txs: []iso.TrackedTx{}})
@@ -307,7 +307,7 @@ func TestReportWithNoTransactionsOrTooMany(t *testing.T) {
 	}
 }
 
-func TestMalformedReportIdentifiersGetAnErrorNotification(t *testing.T) {
+func TestReportBadIDs(t *testing.T) {
 	for name, rep := range map[string]report{
 		"MsgId":      {msgID: "not-a-message-id"},
 		"EndToEndId": {txs: []iso.TrackedTx{bookTx("not-an-end-to-end-id")}},

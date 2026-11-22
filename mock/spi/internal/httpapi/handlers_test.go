@@ -146,7 +146,7 @@ func TestSendOneMessage(t *testing.T) {
 	}
 }
 
-func TestSendSameMessageTwiceGivesDistinctResourceIDs(t *testing.T) {
+func TestSendTwiceDistinctIDs(t *testing.T) {
 	e := newEnv(t, 0)
 	a := e.send("<msg/>").header.Get("PI-ResourceId")
 	b := e.send("<msg/>").header.Get("PI-ResourceId")
@@ -251,7 +251,7 @@ func TestSendRejections(t *testing.T) {
 	}
 }
 
-func TestSendWithoutLengthIs411(t *testing.T) {
+func TestSendNoLength(t *testing.T) {
 	e := newEnv(t, 0)
 	conn, err := net.Dial("tcp", strings.TrimPrefix(e.url, "http://"))
 	if err != nil {
@@ -286,7 +286,7 @@ func TestUnknownPath(t *testing.T) {
 
 // --- Output ---
 
-func TestStreamReadsInOrderAndEnds(t *testing.T) {
+func TestStreamOrder(t *testing.T) {
 	e := newEnv(t, 20*time.Millisecond)
 	ids := e.deliver(psp, "<m>1</m>", "<m>2</m>")
 
@@ -327,7 +327,7 @@ func TestStreamReadsInOrderAndEnds(t *testing.T) {
 	assertProblem(t, e.do(http.MethodDelete, first, nil, nil), http.StatusGone, "gone")
 }
 
-func TestStreamRedeliversWhatWasNotClosed(t *testing.T) {
+func TestStreamRedelivery(t *testing.T) {
 	e := newEnv(t, 20*time.Millisecond)
 	ids := e.deliver(psp, "<m>1</m>", "<m>2</m>")
 
@@ -377,7 +377,7 @@ func TestStreamMultipart(t *testing.T) {
 	}
 }
 
-func TestStreamMultipartIsLimitedToTenMessages(t *testing.T) {
+func TestStreamMultipartLimit(t *testing.T) {
 	e := newEnv(t, 20*time.Millisecond)
 	for i := 0; i < 12; i++ {
 		e.deliver(psp, fmt.Sprintf("<m>%d</m>", i))
@@ -414,7 +414,7 @@ func TestStreamGzip(t *testing.T) {
 	}
 }
 
-func TestStreamLongPollWakesOnDelivery(t *testing.T) {
+func TestStreamLongPoll(t *testing.T) {
 	e := newEnv(t, 5*time.Second)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -430,7 +430,7 @@ func TestStreamLongPollWakesOnDelivery(t *testing.T) {
 	}
 }
 
-func TestStreamReturns204AfterWaiting(t *testing.T) {
+func TestStream204(t *testing.T) {
 	e := newEnv(t, 150*time.Millisecond)
 	start := time.Now()
 	r := e.do(http.MethodGet, base+"/out/"+psp+"/stream/start", nil, nil)
@@ -442,7 +442,7 @@ func TestStreamReturns204AfterWaiting(t *testing.T) {
 	}
 }
 
-func TestStreamIsPerParticipant(t *testing.T) {
+func TestStreamPerParticipant(t *testing.T) {
 	e := newEnv(t, 20*time.Millisecond)
 	e.deliver("22222222", "<m>for 2</m>")
 	if r := e.do(http.MethodGet, base+"/out/"+psp+"/stream/start", nil, nil); r.status != http.StatusNoContent {
@@ -453,7 +453,7 @@ func TestStreamIsPerParticipant(t *testing.T) {
 	}
 }
 
-func TestStreamMalformedTokenIsGone(t *testing.T) {
+func TestStreamBadToken(t *testing.T) {
 	e := newEnv(t, 0)
 	for _, token := range []string{"nope", "-1", "zz", "1.5"} {
 		assertProblem(t, e.do(http.MethodGet, base+"/out/"+psp+"/stream/"+token, nil, nil), http.StatusGone, "gone")
@@ -513,7 +513,7 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
-func TestUnknownParticipantInThePathIsForbidden(t *testing.T) {
+func TestUnknownParticipant(t *testing.T) {
 	store := memstore.New()
 	svc := spi.NewService(store, 0)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))

@@ -27,7 +27,7 @@ func TestNoRulesNoFaults(t *testing.T) {
 	}
 }
 
-func TestStatusWithRetryAfterAndCount(t *testing.T) {
+func TestStatusRetryAfter(t *testing.T) {
 	var s fault.Set
 	if _, err := s.Add(fault.Rule{Status: 429, RetryAfter: 7, Count: 2}); err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestStatusWithRetryAfterAndCount(t *testing.T) {
 	}
 }
 
-func TestRulesWithoutCountLastUntilRemoved(t *testing.T) {
+func TestRuleWithoutCount(t *testing.T) {
 	var s fault.Set
 	id, _ := s.Add(fault.Rule{Status: 503})
 	h := serve(t, &s)
@@ -64,7 +64,7 @@ func TestRulesWithoutCountLastUntilRemoved(t *testing.T) {
 	}
 }
 
-func TestMethodAndPathSelectTheRequests(t *testing.T) {
+func TestMatch(t *testing.T) {
 	var s fault.Set
 	_, _ = s.Add(fault.Rule{Method: "POST", PathPrefix: "/api/v2/in/", Status: 503})
 	h := serve(t, &s)
@@ -79,7 +79,7 @@ func TestMethodAndPathSelectTheRequests(t *testing.T) {
 	}
 }
 
-func TestControlAndHealthAreNeverAffected(t *testing.T) {
+func TestControlExempt(t *testing.T) {
 	var s fault.Set
 	_, _ = s.Add(fault.Rule{Status: 503})
 	h := serve(t, &s)

@@ -142,7 +142,7 @@ func TestCamt025RoundTrip(t *testing.T) {
 	}
 }
 
-func TestForReturnKeepsTheEndToEndId(t *testing.T) {
+func TestForReturn(t *testing.T) {
 	st := iso.NewTxStatus("E9900000120261114120000000000001", iso.StatusSettledPayer).ForReturn("D9900000220261114120000000000001")
 	if st.OrgnlInstrID != "D9900000220261114120000000000001" || st.OrgnlEndToEnd != "E9900000120261114120000000000001" {
 		t.Fatalf("status = %+v", st)
@@ -161,7 +161,7 @@ func TestAdmi002RoundTrip(t *testing.T) {
 	}
 }
 
-func TestAdmi002ClipsLongText(t *testing.T) {
+func TestAdmi002Clip(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	m := iso.NewAdmi002("00038166", "99000001", "M00038166abcdefghijklmnopqrstuvw", "2026-11-14T12:00:00.000Z", long, long, long, long)
 	if len(m.Ref()) != 33 || len([]rune(m.Reason())) != 35 || len(m.Document.Admi.Rsn.Description) != 350 || len(m.Document.Admi.Rsn.ErrorLocation) != 350 {
@@ -241,7 +241,7 @@ func TestOfficialSamples(t *testing.T) {
 
 // What the mock writes must be valid against the official XSD. The empty <Sgntr/> is left
 // out of the check: the schema requires an XML signature there, and the mock has none.
-func TestGeneratedMessagesValidateAgainstXSD(t *testing.T) {
+func TestXSD(t *testing.T) {
 	if _, err := exec.LookPath("xmllint"); err != nil {
 		t.Skip("xmllint not installed")
 	}

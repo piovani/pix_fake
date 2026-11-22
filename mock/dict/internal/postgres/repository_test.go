@@ -84,7 +84,7 @@ func TestRepository(t *testing.T) {
 	}
 }
 
-func TestMigrateIsIdempotent(t *testing.T) {
+func TestMigrateTwice(t *testing.T) {
 	ctx := context.Background()
 	pool := pgtest.NewPool(t) // already applies the migrations once
 	if err := postgres.Migrate(ctx, pool); err != nil {
@@ -97,7 +97,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 }
 
 // DeleteAll and ListEntries serve the control API.
-func TestRepositoryControlOperations(t *testing.T) {
+func TestRepositoryControl(t *testing.T) {
 	ctx := context.Background()
 	repo := newRepo(t)
 

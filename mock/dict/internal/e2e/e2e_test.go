@@ -124,7 +124,7 @@ const (
 	reqB     = "b946d533-7f22-42a5-9a9b-e87cd55c0f4d"
 )
 
-func TestEntryLifecycleOnPostgres(t *testing.T) {
+func TestEntryLifecycle(t *testing.T) {
 	c := newClient(t)
 
 	// Creating and repeating the request return the same entry (same dates, read from the database).
@@ -177,7 +177,7 @@ func TestEntryLifecycleOnPostgres(t *testing.T) {
 		want(t, http.StatusOK, `<Key hasEntry="false">`+phoneKey+`</Key>`)
 }
 
-func TestEVPKeyIsGeneratedAndPersisted(t *testing.T) {
+func TestEVPPersisted(t *testing.T) {
 	c := newClient(t)
 
 	res := c.do("POST", base+"/entries", createBody(`<KeyType>EVP</KeyType>`, reqA), nil).want(t, http.StatusCreated)
@@ -197,7 +197,7 @@ func TestEVPKeyIsGeneratedAndPersisted(t *testing.T) {
 		want(t, http.StatusCreated, "<Key>"+created.Entry.Key+"</Key>")
 }
 
-func TestProblemResponsesOnPostgres(t *testing.T) {
+func TestProblems(t *testing.T) {
 	c := newClient(t)
 
 	c.do("GET", "/healthz", "", map[string]string{httpapi.ParticipantHeader: ""}).want(t, http.StatusOK, "ok")
@@ -222,7 +222,7 @@ func creation(t *testing.T, body string) string {
 	return out.Entry.CreationDate
 }
 
-func TestSeededKeysAreServedByTheAPI(t *testing.T) {
+func TestSeededKeys(t *testing.T) {
 	c := newClient(t)
 	entries := seed.Entries()
 

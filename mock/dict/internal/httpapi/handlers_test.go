@@ -261,7 +261,7 @@ func TestProblems(t *testing.T) {
 	})
 }
 
-func TestCreateEVPReturnsGeneratedKey(t *testing.T) {
+func TestCreateEVP(t *testing.T) {
 	body := strings.NewReplacer(
 		"<Key>+5561988880000</Key>\n        <KeyType>PHONE</KeyType>", "<KeyType>EVP</KeyType>",
 	).Replace(createReq)

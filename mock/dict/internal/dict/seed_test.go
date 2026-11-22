@@ -66,7 +66,7 @@ func TestSeed(t *testing.T) {
 	})
 }
 
-func TestSeedRejectsInvalidData(t *testing.T) {
+func TestSeedInvalid(t *testing.T) {
 	ctx := context.Background()
 
 	bad := func(mutate func(e *dict.Entry)) dict.Entry {

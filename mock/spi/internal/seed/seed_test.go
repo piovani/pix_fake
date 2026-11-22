@@ -12,7 +12,7 @@ import (
 	"pixfake/mock/spi/internal/seed"
 )
 
-func TestSeedDataIsValidAndIdempotent(t *testing.T) {
+func TestSeed(t *testing.T) {
 	ctx := context.Background()
 	store := memstore.New()
 	accounts := seed.Accounts()
@@ -58,7 +58,7 @@ func TestSeedDataCoverage(t *testing.T) {
 }
 
 // Keeps the docs from falling behind: every seeded account must appear in the README.
-func TestEveryAccountIsDocumentedInReadme(t *testing.T) {
+func TestSeedAccountsInReadme(t *testing.T) {
 	readme, err := os.ReadFile("../../README.md")
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestEveryAccountIsDocumentedInReadme(t *testing.T) {
 
 // The SPI and DICT seeds must describe the same accounts: a key found in the DICT has to be
 // payable in the SPI. The DICT module cannot be imported, so its seed file is read as text.
-func TestSameAccountsAsTheDICTSeed(t *testing.T) {
+func TestSeedMatchesDICT(t *testing.T) {
 	src, err := os.ReadFile("../../../dict/internal/seed/data.go")
 	if err != nil {
 		t.Skip("DICT seed not found next to the SPI mock")

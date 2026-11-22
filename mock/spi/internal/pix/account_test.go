@@ -16,7 +16,7 @@ func goodAccount(number string) pix.Account {
 	}
 }
 
-func TestSeedAccountsIsIdempotent(t *testing.T) {
+func TestSeedAccounts(t *testing.T) {
 	ctx := context.Background()
 	store := memstore.New()
 	accounts := []pix.Account{goodAccount("00000001"), goodAccount("00000002")}
@@ -31,7 +31,7 @@ func TestSeedAccountsIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSeedAccountsRejectsBadDataBeforeWritingAnything(t *testing.T) {
+func TestSeedAccountsInvalid(t *testing.T) {
 	bad := map[string]func(*pix.Account){
 		"ISPB":        func(a *pix.Account) { a.ISPB = "12" },
 		"number":      func(a *pix.Account) { a.Number = "" },
@@ -59,7 +59,7 @@ func TestSeedAccountsRejectsBadDataBeforeWritingAnything(t *testing.T) {
 	}
 }
 
-func TestSeedAccountsRejectsDuplicates(t *testing.T) {
+func TestSeedAccountsDuplicate(t *testing.T) {
 	_, err := pix.SeedAccounts(context.Background(), memstore.New(), []pix.Account{goodAccount("00000001"), goodAccount("00000001")})
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("err = %v, want a duplicate error", err)

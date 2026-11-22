@@ -200,7 +200,7 @@ func statusFrom(t *testing.T, from, e2e, status, reason string) []byte {
 
 // --- Happy path ---
 
-func TestPaymentToSimulatedBankSettlesAtOnce(t *testing.T) {
+func TestPayBank(t *testing.T) {
 	e := newEnv(t, nil)
 	e.sendOrder(order{key: "39053344705"})
 
@@ -222,7 +222,7 @@ func TestPaymentToSimulatedBankSettlesAtOnce(t *testing.T) {
 	}
 }
 
-func TestPaymentToRealReceiverWaitsForItsAnswer(t *testing.T) {
+func TestPayWaitsForReceiver(t *testing.T) {
 	e := newEnv(t, nil)
 	// Banco Alfa pays a wallet customer.
 	e.sendOrder(order{sender: alfa, payee: wallet, e2e: e2eA})
@@ -264,7 +264,7 @@ func TestPaymentToRealReceiverWaitsForItsAnswer(t *testing.T) {
 
 // --- Rejection by the receiving participant ---
 
-func TestReceiverRejectionReachesThePayer(t *testing.T) {
+func TestReceiverRejects(t *testing.T) {
 	e := newEnv(t, nil)
 	e.sendOrder(order{sender: alfa, payee: wallet})
 	e.read(wallet)
@@ -284,7 +284,7 @@ func TestReceiverRejectionReachesThePayer(t *testing.T) {
 	}
 }
 
-func TestReceiverRejectionWithoutReasonIsDS04(t *testing.T) {
+func TestReceiverRejectsNoReason(t *testing.T) {
 	e := newEnv(t, nil)
 	e.sendOrder(order{sender: alfa, payee: wallet})
 	e.send(wallet, statusFrom(t, wallet, e2eA, iso.StatusRejected, ""))
@@ -293,7 +293,7 @@ func TestReceiverRejectionWithoutReasonIsDS04(t *testing.T) {
 	}
 }
 
-func TestSimulatedBankRejectsAsTheResponderDecides(t *testing.T) {
+func TestBankResponder(t *testing.T) {
 	e := newEnv(t, responderFunc(func(pix.Payment) pix.Decision {
 		return pix.Decision{ReasonCode: "AC06", Detail: "blocked"}
 	}))
@@ -309,7 +309,7 @@ func TestSimulatedBankRejectsAsTheResponderDecides(t *testing.T) {
 
 // --- Answers that must not count ---
 
-func TestAnswersThatAreNotTheReceiversAreIgnored(t *testing.T) {
+func TestAnswerFromWrongParticipant(t *testing.T) {
 	e := newEnv(t, nil)
 	e.sendOrder(order{sender: alfa, payee: wallet})
 	e.read(wallet)
@@ -322,7 +322,7 @@ func TestAnswersThatAreNotTheReceiversAreIgnored(t *testing.T) {
 	}
 }
 
-func TestSecondAnswerChangesNothing(t *testing.T) {
+func TestSecondAnswer(t *testing.T) {
 	e := newEnv(t, nil)
 	e.sendOrder(order{sender: alfa, payee: wallet})
 	e.read(wallet)
@@ -342,7 +342,7 @@ func TestSecondAnswerChangesNothing(t *testing.T) {
 
 // --- Idempotency ---
 
-func TestRepeatedOrderGetsTheSameOutcome(t *testing.T) {
+func TestRepeatedOrder(t *testing.T) {
 	e := newEnv(t, nil)
 	o := order{}
 	e.sendOrder(o)
@@ -358,7 +358,7 @@ func TestRepeatedOrderGetsTheSameOutcome(t *testing.T) {
 	}
 }
 
-func TestRepeatedPendingOrderIsNotForwardedTwice(t *testing.T) {
+func TestRepeatedPendingOrder(t *testing.T) {
 	e := newEnv(t, nil)
 	o := order{sender: alfa, payee: wallet}
 	e.sendOrder(o)
@@ -368,7 +368,7 @@ func TestRepeatedPendingOrderIsNotForwardedTwice(t *testing.T) {
 	}
 }
 
-func TestRepeatedRejectedOrderGetsTheRejectionAgain(t *testing.T) {
+func TestRepeatedRejectedOrder(t *testing.T) {
 	e := newEnv(t, responderFunc(func(pix.Payment) pix.Decision { return pix.Decision{ReasonCode: "AC03"} }))
 	o := order{}
 	e.sendOrder(o)
@@ -382,7 +382,7 @@ func TestRepeatedRejectedOrderGetsTheRejectionAgain(t *testing.T) {
 
 // --- Validation by the SPI ---
 
-func TestOrdersTheSPIRejects(t *testing.T) {
+func TestOrderRejected(t *testing.T) {
 	tests := []struct {
 		name string
 		o    order
@@ -437,7 +437,7 @@ func TestOrdersTheSPIRejects(t *testing.T) {
 	}
 }
 
-func TestEndToEndWithinTheToleranceIsAccepted(t *testing.T) {
+func TestEndToEndTolerance(t *testing.T) {
 	e := newEnv(t, nil)
 	e.sendOrder(order{e2e: "E99000001202611140100EEEEEEEEEEE"}) // 11 hours ago
 	e.sendOrder(order{e2e: "E99000001202611142300FFFFFFFFFFF"}) // 11 hours ahead
@@ -465,7 +465,7 @@ func (e *env) readErrors(ispb string) []*iso.Admi002 {
 	return out
 }
 
-func TestMalformedEndToEndGetsAnErrorNotification(t *testing.T) {
+func TestBadEndToEnd(t *testing.T) {
 	e := newEnv(t, nil)
 	ids, err := e.svc.Receive(context.Background(), wallet, [][]byte{order{e2e: "not-an-end-to-end-id"}.body(t)})
 	if err != nil {
@@ -477,7 +477,7 @@ func TestMalformedEndToEndGetsAnErrorNotification(t *testing.T) {
 	}
 }
 
-func TestMessagesThatCannotBeProcessedGetAnErrorNotification(t *testing.T) {
+func TestUnprocessable(t *testing.T) {
 	e := newEnv(t, nil)
 	bodies := [][]byte{
 		[]byte("<not-iso/>"),
@@ -506,7 +506,7 @@ func TestMessagesThatCannotBeProcessedGetAnErrorNotification(t *testing.T) {
 	}
 }
 
-func TestSeveralTransactionsInOneMessage(t *testing.T) {
+func TestManyTransactions(t *testing.T) {
 	e := newEnv(t, nil)
 	body := order{}.body(t)
 	msg, _ := iso.ParsePacs008(body)

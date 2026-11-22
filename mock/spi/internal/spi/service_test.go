@@ -9,7 +9,7 @@ import (
 	"pixfake/mock/spi/internal/spi"
 )
 
-func TestRunRetentionDeletesWhatWasRead(t *testing.T) {
+func TestRunRetention(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	svc := spi.NewService(memstore.New(), 0)

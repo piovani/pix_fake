@@ -79,7 +79,7 @@ func TestAccountRules(t *testing.T) {
 	}
 }
 
-func TestSilentAccountTimesOut(t *testing.T) {
+func TestSilentAccount(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendOrder(toAccount(beta, seed.SilentAccount, "86420975310"))
 
@@ -116,7 +116,7 @@ func TestSilentAccountTimesOut(t *testing.T) {
 	}
 }
 
-func TestWalletThatDoesNotAnswerTimesOutToo(t *testing.T) {
+func TestSilentReceiver(t *testing.T) {
 	e := newRulesEnv(t)
 	e.proc.Timeout = 5 * time.Second // shortened, as a test would configure it
 	e.sendOrder(order{sender: alfa, payee: wallet})
@@ -139,7 +139,7 @@ func TestWalletThatDoesNotAnswerTimesOutToo(t *testing.T) {
 	}
 }
 
-func TestAnswerBeforeTheTimeoutWins(t *testing.T) {
+func TestAnswerBeforeTimeout(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendOrder(order{sender: alfa, payee: wallet})
 	e.read(wallet)
@@ -156,7 +156,7 @@ func TestAnswerBeforeTheTimeoutWins(t *testing.T) {
 }
 
 // The binary runs ExpirePending on a timer; this checks that loop with the real clock.
-func TestRunExpiryRejectsInTheBackground(t *testing.T) {
+func TestRunExpiry(t *testing.T) {
 	store := memstore.New()
 	if _, err := pix.SeedAccounts(context.Background(), store, seed.Accounts()); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestRunExpiryRejectsInTheBackground(t *testing.T) {
 	}
 }
 
-func TestAccountResponderReportsStoreProblems(t *testing.T) {
+func TestResponderStoreError(t *testing.T) {
 	d := pix.AccountResponder{Accounts: brokenAccounts{}}.Decide(context.Background(), pix.Payment{PayeeISPB: alfa, PayeeAccount: "1"})
 	if d.Accept || d.NoAnswer || d.ReasonCode != "ED05" {
 		t.Fatalf("decision = %+v; want a rejection with ED05", d)
@@ -210,7 +210,7 @@ func (brokenAccounts) GetAccount(context.Context, string, string) (pix.Account, 
 	return pix.Account{}, errors.New("down")
 }
 
-func TestForcedRejectionWinsOverTheCPFCheck(t *testing.T) {
+func TestForcedRejectionFirst(t *testing.T) {
 	e := newRulesEnv(t)
 	e.sendOrder(toAccount(seed.ForcedRejections[0].ISPB, seed.ForcedRejections[0].Number, "16899535009")) // not the holder's CPF
 	if p := e.payment(e2eA); p.ReasonCode != seed.ForcedRejections[0].Code {
@@ -218,7 +218,7 @@ func TestForcedRejectionWinsOverTheCPFCheck(t *testing.T) {
 	}
 }
 
-func TestForcedRejectionCodesAreKnown(t *testing.T) {
+func TestForcedRejectionCodes(t *testing.T) {
 	for _, f := range seed.ForcedRejections {
 		if _, ok := pix.RejectCodes[f.Code]; !ok {
 			t.Errorf("%s uses %s, which is not in pix.RejectCodes", f.Number, f.Code)

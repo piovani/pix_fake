@@ -11,7 +11,7 @@ import (
 	"pixfake/mock/dict/internal/seed"
 )
 
-func TestSeedDataIsValidAndIdempotent(t *testing.T) {
+func TestSeed(t *testing.T) {
 	ctx := context.Background()
 	svc := dict.NewService(memstore.New())
 	entries := seed.Entries()
@@ -63,7 +63,7 @@ func TestSeedDataCoverage(t *testing.T) {
 }
 
 // Keeps the docs from falling behind: every seeded key must appear in the README.
-func TestEveryKeyIsDocumentedInReadme(t *testing.T) {
+func TestSeedKeysInReadme(t *testing.T) {
 	readme, err := os.ReadFile("../../README.md")
 	if err != nil {
 		t.Fatal(err)

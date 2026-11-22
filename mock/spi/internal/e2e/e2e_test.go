@@ -107,7 +107,7 @@ func TestSendThenReadFlow(t *testing.T) {
 	}
 }
 
-func TestHealthzChecksDatabase(t *testing.T) {
+func TestHealthz(t *testing.T) {
 	srv, _ := newServer(t)
 	if resp, body := call(t, http.MethodGet, srv.URL+"/healthz", nil, nil); resp.StatusCode != 200 || !strings.Contains(body, "ok") {
 		t.Fatalf("healthz = %d %q", resp.StatusCode, body)
@@ -288,12 +288,12 @@ func runPaymentCycle(t *testing.T, url string) {
 	}
 }
 
-func TestPaymentCycleOverHTTP(t *testing.T) {
+func TestPaymentCycle(t *testing.T) {
 	srv, _ := start(t, memstore.New(), nil)
 	runPaymentCycle(t, srv.URL)
 }
 
-func TestPaymentCycleOverHTTPOnPostgres(t *testing.T) {
+func TestPaymentCyclePostgres(t *testing.T) {
 	srv, _ := newServer(t)
 	runPaymentCycle(t, srv.URL)
 }

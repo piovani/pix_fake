@@ -115,7 +115,7 @@ func (e *env) read(ispb string) []spi.Message {
 
 // --- Inspection ---
 
-func TestAccountsAreListedWithTheirScenario(t *testing.T) {
+func TestAccounts(t *testing.T) {
 	e := newEnv(t)
 	status, out, _ := e.call("GET", "/mock/accounts", nil)
 	accts, _ := out["accounts"].([]any)
@@ -134,7 +134,7 @@ func TestAccountsAreListedWithTheirScenario(t *testing.T) {
 
 // --- A simulated bank pays the participant under test ---
 
-func TestSimulatedBankPaysTheWallet(t *testing.T) {
+func TestInboundPayment(t *testing.T) {
 	e := newEnv(t)
 	status, out, _ := e.call("POST", "/mock/inbound/payments", map[string]any{
 		"from": alfa, "to": wallet, "to_account": "00123456", "amount": "10.50", "key": "ana.souza@example.com",
@@ -178,7 +178,7 @@ func TestSimulatedBankPaysTheWallet(t *testing.T) {
 	}
 }
 
-func TestSimulatedBankPaysAnotherSimulatedBank(t *testing.T) {
+func TestInboundPaymentToBank(t *testing.T) {
 	e := newEnv(t)
 	mine := "E99000002" + time.Now().UTC().Format("200601021504") + "ABCDEFGHIJK"
 	status, out, _ := e.call("POST", "/mock/inbound/payments", map[string]any{
@@ -189,7 +189,7 @@ func TestSimulatedBankPaysAnotherSimulatedBank(t *testing.T) {
 	}
 }
 
-func TestSimulatedBankPaysAnAccountThatIsNotInTheSeed(t *testing.T) {
+func TestInboundPaymentUnseeded(t *testing.T) {
 	e := newEnv(t)
 	body := map[string]any{"from": alfa, "to": wallet, "to_account": "00777777", "amount": "5.00"}
 	if status, out, _ := e.call("POST", "/mock/inbound/payments", body); status != 422 || !strings.Contains(str(out, "error"), "to_tax_id") {
@@ -202,7 +202,7 @@ func TestSimulatedBankPaysAnAccountThatIsNotInTheSeed(t *testing.T) {
 	}
 }
 
-func TestInboundPaymentIsValidated(t *testing.T) {
+func TestInboundPaymentValidation(t *testing.T) {
 	e := newEnv(t)
 	ok := func() map[string]any {
 		return map[string]any{"from": alfa, "to": wallet, "to_account": "00123456", "amount": "10.00"}
@@ -237,7 +237,7 @@ func TestInboundPaymentIsValidated(t *testing.T) {
 	}
 }
 
-func TestSPIRefusalIsReportedWithAPointerToTheAnswer(t *testing.T) {
+func TestInboundPaymentRefused(t *testing.T) {
 	e := newEnv(t)
 	// An EndToEndId from 20 hours ago is refused by the SPI (FF08) before anything is stored.
 	old := "E99000002" + time.Now().UTC().Add(-20*time.Hour).Format("200601021504") + "ABCDEFGHIJK"
@@ -256,7 +256,7 @@ func TestSPIRefusalIsReportedWithAPointerToTheAnswer(t *testing.T) {
 
 // --- A simulated bank returns a payment it received ---
 
-func TestSimulatedBankReturnsAPayment(t *testing.T) {
+func TestInboundReturn(t *testing.T) {
 	e := newEnv(t)
 	// The wallet pays Carlos Mendes at Banco Alfa (simulated): settled at once.
 	order := walletPays(t, e, "E99000001"+time.Now().UTC().Format("200601021504")+"WALLETPAY01", "12.00")
@@ -287,7 +287,7 @@ func TestSimulatedBankReturnsAPayment(t *testing.T) {
 	}
 }
 
-func TestInboundReturnIsValidated(t *testing.T) {
+func TestInboundReturnValidation(t *testing.T) {
 	e := newEnv(t)
 	post := func(m map[string]any) (int, map[string]any) {
 		s, o, _ := e.call("POST", "/mock/inbound/returns", m)
@@ -338,7 +338,7 @@ func walletPays(t *testing.T, e *env, e2e, amount string) string {
 
 // --- Looking at the state, and clearing it ---
 
-func TestPaymentsMessagesAndReports(t *testing.T) {
+func TestInspect(t *testing.T) {
 	e := newEnv(t)
 	order := walletPays(t, e, "E99000001"+time.Now().UTC().Format("200601021504")+"WALLETPAY03", "2.00")
 
@@ -374,7 +374,7 @@ func TestPaymentsMessagesAndReports(t *testing.T) {
 	}
 }
 
-func TestResetClearsTheStateAndTheFaults(t *testing.T) {
+func TestReset(t *testing.T) {
 	e := newEnv(t)
 	walletPays(t, e, "E99000001"+time.Now().UTC().Format("200601021504")+"WALLETPAY04", "2.00")
 	_, _, _ = e.call("POST", "/mock/faults", map[string]any{"status": 503})
@@ -401,7 +401,7 @@ func TestResetClearsTheStateAndTheFaults(t *testing.T) {
 
 // --- Faults ---
 
-func TestFaultsMakeTheAPIMisbehave(t *testing.T) {
+func TestFaults(t *testing.T) {
 	e := newEnv(t)
 	status, out, _ := e.call("POST", "/mock/faults", map[string]any{"path_prefix": "/api/v1/in/", "status": 429, "retry_after": 3, "count": 2})
 	if status != 201 || out["id"] == nil {
@@ -433,7 +433,7 @@ func TestFaultsMakeTheAPIMisbehave(t *testing.T) {
 	}
 }
 
-func TestFaultsCanBeListedAndRemoved(t *testing.T) {
+func TestFaultsAdmin(t *testing.T) {
 	e := newEnv(t)
 	_, a, _ := e.call("POST", "/mock/faults", map[string]any{"status": 503})
 	_, _, _ = e.call("POST", "/mock/faults", map[string]any{"delay_ms": 10})
@@ -460,7 +460,7 @@ func TestFaultsCanBeListedAndRemoved(t *testing.T) {
 	}
 }
 
-func TestInvalidFaultsAreRefused(t *testing.T) {
+func TestFaultsInvalid(t *testing.T) {
 	e := newEnv(t)
 	for name, rule := range map[string]map[string]any{
 		"nothing":        {},
@@ -478,7 +478,7 @@ func TestInvalidFaultsAreRefused(t *testing.T) {
 	}
 }
 
-func TestControlAndHealthAreNotAffectedByFaults(t *testing.T) {
+func TestControlExempt(t *testing.T) {
 	e := newEnv(t)
 	_, _, _ = e.call("POST", "/mock/faults", map[string]any{"status": 503})
 	if s, _, _ := e.call("GET", "/mock/accounts", nil); s != 200 {
@@ -490,7 +490,7 @@ func TestControlAndHealthAreNotAffectedByFaults(t *testing.T) {
 	}
 }
 
-func TestUnknownControlEndpoint(t *testing.T) {
+func TestUnknownEndpoint(t *testing.T) {
 	e := newEnv(t)
 	if s, _, _ := e.call("GET", "/mock/nope", nil); s != 404 {
 		t.Fatalf("unknown control endpoint = %d", s)
