@@ -492,3 +492,21 @@ func TestABlockedOrClosedAccountCannotSpendOrBePaid(t *testing.T) {
 		t.Errorf("unknown account: %v", err)
 	}
 }
+
+func TestReceiveLimitOfAnAccount(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	id := account(t, l, "201", 0)
+	if a, _ := l.Account(ctx, id); a.ReceiveLimitCents != 0 {
+		t.Fatalf("no limit by default: %d", a.ReceiveLimitCents)
+	}
+	if err := l.SetReceiveLimit(ctx, id, 500000); err != nil {
+		t.Fatal(err)
+	}
+	if a, err := l.Account(ctx, id); err != nil || a.ReceiveLimitCents != 500000 {
+		t.Fatalf("%+v, %v", a, err)
+	}
+	if err := l.SetReceiveLimit(ctx, "0a1b2c3d-9999-4000-8000-000000000009", 1); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Fatalf("unknown account: %v", err)
+	}
+}

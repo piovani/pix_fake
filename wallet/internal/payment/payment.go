@@ -166,6 +166,8 @@ type Store interface {
 	PendingBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error)
 	UnreportedBookTransfers(ctx context.Context, before time.Time, limit int) ([]Payment, error)
 	SetReport(ctx context.Context, id, status, reason string, at time.Time) error
+	RejectedReports(ctx context.Context, limit int) ([]Payment, error)
+	ResetReport(ctx context.Context, id string) (bool, error)
 }
 
 // Query is a page of payments of an account, newest first. After is the position of the last payment of the previous page.

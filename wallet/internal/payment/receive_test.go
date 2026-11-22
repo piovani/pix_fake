@@ -263,3 +263,40 @@ func TestABlockedAccountCannotPay(t *testing.T) {
 		t.Fatal("nothing may go to the SPI")
 	}
 }
+
+func TestAPaymentAboveTheLimitOfTheAccountIsRefused(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.ledger.SetReceiveLimit(ctx, anaID, 1049); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.OnPaymentOrder(ctx, anaOrder()); err != nil { // 1050
+		t.Fatal(err)
+	}
+	if a := f.lastAnswer(t); a.Status != pix.StatusRejected || a.ReasonCode != "AM02" {
+		t.Fatalf("answer: %+v", a)
+	}
+	if len(f.received(t)) != 0 {
+		t.Fatal("a refused payment is not recorded")
+	}
+
+	if err := f.ledger.SetReceiveLimit(ctx, anaID, 1050); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.OnPaymentOrder(ctx, anaOrder()); err != nil {
+		t.Fatal(err)
+	}
+	if a := f.lastAnswer(t); a.Status != pix.StatusAccepted {
+		t.Fatalf("exactly the limit is accepted: %+v", a)
+	}
+
+	if err := f.ledger.SetReceiveLimit(ctx, anaID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ledger.SetReceiveLimit(ctx, anaID, -1); err == nil {
+		t.Fatal("a negative limit is invalid")
+	}
+	if a, _ := f.ledger.Account(ctx, anaID); a.ReceiveLimitCents != 0 {
+		t.Fatalf("limit %d", a.ReceiveLimitCents)
+	}
+}

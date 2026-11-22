@@ -48,6 +48,8 @@ func (s *Service) receiverOf(ctx context.Context, o pix.PaymentOrder) (ledger.Ac
 		return acct, "BE01", nil
 	case acct.Type != string(o.Receiver.AccountType):
 		return acct, "AC14", nil
+	case acct.ReceiveLimitCents > 0 && o.AmountCents > acct.ReceiveLimitCents:
+		return acct, "AM02", nil
 	}
 	return acct, "", nil
 }

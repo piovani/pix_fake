@@ -1,9 +1,11 @@
 package payment
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
@@ -398,5 +400,60 @@ func TestHandleReadsTheReceiptOfAReport(t *testing.T) {
 	}
 	if got, _ := f.svc.Get(ctx, p.ID); got.ReportStatus != ReportAccepted {
 		t.Errorf("status = %q", got.ReportStatus)
+	}
+}
+
+func TestARefusedReportCanBeSentAgainByHand(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	r := f.resolveBook(t)
+	p := f.pay(t, r, 100)
+	if n, _ := f.svc.ReportBookTransfers(ctx); n != 1 {
+		t.Fatal("not reported")
+	}
+	if err := f.svc.OnReceipt(ctx, pix.Receipt{Ref: r.EndToEndID, Status: pix.ReceiptRejected, ReasonCode: "AG01"}); err != nil {
+		t.Fatal(err)
+	}
+
+	refused, err := f.svc.RejectedReports(ctx)
+	if err != nil || len(refused) != 1 || refused[0].ID != p.ID || refused[0].ReportReason != "AG01" {
+		t.Fatalf("%+v, %v", refused, err)
+	}
+	if ok, err := f.svc.ResendReport(ctx, "not-a-uuid"); ok || err != nil {
+		t.Fatalf("a bad id: %v, %v", ok, err)
+	}
+	if ok, err := f.svc.ResendReport(ctx, p.ID); !ok || err != nil {
+		t.Fatalf("resend: %v, %v", ok, err)
+	}
+	if ok, _ := f.svc.ResendReport(ctx, p.ID); ok {
+		t.Fatal("a report that is not refused cannot be reset")
+	}
+	if n, err := f.svc.ReportBookTransfers(ctx); err != nil || n != 1 {
+		t.Fatalf("sent %d, %v", n, err)
+	}
+	if refused, _ := f.svc.RejectedReports(ctx); len(refused) != 0 {
+		t.Fatalf("still refused: %+v", refused)
+	}
+}
+
+func TestATransferThatTakesMoreThan40SecondsIsStillSettledButLogged(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	r, p := f.stopHalfway(t, 400)
+	f.advance(bookTransferLimit + time.Second)
+
+	var logged bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	if _, err := f.svc.Pay(ctx, PayInput{ResolutionID: r.ID, AmountCents: 400, Message: "lunch"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.svc.Get(ctx, p.ID); got.Status != Settled {
+		t.Fatalf("status %s: the money may have moved, so it is settled", got.Status)
+	}
+	if !strings.Contains(logged.String(), "after the 40 s limit") {
+		t.Fatalf("not logged: %q", logged.String())
 	}
 }

@@ -145,7 +145,9 @@ an `RJCT` from the SPI (such as `AB03`) rejects it with no credit.
   to a blocked account is refused with `AC06`, to a closed one with `AC07`. Such an account cannot reserve or transfer money out, nor
   be the payee of a book transfer (`ErrAccountNotActive`, `FAILED_PRECONDITION` in the API). A payment already accepted is still credited
   when the SPI settles it, since the money has moved.
-- **Not checked:** amount limits (`AM02`) and salary accounts (`AG03`, which `AC14` covers since the wallet only has `CACC`, `SVGS` and `TRAN`).
+- **Limit per payment.** `accounts.receive_limit_cents` (`ledger.SetReceiveLimit`, 0 means none; no API to set it yet): a payment above
+  it is refused with `AM02`. It does not apply to a book transfer.
+- **Not checked:** salary accounts (`AG03`, which `AC14` covers since the wallet only has `CACC`, `SVGS` and `TRAN`).
 
 ## Paying another customer of the wallet (book transfer)
 
@@ -164,9 +166,10 @@ wallet does not know is an error (`ErrKeyNotRecorded`), never a payment through 
 - **Reported afterwards.** The worker sends a `trck.002` for each settled book transfer (scenario `BOK1`, initiation `DICT` when the key
   was used), up to 10 per call. The `camt.025` receipt marks it accepted; one that is not answered in a minute is sent again (the SPI is
   idempotent per transaction); a refusal worth trying again (`ED05`) is sent again, and any other is final and logged as an error for
-  operations, since the report was built by the wallet.
-- **The 40 seconds** of the Pix rules are met by settling in the same call, not enforced by a clock: nothing rejects a transfer that
-  took longer.
+  operations, since the report was built by the wallet. After fixing the cause, `go run ./cmd/reports list` shows the refused ones and
+  `go run ./cmd/reports resend <payment-id>` puts one back in line for the worker.
+- **The 40 seconds** of the Pix rules are met by settling in the same call. A transfer finished after them (one the worker had to finish)
+  is settled anyway and logged as an error: the ledger may have moved the money already, so rejecting it could lose it.
 
 ## DICT client
 

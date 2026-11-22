@@ -15,6 +15,8 @@ import (
 
 const (
 	reportRetryAfter = time.Minute
+	// the Pix rules give a book transfer 40 seconds. Rejecting a late one could lose money, since the ledger may have moved it already
+	bookTransferLimit = 40 * time.Second
 	// one message per report, so a refused one does not take the others with it
 	reportBatch = 10
 )
@@ -69,6 +71,9 @@ func (s *Service) completeBookTransfer(ctx context.Context, p Payment) (Payment,
 	}
 	if _, err := s.store.Close(ctx, p.ID, Settled, "", "", at); err != nil {
 		return p, fmt.Errorf("close the payment: %w", err)
+	}
+	if at.Sub(p.CreatedAt) > bookTransferLimit {
+		slog.Error("a book transfer settled after the 40 s limit", "payment", p.ID, "took", at.Sub(p.CreatedAt).Round(time.Second))
 	}
 	p.Status, p.FinishedAt = Settled, at
 	return p, nil
@@ -135,6 +140,17 @@ func (s *Service) ReportBookTransfers(ctx context.Context) (int, error) {
 		}
 	}
 	return sent, nil
+}
+
+// RejectedReports lists the book transfers whose report the SPI refused for good.
+func (s *Service) RejectedReports(ctx context.Context) ([]Payment, error) {
+	return s.store.RejectedReports(ctx, 100)
+}
+
+// ResendReport puts a refused report back in line to be sent again, once its cause was fixed. It returns false when the payment has
+// no refused report.
+func (s *Service) ResendReport(ctx context.Context, paymentID string) (bool, error) {
+	return s.store.ResetReport(ctx, paymentID)
 }
 
 func (s *Service) reportOf(ctx context.Context, p Payment) ([]byte, error) {

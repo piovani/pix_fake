@@ -293,6 +293,22 @@ func (p *Postgres) SetReport(ctx context.Context, id, status, reason string, at 
 	return err
 }
 
+func (p *Postgres) RejectedReports(ctx context.Context, limit int) ([]Payment, error) {
+	return p.many(ctx, `
+		SELECT `+columns+` FROM payments WHERE type = 'BOOK_TRANSFER' AND direction = 'OUTBOUND' AND report_status = 'REJECTED'
+		ORDER BY report_sent_at LIMIT $1`, limit)
+}
+
+func (p *Postgres) ResetReport(ctx context.Context, id string) (bool, error) {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE payments SET report_status = '', report_reason = '', report_sent_at = NULL
+		WHERE id = $1 AND type = 'BOOK_TRANSFER' AND report_status = 'REJECTED'`, id)
+	if isCode(err, "22P02") {
+		return false, nil
+	}
+	return tag.RowsAffected() > 0, err
+}
+
 func (p *Postgres) List(ctx context.Context, q Query) ([]Payment, error) {
 	statuses := make([]string, len(q.Statuses))
 	for i, s := range q.Statuses {

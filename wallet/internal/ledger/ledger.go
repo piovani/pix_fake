@@ -37,7 +37,10 @@ type Account struct {
 	TaxID      string
 	Type       string        // CACC (the default), SVGS or TRAN
 	Status     AccountStatus // Active when opened
-	OpenedAt   time.Time     // set when read
+
+	// ReceiveLimitCents is the most the account takes in one payment from the SPI; 0 means no limit.
+	ReceiveLimitCents int64
+	OpenedAt          time.Time // set when read
 }
 
 // AccountStatus says whether an account can move money: a blocked or closed one cannot spend or be paid into by a transfer,
@@ -96,8 +99,8 @@ func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 	err := l.pool.QueryRow(ctx, `
 		INSERT INTO accounts (id, branch, number, holder_name, tax_id, account_type)
 		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, COALESCE(NULLIF($6, ''), 'CACC'))
-		RETURNING id, account_type, status, created_at`,
-		strings.ToLower(a.ID), a.Branch, a.Number, a.HolderName, a.TaxID, a.Type).Scan(&a.ID, &a.Type, &a.Status, &a.OpenedAt)
+		RETURNING id, account_type, status, COALESCE(receive_limit_cents, 0), created_at`,
+		strings.ToLower(a.ID), a.Branch, a.Number, a.HolderName, a.TaxID, a.Type).Scan(&a.ID, &a.Type, &a.Status, &a.ReceiveLimitCents, &a.OpenedAt)
 	if isCode(err, "23505") {
 		return Account{}, ErrAccountExists
 	}
@@ -108,8 +111,8 @@ func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 func (l *Ledger) Account(ctx context.Context, accountID string) (Account, error) {
 	var a Account
 	err := l.pool.QueryRow(ctx, `
-		SELECT id, branch, number, holder_name, tax_id, account_type, status, created_at FROM accounts WHERE id = $1`,
-		strings.ToLower(accountID)).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.Status, &a.OpenedAt)
+		SELECT id, branch, number, holder_name, tax_id, account_type, status, COALESCE(receive_limit_cents, 0), created_at FROM accounts WHERE id = $1`,
+		strings.ToLower(accountID)).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.Status, &a.ReceiveLimitCents, &a.OpenedAt)
 	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
 		return Account{}, ErrAccountNotFound
 	}
@@ -118,6 +121,22 @@ func (l *Ledger) Account(ctx context.Context, accountID string) (Account, error)
 
 func (l *Ledger) SetStatus(ctx context.Context, accountID string, status AccountStatus) error {
 	tag, err := l.pool.Exec(ctx, `UPDATE accounts SET status = $2 WHERE id = $1`, strings.ToLower(accountID), status)
+	if isCode(err, "22P02") || (err == nil && tag.RowsAffected() == 0) {
+		return ErrAccountNotFound
+	}
+	return err
+}
+
+// SetReceiveLimit sets the most the account takes in one payment from the SPI; 0 removes the limit.
+func (l *Ledger) SetReceiveLimit(ctx context.Context, accountID string, cents int64) error {
+	if cents < 0 {
+		return ErrInvalidAmount
+	}
+	var limit *int64
+	if cents > 0 {
+		limit = &cents
+	}
+	tag, err := l.pool.Exec(ctx, `UPDATE accounts SET receive_limit_cents = $2 WHERE id = $1`, strings.ToLower(accountID), limit)
 	if isCode(err, "22P02") || (err == nil && tag.RowsAffected() == 0) {
 		return ErrAccountNotFound
 	}
@@ -139,8 +158,8 @@ func notSpendable(ctx context.Context, tx pgx.Tx, accountID string) error {
 func (l *Ledger) AccountByNumber(ctx context.Context, branch, number string) (Account, error) {
 	var a Account
 	err := l.pool.QueryRow(ctx, `
-		SELECT id, branch, number, holder_name, tax_id, account_type, status, created_at FROM accounts WHERE branch = $1 AND number = $2`,
-		branch, number).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.Status, &a.OpenedAt)
+		SELECT id, branch, number, holder_name, tax_id, account_type, status, COALESCE(receive_limit_cents, 0), created_at FROM accounts WHERE branch = $1 AND number = $2`,
+		branch, number).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.Status, &a.ReceiveLimitCents, &a.OpenedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, ErrAccountNotFound
 	}
