@@ -105,7 +105,6 @@ func TestPayAKeyOfAnotherBank(t *testing.T) {
 		t.Errorf("balance %v -> %v, want 150 less and nothing reserved", before, after)
 	}
 
-	// repeating the call is safe: the same payment, no second charge
 	again, err := e.pay(t, r.ResolutionId, 150, "lunch")
 	if err != nil || again.Id != p.Id || again.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
 		t.Fatalf("repeat: %v, %v", again, err)
@@ -188,8 +187,6 @@ func TestPayErrors(t *testing.T) {
 	wantCode(t, "unknown account", err, codes.NotFound)
 }
 
-// The SPI being down does not fail the payment: it is created, the money is held, and the worker sends it when the SPI
-// is back.
 func TestPaymentMadeWhileTheSPIIsDownIsSentByTheWorker(t *testing.T) {
 	e := setup(t)
 	if e.spi == "" {

@@ -21,7 +21,6 @@ const (
 	reportBatch = 10
 )
 
-// payInside records the payment before moving the money, so a call that stops halfway can be finished.
 func (s *Service) payInside(ctx context.Context, res Resolution, in PayInput) (Payment, error) {
 	stored, created, err := s.store.Insert(ctx, Payment{
 		AccountID: res.AccountID, Direction: Outbound, Type: TypeBookTransfer, Status: Pending, AmountCents: in.AmountCents,
@@ -142,13 +141,11 @@ func (s *Service) ReportBookTransfers(ctx context.Context) (int, error) {
 	return sent, nil
 }
 
-// RejectedReports lists the book transfers whose report the SPI refused for good.
 func (s *Service) RejectedReports(ctx context.Context) ([]Payment, error) {
 	return s.store.RejectedReports(ctx, 100)
 }
 
-// ResendReport puts a refused report back in line to be sent again, once its cause was fixed. It returns false when the payment has
-// no refused report.
+// It returns false when the payment has no refused report.
 func (s *Service) ResendReport(ctx context.Context, paymentID string) (bool, error) {
 	return s.store.ResetReport(ctx, paymentID)
 }

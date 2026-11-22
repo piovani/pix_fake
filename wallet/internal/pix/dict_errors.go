@@ -20,7 +20,6 @@ var (
 	ErrUnavailable = errors.New("pix: unavailable")
 )
 
-// APIError is a problem+xml answer of the DICT.
 type APIError struct {
 	Status        int
 	Kind          string // last segment of the problem type, such as "NotFound"
@@ -74,7 +73,6 @@ func (e *APIError) Is(target error) bool {
 	return false
 }
 
-// Retryable reports whether the same call can work later: rate limit or unavailability.
 func Retryable(err error) bool {
 	return errors.Is(err, ErrRateLimited) || errors.Is(err, ErrUnavailable)
 }

@@ -22,7 +22,6 @@ type ReturnInput struct {
 	RequestID   string // UUID v4, chosen by the caller
 }
 
-// Return sends back, in whole or in part, a payment received through the SPI. The amount is reserved until the SPI answers.
 // Repeating a call with the same RequestID returns the same return.
 func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	switch {

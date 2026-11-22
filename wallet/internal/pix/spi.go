@@ -25,8 +25,7 @@ const (
 // ErrStreamGone means the stream path is too old: open a new stream with Pull(ctx, "").
 var ErrStreamGone = errors.New("spi: stream path too old")
 
-// SPIClient sends messages to the SPI and reads the participant's output stream. It does not retry; sending the same
-// message again is safe.
+// It does not retry; sending the same message again is safe.
 type SPIClient struct {
 	baseURL string
 	origin  string
@@ -55,7 +54,7 @@ type Message struct {
 	Body       []byte
 }
 
-// Send sends 1 to 10 messages and returns their PI-ResourceIds. The result of a payment comes through the stream.
+// The result of a payment comes through the stream.
 func (c *SPIClient) Send(ctx context.Context, bodies ...[]byte) ([]string, error) {
 	if len(bodies) < 1 || len(bodies) > maxMessages {
 		return nil, fmt.Errorf("%w: Send takes 1 to %d messages, got %d", ErrBadRequest, maxMessages, len(bodies))
@@ -77,7 +76,7 @@ func (c *SPIClient) Send(ctx context.Context, bodies ...[]byte) ([]string, error
 	return strings.Split(resp.Header.Get("PI-ResourceId"), ","), nil
 }
 
-// Pull reads the next messages, waiting a few seconds for them. Pass "" to open a stream, then the returned next path.
+// Pass "" to open a stream, then the returned next path.
 func (c *SPIClient) Pull(ctx context.Context, next string) (msgs []Message, nextPath string, err error) {
 	target := c.baseURL + "/out/" + c.ispb + "/stream/start"
 	if next != "" {
@@ -103,7 +102,6 @@ func (c *SPIClient) Pull(ctx context.Context, next string) (msgs []Message, next
 	return msgs, nextPath, err
 }
 
-// Ack marks everything read up to the next path as received.
 func (c *SPIClient) Ack(ctx context.Context, next string) error {
 	if next == "" {
 		return fmt.Errorf("%w: Ack needs the next path of a Pull", ErrBadRequest)
@@ -184,7 +182,6 @@ func readMessages(resp *http.Response, raw []byte) ([]Message, error) {
 	}
 }
 
-// SPIError is a problem+xml answer of the SPI.
 type SPIError struct {
 	Status     int
 	Kind       string

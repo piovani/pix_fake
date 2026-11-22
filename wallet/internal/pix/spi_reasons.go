@@ -1,40 +1,32 @@
 package pix
 
-// What the wallet does with a rejection that comes from the SPI. A rejection is final: the payment, return or report
-// did not happen, so the balance reserved for it goes back. What differs is what to tell the customer, whether the same
-// payment can work later, and whether someone has to look at it.
+// A rejection is final and the reserved money goes back; what differs is the message, whether trying again can work, and who must look.
 
-// Cause tells who the rejection is about.
 type Cause string
 
 const (
-	// CauseRecipient: the receiving side cannot take this payment (account closed, wrong data...). The customer can
-	// check the data or choose another account or key; trying the same payment again changes nothing.
+	// CauseRecipient: the receiving side cannot take it; the same payment will fail again.
 	CauseRecipient Cause = "recipient"
-	// CauseRule: the Pix rules do not allow it (a return of a return, past the deadline, above the original amount).
+	// CauseRule: the Pix rules forbid it (return of a return, past the deadline, above the original).
 	CauseRule Cause = "rule"
-	// CauseTransient: a timeout or a processing error on the way. The same payment may work if made again later.
+	// CauseTransient: a timeout or processing error; the same payment may work later.
 	CauseTransient Cause = "transient"
-	// CauseWallet: the wallet's own fault or limit (a malformed message, a payment that should have been a book
-	// transfer, no funds in the institution's PI account). The customer did nothing wrong; operations must look.
+	// CauseWallet: the wallet's own fault or limit; the customer did nothing wrong and operations must look.
 	CauseWallet Cause = "wallet"
 	// CauseUnknown: a code this table does not know. Treated as final, and operations must look.
 	CauseUnknown Cause = "unknown"
 )
 
-// Rejection is the wallet's reading of a reason code of the SPI.
 type Rejection struct {
 	Code  string
 	Cause Cause
-	// TryAgain is true when the same payment, made again later, may work. Make it as a new payment (a new EndToEndId):
-	// the SPI answers a repeated one with the outcome it already had.
+	// TryAgain: make it as a new payment (a new EndToEndId), since the SPI answers a repeated one with the outcome it had.
 	TryAgain bool
-	// Message is safe to show to the customer. It never repeats the free text another institution sent, and it does not
-	// say that a payment was refused on suspicion of fraud.
+	// Message is safe to show: it never repeats another bank's text or hints at fraud.
 	Message string
 }
 
-// Alert reports whether operations should look at it: the wallet's own fault, or a code nobody mapped.
+// Alert: the wallet's own fault, or a code nobody mapped.
 func (r Rejection) Alert() bool { return r.Cause == CauseWallet || r.Cause == CauseUnknown }
 
 const (
@@ -42,7 +34,6 @@ const (
 	msgRefused      = "The receiving institution refused the payment."
 )
 
-// reasons covers the codes of pacs.002 (payments and returns) and of camt.025 (reports) that the wallet can receive.
 var reasons = map[string]Rejection{
 	// the receiving participant refused it
 	"AC03": {Cause: CauseRecipient, Message: "The receiving account does not exist or its data is wrong."},
@@ -81,8 +72,7 @@ var reasons = map[string]Rejection{
 	"RC10": {Cause: CauseWallet, Message: msgNotProcessed}, // the ISPB came from the DICT
 }
 
-// ReasonOf reads a reason code. A code it does not know comes back as CauseUnknown, never as an error: the SPI may
-// add codes, and a payment must still be closed.
+// A code it does not know is CauseUnknown, never an error: the SPI may add codes and a payment must still close.
 func ReasonOf(code string) Rejection {
 	if r, ok := reasons[code]; ok {
 		r.Code = code
@@ -91,7 +81,6 @@ func ReasonOf(code string) Rejection {
 	return Rejection{Code: code, Cause: CauseUnknown, Message: "The payment was refused. It was not made."}
 }
 
-// Rejection reads the reason of a rejected status. For a status that is not a rejection it returns the zero value.
 func (s TxStatus) Rejection() Rejection {
 	if !s.Rejected() {
 		return Rejection{}
@@ -99,8 +88,7 @@ func (s TxStatus) Rejection() Rejection {
 	return ReasonOf(s.ReasonCode)
 }
 
-// Rejection reads the reason of a rejected receipt. A rejected report can be fixed and sent again; nothing was
-// recorded for it. For an accepted receipt it returns the zero value.
+// A rejected report can be fixed and sent again.
 func (r Receipt) Rejection() Rejection {
 	if !r.Rejected() {
 		return Rejection{}
@@ -108,8 +96,7 @@ func (r Receipt) Rejection() Rejection {
 	return ReasonOf(r.ReasonCode)
 }
 
-// Rejection reads an admi.002: the SPI could not process a message and nothing was done with it. The wallet builds
-// its messages itself, so this is always its own fault. The message to find is the one with the PI-ResourceId in Ref.
+// The wallet builds its messages itself, so this is always its own fault; Ref is the PI-ResourceId.
 func (n Notification) Rejection() Rejection {
 	return Rejection{Code: "admi.002", Cause: CauseWallet, Message: msgNotProcessed}
 }

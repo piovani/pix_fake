@@ -44,16 +44,13 @@ const (
 )
 
 const (
-	// ResolutionTTL is how long a resolution can be paid after the lookup.
 	ResolutionTTL = 5 * time.Minute
-	// MaxMessage is the longest free text between users, as in the pacs.008.
+	// as in the pacs.008
 	MaxMessage = 140
-	// resubmitAfter is how old an unsent payment must be before the worker sends it, so it does not race with the call
-	// that created it.
+	// older than this before the worker sends an unsent payment, so it does not race with the call that created it
 	resubmitAfter = 10 * time.Second
 )
 
-// Payee is the other side of a payment.
 type Payee struct {
 	Name          string
 	TaxID         string
@@ -64,8 +61,7 @@ type Payee struct {
 	Key           string
 }
 
-// Resolution is the lookup of a key before paying it. Its EndToEndId was created before the lookup and is the one
-// the payment carries.
+// The EndToEndId is made before the lookup and is the one the payment carries.
 type Resolution struct {
 	ID             string
 	AccountID      string
@@ -77,7 +73,6 @@ type Resolution struct {
 	PayeeAccountID string
 }
 
-// Payment is a payment of an account, sent or received.
 type Payment struct {
 	ID                string
 	AccountID         string
@@ -112,10 +107,8 @@ const (
 	ReportRejected = "REJECTED"
 )
 
-// Submitted reports whether the SPI accepted the order for processing.
 func (p Payment) Submitted() bool { return !p.SubmittedAt.IsZero() }
 
-// Accounts is what the module needs from the ledger.
 type Accounts interface {
 	Account(ctx context.Context, id string) (ledger.Account, error)
 	Reserve(ctx context.Context, accountID string, cents int64, reference string) (ledger.Reservation, error)
@@ -132,17 +125,14 @@ type Keys interface {
 	AccountOf(ctx context.Context, key string) (accountID string, found bool, err error)
 }
 
-// Directory is what the module needs from the DICT.
 type Directory interface {
 	GetEntry(ctx context.Context, p pix.GetEntryParams) (pix.Entry, error)
 }
 
-// Bank is what the module needs from the SPI to send payments.
 type Bank interface {
 	Send(ctx context.Context, bodies ...[]byte) ([]string, error)
 }
 
-// Store keeps resolutions and payments.
 type Store interface {
 	SaveResolution(ctx context.Context, r Resolution) (Resolution, error)
 	Resolution(ctx context.Context, id string) (Resolution, bool, error)
@@ -155,7 +145,6 @@ type Store interface {
 	ByResource(ctx context.Context, resourceID string) (Payment, bool, error)
 	ByRequestID(ctx context.Context, requestID string) (Payment, bool, error)
 	ByReservation(ctx context.Context, reservationID string) (Payment, bool, error)
-	// ByReferences returns the payments of an account whose EndToEndId or request id is among refs.
 	ByReferences(ctx context.Context, accountID string, refs []string) ([]Payment, error)
 	InsertReturn(ctx context.Context, p Payment) (stored Payment, created bool, err error)
 	MarkSubmitted(ctx context.Context, id, resourceID string, at time.Time) error
@@ -170,7 +159,6 @@ type Store interface {
 	ResetReport(ctx context.Context, id string) (bool, error)
 }
 
-// Query is a page of payments of an account, newest first. After is the position of the last payment of the previous page.
 type Query struct {
 	AccountID string
 	Statuses  []Status
@@ -178,7 +166,6 @@ type Query struct {
 	Limit     int
 }
 
-// Cursor is the position of a payment in the listing.
 type Cursor struct {
 	CreatedAt time.Time
 	ID        string
@@ -198,8 +185,7 @@ func New(accounts Accounts, keys Keys, dict Directory, bank Bank, store Store, i
 	return &Service{accounts: accounts, keys: keys, dict: dict, bank: bank, store: store, ispb: ispb, now: time.Now}
 }
 
-// ResolveKey creates the EndToEndId before the lookup, as the DICT requires. A key of another customer of the wallet is
-// found in the wallet's own records and never looked up in the DICT.
+// A key of another customer of the wallet never goes to the DICT.
 func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolution, error) {
 	if accountID == "" || key == "" {
 		return Resolution{}, fmt.Errorf("%w: account and key are required", ErrInvalid)
@@ -259,20 +245,13 @@ func (s *Service) partyOf(a ledger.Account, key string) Payee {
 	}
 }
 
-// PayInput is the request to pay a resolved key.
 type PayInput struct {
 	ResolutionID string
 	AmountCents  int64
 	Message      string
 }
 
-// Pay pays a resolved key. It reserves the amount and sends the order to the SPI; the payment is Pending until the SPI
-// answers, which the worker handles. One resolution makes at most one payment, so a call can be repeated after any
-// failure: it returns the payment that exists, or finishes the one that stopped halfway. A repeat with another amount or
-// message is refused with ErrResolutionConflict.
-//
-// When the SPI cannot be reached the payment is still created, Pending and not yet sent, and the worker sends it later;
-// the SPI is idempotent by EndToEndId, so sending twice is safe.
+// One resolution makes at most one payment; repeating the call finishes it, and another amount or message is a conflict.
 func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	switch {
 	case in.ResolutionID == "":
@@ -337,7 +316,6 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	return s.submit(ctx, stored)
 }
 
-// repeat answers a call for a resolution that already made a payment.
 func (s *Service) repeat(ctx context.Context, p Payment, in PayInput) (Payment, error) {
 	if p.AmountCents != in.AmountCents || p.Message != in.Message {
 		return Payment{}, ErrResolutionConflict
@@ -354,9 +332,7 @@ func (s *Service) repeat(ctx context.Context, p Payment, in PayInput) (Payment, 
 	return p, nil
 }
 
-// submit sends the order to the SPI. An answer of "unavailable" is not a failure of the payment: it stays pending and
-// unsent, and the worker sends it again. A definite refusal of the message (400) means the SPI never took it, so the
-// payment is rejected and the money goes back.
+// An "unavailable" SPI leaves the payment pending for the worker; a 400 means the SPI never took it, so it is rejected.
 func (s *Service) submit(ctx context.Context, p Payment) (Payment, error) {
 	body, err := s.orderOf(ctx, p)
 	if err != nil {
@@ -413,7 +389,6 @@ func (s *Service) orderOf(ctx context.Context, p Payment) ([]byte, error) {
 	return body, err
 }
 
-// Get returns a payment.
 func (s *Service) Get(ctx context.Context, id string) (Payment, error) {
 	if id == "" {
 		return Payment{}, fmt.Errorf("%w: payment is required", ErrInvalid)

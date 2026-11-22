@@ -257,7 +257,6 @@ func TestPayWithoutEnoughMoney(t *testing.T) {
 		t.Error("a payment was stored")
 	}
 
-	// the same resolution can be paid after a deposit
 	if err := f.ledger.Credit(ctx, anaID, 5000, "deposit"); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +352,6 @@ func TestPayValidationAndResolution(t *testing.T) {
 	}
 }
 
-// resolveAt makes a resolution as if the lookup happened at the given time.
 func (f *fixture) resolveAt(t *testing.T, at time.Time) Resolution {
 	t.Helper()
 	was := f.clock
@@ -449,14 +447,12 @@ func TestSettledPaymentTakesTheMoneyOut(t *testing.T) {
 		t.Errorf("balance = %+v", b)
 	}
 
-	// the SPI delivers a message again when it was not acknowledged
 	if err := f.svc.OnStatus(ctx, settled(p.EndToEndID)); err != nil {
 		t.Fatal(err)
 	}
 	if b := f.balance(t); b.AvailableCents != 100000-2590 || b.ReservedCents != 0 {
 		t.Errorf("a repeated status moved money: %+v", b)
 	}
-	// and a late rejection does not undo a settlement
 	if err := f.svc.OnStatus(ctx, rejected(p.EndToEndID, "AB03")); err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +494,6 @@ func TestRejectedPaymentGivesTheMoneyBack(t *testing.T) {
 			if b := f.balance(t); b.AvailableCents != 100000 {
 				t.Errorf("a repeated status moved money: %+v", b)
 			}
-			// a late settlement does not undo a rejection either
 			if err := f.svc.OnStatus(ctx, settled(p.EndToEndID)); err != nil {
 				t.Fatal(err)
 			}
@@ -650,13 +645,11 @@ func TestConsumeAppliesAndAcknowledges(t *testing.T) {
 	if len(stream.acks) != 1 || stream.acks[0] != "/next/2" {
 		t.Errorf("acks = %v", stream.acks)
 	}
-	// a stream gone is reopened, and after an acknowledgement a new one is opened
 	if len(stream.pulls) < 3 || stream.pulls[0] != "" || stream.pulls[1] != "" || stream.pulls[2] != "" {
 		t.Errorf("pulls = %q", stream.pulls)
 	}
 }
 
-// failingLedger makes Settle fail a number of times, as a database that is briefly down would.
 type failingLedger struct {
 	*ledger.Ledger
 	failures int
@@ -684,7 +677,6 @@ func TestConsumeDoesNotAcknowledgeWhatFailed(t *testing.T) {
 	if err := svc.Consume(ctx, stream); err != nil {
 		t.Fatal(err)
 	}
-	// the first batch failed and was not acknowledged; it came again, was applied, and only then acknowledged
 	if len(stream.acks) != 1 || stream.acks[0] != "/next/2" {
 		t.Errorf("acks = %v, pulls = %q", stream.acks, stream.pulls)
 	}
@@ -706,7 +698,6 @@ func TestList(t *testing.T) {
 		p := f.pay(t, f.resolve(t), int64(100+i))
 		ids = append(ids, p.ID)
 	}
-	// settle the second, reject the third
 	byID := func(id string) Payment { p, _ := f.svc.Get(ctx, id); return p }
 	_ = f.svc.OnStatus(ctx, settled(byID(ids[1]).EndToEndID))
 	_ = f.svc.OnStatus(ctx, rejected(byID(ids[2]).EndToEndID, "AC07"))

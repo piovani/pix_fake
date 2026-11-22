@@ -17,7 +17,6 @@ type entry struct {
 	cents   int64 // initial balance
 }
 
-// Fixed IDs, so the accounts can be used by hand (for example in a gRPC call) after `make up`.
 const (
 	AnaID     = "0a1b2c3d-0001-4000-8000-000000000001"
 	BrunoID   = "0a1b2c3d-0002-4000-8000-000000000002"
@@ -53,7 +52,6 @@ type KeyStore interface {
 	Insert(ctx context.Context, k pixkey.Key) (pixkey.Key, error)
 }
 
-// Run is idempotent.
 func Run(ctx context.Context, l *ledger.Ledger, store KeyStore) error {
 	for _, e := range entries() {
 		if _, err := l.Open(ctx, e.account); err != nil && !errors.Is(err, ledger.ErrAccountExists) {

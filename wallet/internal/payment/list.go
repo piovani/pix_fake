@@ -21,13 +21,11 @@ type ListInput struct {
 	Statuses  []Status // empty means all
 }
 
-// Page is a page of payments. NextToken is empty on the last page.
 type Page struct {
 	Payments  []Payment
 	NextToken string
 }
 
-// List returns the payments of an account, sent and received, newest first.
 func (s *Service) List(ctx context.Context, in ListInput) (Page, error) {
 	if in.AccountID == "" {
 		return Page{}, fmt.Errorf("%w: account is required", ErrInvalid)

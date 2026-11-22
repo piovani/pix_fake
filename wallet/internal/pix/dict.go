@@ -18,15 +18,14 @@ const (
 	maxResponseSize = 1 << 20
 )
 
-// DictClient is the participant side of the DICT API v2. It does not retry: the caller decides, using Retryable and
-// APIError.RetryAfter.
+// It does not retry: the caller decides, using Retryable and APIError.RetryAfter.
 type DictClient struct {
 	baseURL string
 	ispb    string
 	http    *http.Client
 }
 
-// NewDictClient creates a client for the DICT at baseURL (including /api/v2) acting as the participant ispb.
+// baseURL includes /api/v2.
 func NewDictClient(baseURL, ispb string, opts ...DictOption) *DictClient {
 	c := &DictClient{baseURL: strings.TrimRight(baseURL, "/"), ispb: ispb, http: &http.Client{Timeout: dictTimeout}}
 	for _, o := range opts {
@@ -39,14 +38,13 @@ type DictOption func(*DictClient)
 
 func WithHTTPClient(h *http.Client) DictOption { return func(c *DictClient) { c.http = h } }
 
-// GetEntryParams are the values the DICT requires in headers for a lookup.
 type GetEntryParams struct {
 	Key        string
 	PayerID    string // CPF or CNPJ of who is paying
 	EndToEndID string // created before the lookup and reused in the pacs.008 (see NewEndToEndID)
 }
 
-// GetEntry looks up a key before a payment. ErrBookTransfer means the wallet holds the key itself.
+// ErrBookTransfer means the wallet holds the key itself.
 func (c *DictClient) GetEntry(ctx context.Context, p GetEntryParams) (Entry, error) {
 	if p.Key == "" {
 		return Entry{}, fmt.Errorf("%w: key is required", ErrBadRequest)
@@ -63,8 +61,7 @@ func (c *DictClient) GetEntry(ctx context.Context, p GetEntryParams) (Entry, err
 	return out.Entry.toEntry(), nil
 }
 
-// CreateEntry registers a key. For KeyEVP leave Entry.Key empty and the DICT generates it. Repeating a call with the same
-// requestID and data returns the same entry.
+// For KeyEVP leave Entry.Key empty and the DICT generates it.
 func (c *DictClient) CreateEntry(ctx context.Context, e Entry, requestID string) (Entry, error) {
 	if requestID == "" {
 		return Entry{}, fmt.Errorf("%w: request id is required", ErrBadRequest)
@@ -118,7 +115,6 @@ func (c *DictClient) DeleteEntry(ctx context.Context, key string, reason EntryRe
 	return c.do(ctx, http.MethodPost, "/entries/"+escapeKey(key)+"/delete", nil, body, http.StatusOK, &out)
 }
 
-// CheckKeys tells which of 1 to 200 keys have an entry.
 func (c *DictClient) CheckKeys(ctx context.Context, keys []string) ([]KeyStatus, error) {
 	if len(keys) < 1 || len(keys) > 200 {
 		return nil, fmt.Errorf("%w: CheckKeys takes 1 to 200 keys, got %d", ErrBadRequest, len(keys))
@@ -143,12 +139,11 @@ func orDefault(r EntryReason) EntryReason {
 	return r
 }
 
-// escapeKey escapes a key for the URL path, writing "+" as %2B.
+// writes "+" as %2B
 func escapeKey(key string) string {
 	return strings.ReplaceAll(url.PathEscape(key), "+", "%2B")
 }
 
-// do sends a request and decodes the answer. Any status but wantStatus becomes an *APIError.
 func (c *DictClient) do(ctx context.Context, method, path string, extra http.Header, body any, wantStatus int, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -191,7 +186,6 @@ func (c *DictClient) do(ctx context.Context, method, path string, extra http.Hea
 	return nil
 }
 
-// decodeProblem turns an error answer into an *APIError, even when the body is not a problem+xml.
 func decodeProblem(resp *http.Response, raw []byte) error {
 	e := &APIError{Status: resp.StatusCode, Kind: "Unknown", RetryAfter: retryAfter(resp.Header)}
 	var p problemXML

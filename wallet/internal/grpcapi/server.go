@@ -22,7 +22,6 @@ type Ledger interface {
 	Balance(ctx context.Context, accountID string) (ledger.Balance, error)
 }
 
-// accountService answers wallet.v1.AccountService. GetStatement needs the payment module.
 type accountService struct {
 	walletv1.UnimplementedAccountServiceServer
 	ledger   Ledger
@@ -67,8 +66,6 @@ func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanc
 	return &walletv1.GetBalanceResponse{AvailableCents: b.AvailableCents, ReservedCents: b.ReservedCents}, nil
 }
 
-// New builds the gRPC server with the account service, the key service (when keys is not nil), the payment service (when
-// payments is not nil) and the health service.
 func New(l Ledger, keys Keys, payments Payments) *grpc.Server {
 	s := grpc.NewServer()
 	walletv1.RegisterAccountServiceServer(s, &accountService{ledger: l, payments: payments})

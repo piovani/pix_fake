@@ -31,8 +31,7 @@ type Statement struct {
 	NextToken string
 }
 
-// Statement lists the money that moved in an account, newest first. Payments in flight are not in it: their money is
-// reserved, not moved.
+// Payments in flight are not in it: their money is reserved, not moved.
 func (s *Service) Statement(ctx context.Context, in StatementInput) (Statement, error) {
 	if in.AccountID == "" {
 		return Statement{}, fmt.Errorf("%w: account is required", ErrInvalid)

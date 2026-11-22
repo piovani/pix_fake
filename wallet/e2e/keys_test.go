@@ -123,7 +123,6 @@ func (e env) remove(t *testing.T, account, key string) error {
 	return err
 }
 
-// cleanup removes a key at the end of the test, so a run leaves nothing behind.
 func (e env) cleanup(t *testing.T, account, key string) {
 	t.Cleanup(func() { _ = e.remove(t, account, key) })
 }
@@ -144,7 +143,6 @@ func wantCode(t *testing.T, what string, err error, want codes.Code) {
 	}
 }
 
-// failNext makes the DICT answer the next request with the given status.
 func (e env) failNext(t *testing.T, method, pathPrefix string, statusCode int) {
 	t.Helper()
 	body := fmt.Sprintf(`{"method":%q,"path_prefix":%q,"status":%d,"retry_after":1,"count":1}`, method, pathPrefix, statusCode)
@@ -176,7 +174,6 @@ func TestKeyLifecycle(t *testing.T) {
 		t.Fatalf("key: %v", k)
 	}
 
-	// another bank finds the key and sees Ana's account
 	entry, err := e.lookup(t, email)
 	if err != nil {
 		t.Fatalf("lookup by another bank: %v", err)
@@ -193,7 +190,6 @@ func TestKeyLifecycle(t *testing.T) {
 		t.Fatal("the key shows on another account")
 	}
 
-	// the same request again: same key, nothing duplicated
 	again, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, email, req)
 	if err != nil || again.Key != email {
 		t.Fatalf("repeat: %v, %v", again, err)
@@ -208,7 +204,6 @@ func TestKeyLifecycle(t *testing.T) {
 		t.Fatalf("the key is listed %d times", count)
 	}
 
-	// the same request id with other data is refused, and so is another request for a key that exists
 	_, err = e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, uniqueEmail(t), req)
 	wantCode(t, "same request id, other key", err, codes.AlreadyExists)
 	_, err = e.register(t, seed.BrunoID, walletv1.KeyType_KEY_TYPE_EMAIL, email, requestID(t))
@@ -305,7 +300,6 @@ func TestRegisterWhenTheDICTFails(t *testing.T) {
 			t.Fatalf("%s: a key that was not registered is listed", name)
 		}
 
-		// the DICT is back: the same request goes through
 		k, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, email, req)
 		if err != nil || k.Key != email {
 			t.Fatalf("%s: retry: %v, %v", name, k, err)
@@ -359,7 +353,6 @@ func TestRemoveAKeyThatTheDICTAlreadyLost(t *testing.T) {
 	}
 }
 
-// deleteInDICT removes the key as the wallet's own participant, behind the wallet's back.
 func deleteInDICT(t *testing.T, e env, key string) {
 	t.Helper()
 	wallet := pix.NewDictClient(os.Getenv("WALLET_E2E_DICT_URL"), "99000001")

@@ -16,7 +16,6 @@ import (
 	"pixfake/wallet/migrations"
 )
 
-// Connect opens a pool and checks that the database answers.
 func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
@@ -29,13 +28,11 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// InTx runs fn in a transaction: commit if it returns nil, rollback if it returns an error or panics. Modules use this
-// instead of handling pgx.Tx lifecycle themselves.
+// commit if fn returns nil, rollback on an error or a panic.
 func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(tx pgx.Tx) error) error {
 	return pgx.BeginTxFunc(ctx, pool, pgx.TxOptions{}, fn)
 }
 
-// Migrate applies the embedded migrations that have not been applied yet. url is a normal postgres:// URL.
 func Migrate(url string) error {
 	src, err := iofs.New(migrations.FS, ".")
 	if err != nil {

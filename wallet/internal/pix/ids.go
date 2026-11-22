@@ -28,7 +28,6 @@ func NewEndToEndID(ispb string, now time.Time) (string, error) {
 	return id, nil
 }
 
-// NewRequestID creates a UUID v4.
 func NewRequestID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -59,9 +58,7 @@ func randomString(n int) (string, error) {
 
 var returnIDRe = regexp.MustCompile(`^D[0-9]{8}[0-9]{12}[A-Za-z0-9]{11}$`)
 
-// NewReturnID creates the identifier of a return (the RtrId of a pacs.004): "D" + ISPB of the sender (8) +
-// yyyyMMddHHmm in UTC (12) + 11 random characters. Create it before sending and keep it: it is what makes the return
-// idempotent and what the SPI answers with.
+// "D" + ISPB of the sender (8) + yyyyMMddHHmm in UTC (12) + 11 random characters; keep it, it makes the return idempotent.
 func NewReturnID(ispb string, now time.Time) (string, error) {
 	if len(ispb) != 8 {
 		return "", fmt.Errorf("pix: ISPB must have 8 digits, got %q", ispb)

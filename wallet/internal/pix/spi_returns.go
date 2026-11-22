@@ -14,31 +14,25 @@ const (
 	nsPacs004 = "https://www.bcb.gov.br/pi/pacs.004/1.5"
 	nsTrck002 = "https://www.bcb.gov.br/pi/trck.002/1.1"
 
-	// maxReportedTxs is the most transactions one trck.002 can carry.
 	maxReportedTxs = 500
 	// maxReportAge is how long after settling a transaction can still be reported (art. 2-A of IN BCB 32/2020).
 	maxReportAge = 30 * 24 * time.Hour
 )
 
-// ReturnReasonCustomer is MD06, the reason of a return the customer asked for. It is the only one a return of a
-// payment of the wallet's own initiative needs; the others belong to the MED and to Pix Saque/Troco.
+// MD06: the only reason a return on the wallet's own initiative needs.
 const ReturnReasonCustomer = "MD06"
 
-// Receipt statuses of a camt.025.
 const (
 	ReceiptAccepted = "ACPT"
 	ReceiptRejected = "RJCT"
 )
 
-// Scenarios of a transaction reported in a trck.002.
 const (
 	ScenarioSameParticipant = "BOK1" // both customers belong to the same participant
 	ScenarioSameSettler     = "BOK2" // different participants that settle through the same one
 )
 
-// PaymentReturn is the content of a pacs.004: money going back to the payer of an earlier payment. From is the
-// participant that sends it (the one that received the payment, and holds the account being debited) and To the one
-// that receives the money (the payer's).
+// From is the participant that returns the money (it holds the debited account), To the payer's.
 type PaymentReturn struct {
 	MsgID       string // set when read
 	ReturnID    string // the RtrId, see NewReturnID
@@ -51,8 +45,7 @@ type PaymentReturn struct {
 	To          string // ISPB
 }
 
-// NewPacs004 builds the XML of a return sent by the participant ispb and returns it with its MsgId. The SPI answers
-// with a pacs.002 whose OrgnlInstrId is the ReturnID.
+// The SPI answers with a pacs.002 whose OrgnlInstrId is the ReturnID.
 func NewPacs004(ispb string, r PaymentReturn, now time.Time) (msgID string, body []byte, err error) {
 	switch {
 	case r.AmountCents <= 0:
@@ -100,8 +93,7 @@ func NewPacs004(ispb string, r PaymentReturn, now time.Time) (msgID string, body
 	return msgID, body, err
 }
 
-// ParsePacs004 reads the returns of a pacs.004, such as the return of a payment the wallet made. The wallet answers
-// each one with a pacs.002 (StatusAccepted or StatusRejected) whose InstrID is the ReturnID.
+// The wallet answers each return with a pacs.002 whose InstrID is the ReturnID.
 func ParsePacs004(body []byte) ([]PaymentReturn, error) {
 	var m pacs004XML
 	if err := xml.Unmarshal(body, &m); err != nil {
@@ -131,15 +123,12 @@ func ParsePacs004(body []byte) ([]PaymentReturn, error) {
 	return out, nil
 }
 
-// How a reported payment was initiated.
 var (
 	// initiationsWithKey are the ones that carry the Pix key; MANU and AUTO must not.
 	initiationsWithKey = []string{"APDN", "APES", "DICT", "INIC", "QRDN", "QRES"}
 	initiationsNoKey   = []string{"MANU", "AUTO"}
 )
 
-// ReportedTx is a transaction the wallet settled in its own ledger, such as a payment between two of its customers,
-// reported to the SPI afterwards.
 type ReportedTx struct {
 	EndToEndID  string // of the payment; for a return, of the original payment
 	ReturnID    string // the RtrId, only when the transaction is a return (the initiation is then MANU)
@@ -156,8 +145,7 @@ type ReportedTx struct {
 	Scenario string
 }
 
-// NewTrck002 builds the report of 1 to 500 transactions settled outside the SPI, sent by the participant ispb, and
-// returns it with its MsgId. The SPI answers with a camt.025 whose receipts name that MsgId.
+// The SPI answers with a camt.025 whose receipts name that MsgId.
 func NewTrck002(ispb string, txs []ReportedTx, now time.Time) (msgID string, body []byte, err error) {
 	if len(txs) < 1 || len(txs) > maxReportedTxs {
 		return "", nil, fmt.Errorf("%w: a report takes 1 to %d transactions, got %d", ErrBadRequest, maxReportedTxs, len(txs))
@@ -186,7 +174,6 @@ func NewTrck002(ispb string, txs []ReportedTx, now time.Time) (msgID string, bod
 	return msgID, body, err
 }
 
-// StatusSettledOutside is the only status a trck.002 carries: the reported transaction settled.
 const StatusSettledOutside = "ACCC"
 
 func (t ReportedTx) wire(now time.Time) (reportedTxXML, error) {
@@ -240,7 +227,6 @@ func (t ReportedTx) wire(now time.Time) (reportedTxXML, error) {
 	return x, nil
 }
 
-// Receipt is the SPI's answer to one transaction of a trck.002 (a camt.025).
 type Receipt struct {
 	ReportMsgID string // the MsgId of the trck.002
 	Ref         string // the RtrId of the transaction when it is a return, otherwise its EndToEndId
@@ -251,7 +237,6 @@ type Receipt struct {
 
 func (r Receipt) Rejected() bool { return r.Status == ReceiptRejected }
 
-// ParseCamt025 reads the receipts of a camt.025, one per transaction of the report.
 func ParseCamt025(body []byte) ([]Receipt, error) {
 	var m camt025XML
 	if err := xml.Unmarshal(body, &m); err != nil {

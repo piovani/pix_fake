@@ -13,7 +13,6 @@ import (
 	"pixfake/wallet/internal/platform/db"
 )
 
-// Errors returned by the ledger. Callers compare them with errors.Is.
 var (
 	ErrAccountNotFound     = errors.New("ledger: account not found")
 	ErrAccountExists       = errors.New("ledger: account already exists")
@@ -27,8 +26,7 @@ var (
 	ErrAccountNotActive    = errors.New("ledger: the account is blocked or closed")
 )
 
-// Account is an account of the wallet. Branch and Number are what the DICT holds for its keys, so the wallet can
-// recognize its own keys.
+// Branch and Number match what the DICT holds, so the wallet recognizes its own keys.
 type Account struct {
 	ID         string // empty on Open means "generate one"
 	Branch     string
@@ -38,13 +36,12 @@ type Account struct {
 	Type       string        // CACC (the default), SVGS or TRAN
 	Status     AccountStatus // Active when opened
 
-	// ReceiveLimitCents is the most the account takes in one payment from the SPI; 0 means no limit.
+	// 0 means no limit.
 	ReceiveLimitCents int64
 	OpenedAt          time.Time // set when read
 }
 
-// AccountStatus says whether an account can move money: a blocked or closed one cannot spend or be paid into by a transfer,
-// and the SPI is told it cannot receive.
+// A blocked or closed account cannot spend, or be the payee of a transfer.
 type AccountStatus string
 
 const (
@@ -53,7 +50,6 @@ const (
 	Closed  AccountStatus = "CLOSED"
 )
 
-// Balance is the money of an account, in centavos. Available can be spent; Reserved is held by payments in flight.
 type Balance struct {
 	AvailableCents int64
 	ReservedCents  int64
@@ -67,7 +63,6 @@ const (
 	Released ReservationStatus = "RELEASED"
 )
 
-// Reservation is money held for one payment until it is settled (the money leaves) or released (it comes back).
 type Reservation struct {
 	ID          string
 	AccountID   string
@@ -87,14 +82,12 @@ const (
 	kindDebit   entryKind = "DEBIT"
 )
 
-// Ledger keeps the accounts, their balances and the log of movements in the wallet's database.
 type Ledger struct {
 	pool *pgxpool.Pool
 }
 
 func New(pool *pgxpool.Pool) *Ledger { return &Ledger{pool: pool} }
 
-// Open creates an account with a zero balance. It returns ErrAccountExists if the ID or the branch and number are taken.
 func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 	err := l.pool.QueryRow(ctx, `
 		INSERT INTO accounts (id, branch, number, holder_name, tax_id, account_type)
@@ -107,7 +100,6 @@ func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 	return a, err
 }
 
-// Account returns an account with its data.
 func (l *Ledger) Account(ctx context.Context, accountID string) (Account, error) {
 	var a Account
 	err := l.pool.QueryRow(ctx, `
@@ -127,7 +119,7 @@ func (l *Ledger) SetStatus(ctx context.Context, accountID string, status Account
 	return err
 }
 
-// SetReceiveLimit sets the most the account takes in one payment from the SPI; 0 removes the limit.
+// 0 removes the limit.
 func (l *Ledger) SetReceiveLimit(ctx context.Context, accountID string, cents int64) error {
 	if cents < 0 {
 		return ErrInvalidAmount
@@ -143,7 +135,6 @@ func (l *Ledger) SetReceiveLimit(ctx context.Context, accountID string, cents in
 	return err
 }
 
-// notSpendable tells why an UPDATE that spends from an account changed nothing.
 func notSpendable(ctx context.Context, tx pgx.Tx, accountID string) error {
 	var status AccountStatus
 	if err := tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id = $1`, accountID).Scan(&status); err != nil {
@@ -173,7 +164,7 @@ const (
 	Debited  MovementKind = "DEBITED"
 )
 
-// Movement is money that moved in or out of an account; a reservation and its release are not movements.
+// A reservation and its release are not movements.
 type Movement struct {
 	ID          int64
 	Kind        MovementKind
@@ -182,7 +173,7 @@ type Movement struct {
 	CreatedAt   time.Time
 }
 
-// Movements returns the movements of an account, newest first, older than the movement with ID beforeID (0 for the newest).
+// beforeID 0 means the newest.
 func (l *Ledger) Movements(ctx context.Context, accountID string, beforeID int64, limit int) ([]Movement, error) {
 	rows, err := l.pool.Query(ctx, `
 		SELECT id, kind, amount_cents, reference, created_at FROM ledger_entries
@@ -208,7 +199,6 @@ func (l *Ledger) Movements(ctx context.Context, accountID string, beforeID int64
 	return out, mapAccountErr(rows.Err())
 }
 
-// Balance returns the balance of an account.
 func (l *Ledger) Balance(ctx context.Context, accountID string) (Balance, error) {
 	var b Balance
 	err := l.pool.QueryRow(ctx, `SELECT available_cents, reserved_cents FROM accounts WHERE id = $1`,
@@ -219,8 +209,7 @@ func (l *Ledger) Balance(ctx context.Context, accountID string) (Balance, error)
 	return b, err
 }
 
-// Credit adds money to the available balance: a deposit or a received payment. The reference (for a received payment,
-// its EndToEndId) makes it idempotent: crediting the same reference twice credits once.
+// Idempotent by reference.
 func (l *Ledger) Credit(ctx context.Context, accountID string, cents int64, reference string) error {
 	if cents <= 0 {
 		return ErrInvalidAmount
@@ -244,9 +233,7 @@ func (l *Ledger) Credit(ctx context.Context, accountID string, cents int64, refe
 	})
 }
 
-// Reserve holds money for a payment: it moves it from available to reserved. It returns ErrInsufficientFunds when the
-// available balance is lower, without changing anything. The reference (the payment's EndToEndId) makes it idempotent:
-// the same reference with the same account and amount returns the existing reservation and moves nothing.
+// Idempotent by reference: the same reference, account and amount returns the existing reservation.
 func (l *Ledger) Reserve(ctx context.Context, accountID string, cents int64, reference string) (Reservation, error) {
 	if cents <= 0 {
 		return Reservation{}, ErrInvalidAmount
@@ -296,7 +283,7 @@ func (l *Ledger) Reserve(ctx context.Context, accountID string, cents int64, ref
 	return r, nil
 }
 
-// Transfer debits one account and credits another in one transaction. The reference makes it idempotent.
+// Idempotent by reference.
 func (l *Ledger) Transfer(ctx context.Context, fromAccountID, toAccountID string, cents int64, reference string) error {
 	if cents <= 0 {
 		return ErrInvalidAmount
@@ -353,19 +340,16 @@ func (l *Ledger) Transfer(ctx context.Context, fromAccountID, toAccountID string
 	})
 }
 
-// Settle confirms a reservation: the reserved money leaves the account. Settling a reservation that is already settled
-// does nothing; a released one returns ErrReservationClosed.
+// Settling or releasing twice does nothing; the other way is ErrReservationClosed.
 func (l *Ledger) Settle(ctx context.Context, reservationID string) error {
 	return l.close(ctx, reservationID, Settled, kindSettle)
 }
 
-// Release gives a reservation back: the reserved money returns to the available balance (the payment was rejected or
-// timed out). Releasing one already released does nothing; a settled one returns ErrReservationClosed.
+// Settling or releasing twice does nothing; the other way is ErrReservationClosed.
 func (l *Ledger) Release(ctx context.Context, reservationID string) error {
 	return l.close(ctx, reservationID, Released, kindRelease)
 }
 
-// HeldBefore lists the reservations still held that were made before the given time, oldest first.
 func (l *Ledger) HeldBefore(ctx context.Context, before time.Time, limit int) ([]Reservation, error) {
 	rows, err := l.pool.Query(ctx, `
 		SELECT id, account_id, amount_cents, reference, status, created_at FROM reservations
@@ -411,7 +395,6 @@ func (l *Ledger) close(ctx context.Context, reservationID string, to Reservation
 			return err
 		}
 
-		// Settling takes the money out of the account; releasing puts it back into available.
 		back := int64(0)
 		if to == Released {
 			back = cents
@@ -436,8 +419,7 @@ func isCode(err error, code string) bool {
 	return errors.As(err, &pg) && pg.Code == code
 }
 
-// mapAccountErr turns "the account does not exist" (a foreign key violation, or an ID that is not a UUID) into
-// ErrAccountNotFound.
+// An account that does not exist shows up as a foreign key violation or a malformed UUID.
 func mapAccountErr(err error) error {
 	if isCode(err, "23503") || isCode(err, "22P02") {
 		return ErrAccountNotFound
