@@ -1,7 +1,6 @@
 // Command worker is the wallet's second process. It applies what the SPI stream says about the payments the wallet sent,
 // and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them. It also
-// answers the payments other banks send to the wallet and credits them when the SPI settles.
-// Returns received (pacs.004) are skipped for now.
+// answers the payments and returns other banks send to the wallet and credits them when the SPI settles.
 package main
 
 import (

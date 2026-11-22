@@ -25,14 +25,15 @@ func (s *Service) OnStatus(ctx context.Context, st pix.TxStatus) error {
 	if found && (sent.Type == TypePix || sent.Type == TypeReturn) {
 		return s.onOutboundStatus(ctx, sent, st)
 	}
-	if isReturn {
-		return nil
-	}
-	received, found, err := s.store.ByEndToEnd(ctx, st.EndToEndID, Inbound)
+	received, found, err := s.store.ByEndToEnd(ctx, key, Inbound)
 	if err != nil {
 		return err
 	}
-	if found && received.Type == TypePix {
+	wanted := TypePix
+	if isReturn {
+		wanted = TypeReturn
+	}
+	if found && received.Type == wanted {
 		return s.onInboundStatus(ctx, received, st)
 	}
 	return nil
@@ -132,8 +133,6 @@ func (s *Service) SendPending(ctx context.Context) (int, error) {
 
 // Handle applies one message of the SPI stream. A message that cannot be read can never succeed, so it is logged and
 // skipped; an error means the message should be delivered again.
-//
-// Returns received (pacs.004) are logged and skipped for now.
 func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 	kind, err := pix.MessageKind(m.Body)
 	if err != nil {
@@ -160,6 +159,17 @@ func (s *Service) Handle(ctx context.Context, m pix.Message) error {
 		}
 		for _, o := range orders {
 			if err := s.OnPaymentOrder(ctx, o); err != nil {
+				return err
+			}
+		}
+	case pix.KindPacs004:
+		returns, err := pix.ParsePacs004(m.Body)
+		if err != nil {
+			slog.Error("unreadable pacs.004, skipped", "resource", m.ResourceID, "err", err)
+			return nil
+		}
+		for _, r := range returns {
+			if err := s.OnReturnOrder(ctx, r); err != nil {
 				return err
 			}
 		}

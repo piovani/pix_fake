@@ -22,7 +22,7 @@ flowchart LR
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
 | 2 | SPI mock: instant payment settlement | **Done** (payments, returns, reports, rejections, timeout; closing test `make e2e`) |
-| 3 | Digital wallet and Pix integration layer | **In progress** (every flow is built; returns received and the real-endpoints check are pending) |
+| 3 | Digital wallet and Pix integration layer | **In progress** (every flow is built; the real-endpoints check is pending) |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | Mostly done: `make setup`, containers, CI workflow, DICT contract tests, failure simulation, control API; specification tracking pending |
 
@@ -252,13 +252,15 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     `pacs.004` is sent (`MD06`), and `ACSC` or `RJCT` from the SPI settles or releases it. Idempotent by `request_id`; two returns at
     once are serialized on the original payment so they never exceed it. A return's `end_to_end_id` is its `RtrId`. Tested on
     PostgreSQL and end to end (`make e2e`): partial returns until nothing is left, and the refusals.
-    Known gap: the return of a payment the wallet made (a `pacs.004` received) is skipped by the worker
+  - [x] Returns received (`pacs.004`): the bank that got a payment of the wallet gives money back. Answered `ACSP`, recorded as an
+    inbound `RETURN`, and credited on `ACCC` with the `RtrId` as reference (idempotent); refused with `DS04` or `AM09`. Tested on
+    PostgreSQL and end to end with the SPI mock's `inbound/returns`
   - [x] Statement and payment history. `GetStatement` lists the money that moved (`ledger.Movements`: `CREDIT`, `DEBIT` and `SETTLE`,
     not `RESERVE` or `RELEASE`), paged by the ledger entry id, each entry joined in the `payment` module with its payment and
     counterparty by the movement's reference; a deposit has neither. `ListPayments` is the history with status. Tested on PostgreSQL,
     including that the entries add up to the balance, and end to end
 - [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow,
-  the book transfer, received payments and returns sent (see above); still to do for returns received.
+  the book transfer, received payments, and returns sent and received (see above).
 - [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends
   on mock internals.
 

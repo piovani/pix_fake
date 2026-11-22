@@ -104,7 +104,10 @@ key of the wallet itself answers `Unimplemented` for now). `CreatePayment` reser
   after all of it was applied; one that fails is delivered again, and applying a status twice changes nothing.
 - **The timeout is the SPI's.** A payment nobody answers in 40 s comes back `RJCT` with `AB03`. The wallet never rejects on its own a
   payment the SPI may have taken, or the money could leave twice.
-- **Not handled yet by the worker:** a return of a payment the wallet made (`pacs.004` received) is logged and skipped.
+- **Returns of what the wallet paid.** A `pacs.004` from the bank that received a payment is answered `ACSP` and recorded as an inbound
+  `RETURN` payment, `PENDING`; the payer is credited when the SPI sends `ACCC`, with the `RtrId` as reference, so a repeated message
+  credits once. It is refused (`DS04`) when it matches no settled payment of the wallet or comes from another bank, and with `AM09` when
+  the returns add up to more than was paid.
 
 ## Statement
 

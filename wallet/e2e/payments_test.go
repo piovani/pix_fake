@@ -536,3 +536,54 @@ func TestStatement(t *testing.T) {
 	_, err = e.accounts.GetStatement(ctx(t), &walletv1.GetStatementRequest{AccountId: seed.AnaID, PageToken: "garbage"})
 	wantCode(t, "bad token", err, codes.InvalidArgument)
 }
+
+func TestAnotherBankReturnsAPaymentTheWalletMade(t *testing.T) {
+	e := setup(t)
+	if e.spi == "" {
+		t.Skip("WALLET_E2E_SPI_URL is not set")
+	}
+	before := e.balance(t)
+	r := e.resolve(t, carlosPhone)
+	p, err := e.pay(t, r.ResolutionId, 700, "lunch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := e.waitFinished(t, p.Id, 60*time.Second); done.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
+		t.Fatalf("finished: %v", done)
+	}
+
+	body := strings.NewReader(fmt.Sprintf(`{"end_to_end_id":%q,"amount":"3.00"}`, p.EndToEndId))
+	resp, err := http.Post(e.spi+"/mock/inbound/returns", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("the simulated bank could not return: status %d", resp.StatusCode)
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		res, err := e.payments.GetPayment(ctx(t), &walletv1.GetPaymentRequest{PaymentId: p.Id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Payment.ReturnedCents == 300 && e.balance(t).AvailableCents == before.AvailableCents-700+300 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the return never arrived: %v, balance %v -> %v", res.Payment, before, e.balance(t))
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	list, err := e.payments.ListPayments(ctx(t), &walletv1.ListPaymentsRequest{AccountId: seed.AnaID, PageSize: 5})
+	if err != nil || len(list.Payments) == 0 {
+		t.Fatalf("%v, %v", list, err)
+	}
+	got := list.Payments[0]
+	if got.Type != walletv1.PaymentType_PAYMENT_TYPE_RETURN || got.Direction != walletv1.PaymentDirection_PAYMENT_DIRECTION_INBOUND ||
+		got.OriginalPaymentId != p.Id || got.AmountCents != 300 || got.Status != walletv1.PaymentStatus_PAYMENT_STATUS_SETTLED {
+		t.Fatalf("the newest payment is not the return: %v", got)
+	}
+}
