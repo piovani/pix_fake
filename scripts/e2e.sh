@@ -11,6 +11,8 @@
 # of `make up` stays. The SPI runs with a 2-second payment timeout, to try the timeout scenario without a 40-second wait.
 # The PostgreSQL containers are left running; stop them with `make db-down` in mock/dict and mock/spi, and
 # `docker compose down` in wallet/.
+#
+# With WALLET_COVERDIR set, the wallet's binaries are built with -cover and write their coverage there (see coverage.sh).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,6 +26,8 @@ WORK="$(mktemp -d)"
 pids=()
 cleanup() {
   for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done
+  # a covered binary writes its counters when it exits, so wait for it
+  for pid in "${pids[@]:-}"; do wait "$pid" 2>/dev/null || true; done
   if [ -n "$SCHEMA" ]; then
     (cd "$ROOT/wallet" && docker compose exec -T postgres psql -q -U wallet -d wallet -c "DROP SCHEMA IF EXISTS $SCHEMA CASCADE") >/dev/null 2>&1 || true
   fi
@@ -49,8 +53,12 @@ echo "==> starting PostgreSQL"
 echo "==> building"
 (cd "$ROOT/mock/dict" && go build -o "$WORK/dict" ./cmd/dict && go build -o "$WORK/dict-seed" ./cmd/seed)
 (cd "$ROOT/mock/spi" && go build -o "$WORK/spi" ./cmd/spi && go build -o "$WORK/spi-seed" ./cmd/seed)
-(cd "$ROOT/wallet" && go build -o "$WORK/wallet-api" ./cmd/api && go build -o "$WORK/wallet-worker" ./cmd/worker && go build -o "$WORK/wallet-seed" ./cmd/seed \
-  && go build -o "$WORK/wallet-accounts" ./cmd/accounts && go build -o "$WORK/wallet-reports" ./cmd/reports)
+COVER=()
+if [ -n "${WALLET_COVERDIR:-}" ]; then
+  mkdir -p "$WALLET_COVERDIR"
+  COVER=(-cover "-coverpkg=./internal/...,./cmd/...")
+fi
+(cd "$ROOT/wallet" && for c in api worker seed accounts reports; do go build ${COVER[@]+"${COVER[@]}"} -o "$WORK/wallet-$c" "./cmd/$c" || exit 1; done)
 
 echo "==> loading the seed data"
 "$WORK/dict-seed"
@@ -74,6 +82,7 @@ if [ "$rc" -eq 0 ]; then
   SCHEMA="e2e_$(date +%s)_$$"
   (cd "$ROOT/wallet" && docker compose exec -T postgres psql -q -U wallet -d wallet -c "CREATE SCHEMA $SCHEMA")
   export WALLET_DATABASE_URL="postgres://wallet:wallet@localhost:5434/wallet?sslmode=disable&search_path=$SCHEMA"
+  if [ -n "${WALLET_COVERDIR:-}" ]; then export GOCOVERDIR="$WALLET_COVERDIR"; fi
   "$WORK/wallet-seed"
   WALLET_GRPC_ADDR=":$WALLET_PORT" DICT_BASE_URL="http://localhost:$DICT_PORT/api/v2" SPI_BASE_URL="http://localhost:$SPI_PORT/api/v1" \
     "$WORK/wallet-api" >"$WORK/wallet.log" 2>&1 &

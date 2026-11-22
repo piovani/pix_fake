@@ -2,7 +2,7 @@ MODULES := mock/dict mock/spi e2e wallet
 DICT_URL ?= http://localhost:8080
 SPI_URL  ?= http://localhost:8081
 
-.PHONY: up test test-integration lint e2e setup down reset logs status check
+.PHONY: up test test-integration lint e2e coverage setup down reset logs status check
 
 up: setup ## start everything: both mocks (make setup) and the wallet's own database
 	$(MAKE) -C wallet up
@@ -18,6 +18,9 @@ lint: ## gofmt and go vet on every module
 
 e2e: ## the closing test of the mocks and the wallet's end-to-end tests, on their own PostgreSQL (needs Docker; stop make setup first), see scripts/e2e.sh
 	./scripts/e2e.sh
+
+coverage: ## coverage of the wallet: end to end and unit tests, each and merged; report in .coverage/ (needs what e2e needs), see scripts/coverage.sh
+	./scripts/coverage.sh
 
 setup: ## build and start PostgreSQL and both mocks, with the seed data loaded (needs Docker)
 	docker compose up -d --build --wait

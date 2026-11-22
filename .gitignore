@@ -16,6 +16,7 @@
 coverage.*
 !coverage.go
 *.coverprofile
+/.coverage/
 profile.cov
 
 # Dependency directories (remove the comment below to include it)
