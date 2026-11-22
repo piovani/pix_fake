@@ -448,3 +448,47 @@ func TestMovementsAreTheMoneyThatMoved(t *testing.T) {
 		t.Errorf("malformed account: %v", err)
 	}
 }
+
+func TestABlockedOrClosedAccountCannotSpendOrBePaid(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	from := account(t, l, "101", 1000)
+	to := account(t, l, "102", 0)
+
+	for _, st := range []ledger.AccountStatus{ledger.Blocked, ledger.Closed} {
+		if err := l.SetStatus(ctx, from, st); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.Reserve(ctx, from, 100, "r-"+string(st)); !errors.Is(err, ledger.ErrAccountNotActive) {
+			t.Errorf("%s reserve: %v", st, err)
+		}
+		if err := l.Transfer(ctx, from, to, 100, "t-"+string(st)); !errors.Is(err, ledger.ErrAccountNotActive) {
+			t.Errorf("%s transfer out: %v", st, err)
+		}
+		if a, err := l.Account(ctx, from); err != nil || a.Status != st {
+			t.Errorf("%s: %+v, %v", st, a, err)
+		}
+	}
+	if b := balance(t, l, from); b.AvailableCents != 1000 || b.ReservedCents != 0 {
+		t.Fatalf("nothing moved: %+v", b)
+	}
+
+	if err := l.SetStatus(ctx, from, ledger.Active); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetStatus(ctx, to, ledger.Blocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Transfer(ctx, from, to, 100, "t-in"); !errors.Is(err, ledger.ErrAccountNotActive) {
+		t.Errorf("transfer into a blocked account: %v", err)
+	}
+	if b := balance(t, l, from); b.AvailableCents != 1000 {
+		t.Fatalf("the failed transfer must not debit: %+v", b)
+	}
+	if err := l.Credit(ctx, to, 50, "deposit-blocked"); err != nil {
+		t.Errorf("money that the SPI settled must still be credited: %v", err)
+	}
+	if err := l.SetStatus(ctx, "0a1b2c3d-9999-4000-8000-000000000009", ledger.Closed); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Errorf("unknown account: %v", err)
+	}
+}

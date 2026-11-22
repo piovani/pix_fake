@@ -2,10 +2,12 @@ package payment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"pixfake/wallet/internal/ledger"
 	"pixfake/wallet/internal/pix"
 )
 
@@ -224,5 +226,40 @@ func TestHandleAnswersAPaymentOrderFromTheStream(t *testing.T) {
 	}
 	if len(f.received(t)) != 1 {
 		t.Errorf("recorded %d payments", len(f.received(t)))
+	}
+}
+
+func TestPaymentsToABlockedOrClosedAccountAreRefused(t *testing.T) {
+	for status, reason := range map[ledger.AccountStatus]string{ledger.Blocked: "AC06", ledger.Closed: "AC07"} {
+		t.Run(string(status), func(t *testing.T) {
+			f := newFixture(t)
+			if err := f.ledger.SetStatus(context.Background(), anaID, status); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.svc.OnPaymentOrder(context.Background(), anaOrder()); err != nil {
+				t.Fatal(err)
+			}
+			if a := f.lastAnswer(t); a.Status != pix.StatusRejected || a.ReasonCode != reason {
+				t.Fatalf("answer: %+v", a)
+			}
+			if got := f.received(t); len(got) != 0 {
+				t.Fatalf("a refused payment is not recorded: %+v", got)
+			}
+		})
+	}
+}
+
+func TestABlockedAccountCannotPay(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	r := f.resolve(t)
+	if err := f.ledger.SetStatus(ctx, anaID, ledger.Blocked); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Pay(ctx, PayInput{ResolutionID: r.ID, AmountCents: 100}); !errors.Is(err, ledger.ErrAccountNotActive) {
+		t.Fatalf("got %v", err)
+	}
+	if f.bank.sent() != 0 {
+		t.Fatal("nothing may go to the SPI")
 	}
 }

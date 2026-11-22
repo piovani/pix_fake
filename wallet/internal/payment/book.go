@@ -45,7 +45,7 @@ func (s *Service) completeBookTransfer(ctx context.Context, p Payment) (Payment,
 	}
 
 	err = s.accounts.Transfer(ctx, p.AccountID, res.PayeeAccountID, p.AmountCents, p.EndToEndID)
-	if errors.Is(err, ledger.ErrInsufficientFunds) {
+	if errors.Is(err, ledger.ErrInsufficientFunds) || errors.Is(err, ledger.ErrAccountNotActive) {
 		// nothing moved: forget the attempt, so the resolution can be paid after a deposit
 		if derr := s.store.Discard(ctx, p.ID); derr != nil {
 			return p, derr
@@ -82,7 +82,7 @@ func (s *Service) CompleteBookTransfers(ctx context.Context) (int, error) {
 	done := 0
 	for _, p := range pending {
 		switch _, err := s.completeBookTransfer(ctx, p); {
-		case errors.Is(err, ledger.ErrInsufficientFunds):
+		case errors.Is(err, ledger.ErrInsufficientFunds), errors.Is(err, ledger.ErrAccountNotActive):
 			slog.Warn("a book transfer that stopped halfway cannot be made any more; forgotten", "payment", p.ID)
 		case err != nil:
 			return done, err

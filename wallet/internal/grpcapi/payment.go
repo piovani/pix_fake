@@ -105,6 +105,8 @@ func paymentError(op string, err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ledger.ErrInsufficientFunds):
 		return status.Error(codes.FailedPrecondition, "insufficient funds")
+	case errors.Is(err, ledger.ErrAccountNotActive):
+		return status.Error(codes.FailedPrecondition, "the account is blocked or closed")
 	case errors.Is(err, pix.ErrRateLimited):
 		return status.Error(codes.ResourceExhausted, "the DICT is limiting requests, try again later")
 	case errors.Is(err, pix.ErrUnavailable):

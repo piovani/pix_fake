@@ -246,7 +246,7 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     it, `RJCT` from the SPI rejects it. Delivered again, it is answered again and recorded once; an answer that cannot be sent leaves
     the batch unacknowledged, so it is retried. Tested on PostgreSQL and end to end (`make e2e`, a simulated bank pays through the
     SPI mock's control API): credited, and refused with each of the three reasons.
-    Known gaps: no account status or limits, so `AC06`, `AC07` and `AM02` are never answered
+    Account status (`ACTIVE`, `BLOCKED`, `CLOSED`) answers `AC06` and `AC07`; a blocked or closed account cannot pay out. Known gap: no limits, so `AM02` is never answered
   - [x] Return a received payment (`ReturnPayment`). Only a payment received through the SPI, settled, at most 90 days old, up to
     what is left (`returned_cents`, which counts returns in flight so a rejected one frees its amount). The amount is reserved, a
     `pacs.004` is sent (`MD06`), and `ACSC` or `RJCT` from the SPI settles or releases it. Idempotent by `request_id`; two returns at

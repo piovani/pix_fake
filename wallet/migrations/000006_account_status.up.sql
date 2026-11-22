@@ -1,0 +1,2 @@
+ALTER TABLE accounts
+    ADD COLUMN status text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'BLOCKED', 'CLOSED'));

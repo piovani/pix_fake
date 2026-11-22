@@ -24,6 +24,7 @@ var (
 	ErrReservationClosed   = errors.New("ledger: reservation already closed the other way")
 	ErrReferenceConflict   = errors.New("ledger: reference already used with a different account or amount")
 	ErrSameAccount         = errors.New("ledger: a transfer needs two different accounts")
+	ErrAccountNotActive    = errors.New("ledger: the account is blocked or closed")
 )
 
 // Account is an account of the wallet. Branch and Number are what the DICT holds for its keys, so the wallet can
@@ -34,9 +35,20 @@ type Account struct {
 	Number     string
 	HolderName string
 	TaxID      string
-	Type       string    // CACC (the default), SVGS or TRAN
-	OpenedAt   time.Time // set when read
+	Type       string        // CACC (the default), SVGS or TRAN
+	Status     AccountStatus // Active when opened
+	OpenedAt   time.Time     // set when read
 }
+
+// AccountStatus says whether an account can move money: a blocked or closed one cannot spend or be paid into by a transfer,
+// and the SPI is told it cannot receive.
+type AccountStatus string
+
+const (
+	Active  AccountStatus = "ACTIVE"
+	Blocked AccountStatus = "BLOCKED"
+	Closed  AccountStatus = "CLOSED"
+)
 
 // Balance is the money of an account, in centavos. Available can be spent; Reserved is held by payments in flight.
 type Balance struct {
@@ -84,8 +96,8 @@ func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 	err := l.pool.QueryRow(ctx, `
 		INSERT INTO accounts (id, branch, number, holder_name, tax_id, account_type)
 		VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, COALESCE(NULLIF($6, ''), 'CACC'))
-		RETURNING id, account_type, created_at`,
-		strings.ToLower(a.ID), a.Branch, a.Number, a.HolderName, a.TaxID, a.Type).Scan(&a.ID, &a.Type, &a.OpenedAt)
+		RETURNING id, account_type, status, created_at`,
+		strings.ToLower(a.ID), a.Branch, a.Number, a.HolderName, a.TaxID, a.Type).Scan(&a.ID, &a.Type, &a.Status, &a.OpenedAt)
 	if isCode(err, "23505") {
 		return Account{}, ErrAccountExists
 	}
@@ -96,19 +108,39 @@ func (l *Ledger) Open(ctx context.Context, a Account) (Account, error) {
 func (l *Ledger) Account(ctx context.Context, accountID string) (Account, error) {
 	var a Account
 	err := l.pool.QueryRow(ctx, `
-		SELECT id, branch, number, holder_name, tax_id, account_type, created_at FROM accounts WHERE id = $1`,
-		strings.ToLower(accountID)).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.OpenedAt)
+		SELECT id, branch, number, holder_name, tax_id, account_type, status, created_at FROM accounts WHERE id = $1`,
+		strings.ToLower(accountID)).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.Status, &a.OpenedAt)
 	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
 		return Account{}, ErrAccountNotFound
 	}
 	return a, err
 }
 
+func (l *Ledger) SetStatus(ctx context.Context, accountID string, status AccountStatus) error {
+	tag, err := l.pool.Exec(ctx, `UPDATE accounts SET status = $2 WHERE id = $1`, strings.ToLower(accountID), status)
+	if isCode(err, "22P02") || (err == nil && tag.RowsAffected() == 0) {
+		return ErrAccountNotFound
+	}
+	return err
+}
+
+// notSpendable tells why an UPDATE that spends from an account changed nothing.
+func notSpendable(ctx context.Context, tx pgx.Tx, accountID string) error {
+	var status AccountStatus
+	if err := tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id = $1`, accountID).Scan(&status); err != nil {
+		return err
+	}
+	if status != Active {
+		return ErrAccountNotActive
+	}
+	return ErrInsufficientFunds
+}
+
 func (l *Ledger) AccountByNumber(ctx context.Context, branch, number string) (Account, error) {
 	var a Account
 	err := l.pool.QueryRow(ctx, `
-		SELECT id, branch, number, holder_name, tax_id, account_type, created_at FROM accounts WHERE branch = $1 AND number = $2`,
-		branch, number).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.OpenedAt)
+		SELECT id, branch, number, holder_name, tax_id, account_type, status, created_at FROM accounts WHERE branch = $1 AND number = $2`,
+		branch, number).Scan(&a.ID, &a.Branch, &a.Number, &a.HolderName, &a.TaxID, &a.Type, &a.Status, &a.OpenedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, ErrAccountNotFound
 	}
@@ -230,12 +262,12 @@ func (l *Ledger) Reserve(ctx context.Context, accountID string, cents int64, ref
 		// Atomic and conditional: two concurrent reservations can never spend the same money.
 		tag, err := tx.Exec(ctx, `
 			UPDATE accounts SET available_cents = available_cents - $1, reserved_cents = reserved_cents + $1
-			WHERE id = $2 AND available_cents >= $1`, cents, accountID)
+			WHERE id = $2 AND available_cents >= $1 AND status = 'ACTIVE'`, cents, accountID)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return ErrInsufficientFunds // rolls back the reservation row too
+			return notSpendable(ctx, tx, accountID) // rolls back the reservation row too
 		}
 		return addEntry(ctx, tx, accountID, kindReserve, cents, reference)
 	})
@@ -277,12 +309,22 @@ func (l *Ledger) Transfer(ctx context.Context, fromAccountID, toAccountID string
 		}
 
 		// the condition is what stops two transfers spending the same money
-		tag, err = tx.Exec(ctx, `UPDATE accounts SET available_cents = available_cents - $1 WHERE id = $2 AND available_cents >= $1`, cents, from)
+		tag, err = tx.Exec(ctx, `UPDATE accounts SET available_cents = available_cents - $1 WHERE id = $2 AND available_cents >= $1 AND status = 'ACTIVE'`, cents, from)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return ErrInsufficientFunds // rolls back the entry too
+			return notSpendable(ctx, tx, from) // rolls back the entry too
+		}
+		var payee AccountStatus
+		if err := tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id = $1`, to).Scan(&payee); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrAccountNotFound
+			}
+			return mapAccountErr(err)
+		}
+		if payee != Active {
+			return ErrAccountNotActive
 		}
 		if err := addEntry(ctx, tx, to, kindCredit, cents, reference); err != nil {
 			return mapAccountErr(err)

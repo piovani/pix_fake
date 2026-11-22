@@ -40,6 +40,10 @@ func (s *Service) receiverOf(ctx context.Context, o pix.PaymentOrder) (ledger.Ac
 		return ledger.Account{}, "AC03", nil
 	case err != nil:
 		return ledger.Account{}, "", err
+	case acct.Status == ledger.Closed:
+		return acct, "AC07", nil
+	case acct.Status == ledger.Blocked:
+		return acct, "AC06", nil
 	case acct.TaxID != o.Receiver.TaxID:
 		return acct, "BE01", nil
 	case acct.Type != string(o.Receiver.AccountType):
