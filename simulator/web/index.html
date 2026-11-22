@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pix simulator</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1c2230; --muted: #667085; --line: #e3e6ec;
+    --accent: #0f766e; --accent-soft: #e6f4f2; --ok: #15803d; --warn: #b45309; --bad: #b91c1c; --info: #1d4ed8;
+    --code: #f1f3f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1218; --panel: #171b23; --text: #e6e8ee; --muted: #98a2b3; --line: #2a303c;
+      --accent: #2dd4bf; --accent-soft: #12302d; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --info: #93c5fd; --code: #1f2430; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.up { color: var(--ok); border-color: currentColor; } .pill.down { color: var(--bad); border-color: currentColor; }
+  header .right { margin-left: auto; display: flex; gap: 8px; }
+  nav { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button { border: 0; background: none; color: var(--muted); padding: 10px 12px; cursor: pointer; font: inherit; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; padding: 16px 20px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  section.tab { display: none; } section.tab.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 14px; margin: 0 0 10px; } .card h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); font-weight: 600; }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  button.btn { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button.btn { color: #062b27; } }
+  button.btn.ghost { background: transparent; color: var(--accent); }
+  button.btn.danger { border-color: var(--bad); background: transparent; color: var(--bad); }
+  button.btn.small { padding: 2px 8px; font-size: 12px; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .acct { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .acct .bal { font-size: 20px; font-weight: 600; } .acct .sub { color: var(--muted); font-size: 12px; }
+  .st { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 4px; background: var(--code); white-space: nowrap; }
+  .st.SETTLED, .st.ACCEPTED, .st.ACPT { color: var(--ok); } .st.REJECTED, .st.RJCT { color: var(--bad); }
+  .st.PENDING { color: var(--warn); } .st.RETURN { color: var(--info); }
+  aside .card { position: sticky; top: 100px; max-height: calc(100vh - 120px); overflow: auto; }
+  .event { border-left: 3px solid var(--line); padding: 6px 10px; margin: 0 0 10px; }
+  .event.ok { border-color: var(--ok); } .event.bad { border-color: var(--bad); } .event.wait { border-color: var(--warn); }
+  .event .t { color: var(--muted); font-size: 11px; } .event .title { font-weight: 600; }
+  .links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; }
+  a { color: var(--accent); }
+  .steps { list-style: none; padding: 0; margin: 6px 0 0; font-size: 12.5px; }
+  .steps li { padding: 2px 0; } .steps li::before { content: "○ "; color: var(--muted); }
+  .steps li.done::before { content: "● "; color: var(--ok); } .steps li.fail::before { content: "● "; color: var(--bad); }
+  .steps li.now::before { content: "◐ "; color: var(--warn); }
+  pre.xml { background: var(--code); padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; font-size: 11.5px; white-space: pre-wrap; }
+  .err { color: var(--bad); font-size: 12.5px; margin-top: 6px; white-space: pre-wrap; }
+  iframe { width: 100%; height: calc(100vh - 170px); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .preset { font-size: 12px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
+  .preset:hover { border-color: var(--accent); }
+  .preset .x { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pix simulator</h1>
+  <div class="pills" id="status"></div>
+  <div class="right">
+    <a class="btn ghost" id="grafana-link" target="_blank" style="text-decoration:none;padding:6px 12px;border:1px solid var(--accent);border-radius:6px">Open Grafana</a>
+    <button class="btn danger" onclick="resetMocks(this)">Reset mocks</button>
+  </div>
+</header>
+<nav id="tabs"></nav>
+<div class="layout">
+<main>
+
+<section class="tab" data-tab="overview" data-title="Overview">
+  <div class="card">
+    <h2>Wallet accounts</h2>
+    <p class="hint">Balances from the wallet's gRPC API. Reserved is money held by payments in flight.</p>
+    <div class="accounts" id="accounts"></div>
+  </div>
+  <div class="card">
+    <h2>Payments of <select id="ov-account" onchange="loadPayments()"></select></h2>
+    <table><thead><tr><th>When</th><th>Type</th><th>Status</th><th>Amount</th><th>Counterparty</th><th>EndToEndId</th><th></th></tr></thead><tbody id="payments"></tbody></table>
+  </div>
+</section>
+
+<section class="tab" data-tab="pay" data-title="Pay from the wallet">
+  <div class="card">
+    <h2>A wallet customer pays a Pix key</h2>
+    <p class="hint">ResolveKey (the DICT, or the wallet's own records for a book transfer) then CreatePayment. The SPI test accounts answer each in a fixed way.</p>
+    <div class="presets" id="pay-presets"></div>
+    <div class="grid">
+      <label>Payer<select id="pay-account"></select></label>
+      <label>Key<input id="pay-key" placeholder="+5521999990003"></label>
+      <label>Amount (R$)<input id="pay-amount" value="10.50"></label>
+      <label>Message<input id="pay-message" value="simulated"></label>
+    </div>
+    <div class="row"><button class="btn" onclick="pay(this)">Pay</button><span class="hint" id="pay-expect"></span></div>
+    <div class="err" id="pay-err"></div>
+  </div>
+</section>
+
+<section class="tab" data-tab="receive" data-title="Pay from the SPI">
+  <div class="card">
+    <h2>A simulated bank pays a wallet account</h2>
+    <p class="hint">Through the SPI mock's control API: Banco Alfa or Beta sends a pacs.008, the SPI forwards it to the wallet's stream, the worker answers and is credited on ACCC.</p>
+    <div class="presets" id="recv-presets"></div>
+    <div class="grid">
+      <label>From<select id="recv-from"><option value="99000002">Banco Alfa (99000002)</option><option value="99000003">Banco Beta (99000003)</option></select></label>
+      <label>To account<select id="recv-account"></select></label>
+      <label>Amount (R$)<input id="recv-amount" value="25.00"></label>
+      <label>Key used (optional)<input id="recv-key" placeholder="ana.souza@example.com"></label>
+      <label>Receiver tax id (optional)<input id="recv-tax" placeholder="the holder's"></label>
+      <label>Account type (optional)<select id="recv-type"><option value="">the account's</option><option>CACC</option><option>SVGS</option><option>TRAN</option></select></label>
+    </div>
+    <div class="row"><button class="btn" onclick="receive(this)">Send payment</button><span class="hint" id="recv-expect"></span></div>
+    <div class="err" id="recv-err"></div>
+  </div>
+</section>
+
+<section class="tab" data-tab="returns" data-title="Returns">
+  <div class="card">
+    <h2>The wallet returns a payment it received</h2>
+    <p class="hint">ReturnPayment: a pacs.004 from the wallet. Only settled payments received through the SPI, up to what is left.</p>
+    <label style="max-width:260px">Account<select id="ret-account" onchange="loadReturnables()"></select></label>
+    <table><thead><tr><th>Received</th><th>From</th><th>Amount</th><th>Returned</th><th></th></tr></thead><tbody id="ret-in"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>A bank returns a payment the wallet made</h2>
+    <p class="hint">The receiving bank sends a pacs.004 back; the wallet answers it and credits the payer on ACCC.</p>
+    <table><thead><tr><th>Paid</th><th>To</th><th>Amount</th><th>Returned</th><th></th></tr></thead><tbody id="ret-out"></tbody></table>
+  </div>
+</section>
+
+<section class="tab" data-tab="keys" data-title="Keys">
+  <div class="card">
+    <h2>Wallet keys</h2>
+    <p class="hint">RegisterKey registers the key in the DICT and keeps the wallet's copy (so it recognizes book transfers).</p>
+    <div class="grid">
+      <label>Account<select id="wk-account" onchange="loadWalletKeys()"></select></label>
+      <label>Type<select id="wk-type"><option>EMAIL</option><option>PHONE</option><option>CPF</option><option>CNPJ</option><option>EVP</option></select></label>
+      <label>Key<input id="wk-key" placeholder="new.key@example.com (empty for EVP)"></label>
+    </div>
+    <div class="row"><button class="btn" onclick="registerWalletKey(this)">Register in the wallet</button></div>
+    <div class="err" id="wk-err"></div>
+    <table><thead><tr><th>Key</th><th>Type</th><th>Since</th><th></th></tr></thead><tbody id="wk-list"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>DICT keys of other banks</h2>
+    <p class="hint">createEntry as Banco Alfa or Beta (X-Participant-ISPB), for one of their accounts. The wallet can then pay that key; the account decides how the SPI answers.</p>
+    <div class="grid">
+      <label>Account<select id="dk-account"></select></label>
+      <label>Type<select id="dk-type"><option>EMAIL</option><option>PHONE</option><option>CPF</option><option>CNPJ</option><option>EVP</option></select></label>
+      <label>Key<input id="dk-key" placeholder="someone@bank.example (empty for EVP)"></label>
+    </div>
+    <div class="row"><button class="btn" onclick="createDictKey(this)">Register in the DICT</button>
+      <label style="flex-direction:row;align-items:center;gap:6px;margin-left:auto">Show <select id="dk-filter" onchange="loadDictKeys()"><option value="">all participants</option><option>99000001</option><option>99000002</option><option>99000003</option></select></label></div>
+    <div class="err" id="dk-err"></div>
+    <table><thead><tr><th>Key</th><th>Type</th><th>Participant</th><th>Account</th><th>Owner</th><th></th></tr></thead><tbody id="dk-list"></tbody></table>
+  </div>
+</section>
+
+<section class="tab" data-tab="ops" data-title="Accounts &amp; ops">
+  <div class="card">
+    <h2>Wallet account status and limit</h2>
+    <p class="hint">Runs the wallet's cmd/accounts. A blocked account answers AC06, a closed one AC07, a payment above the limit AM02; neither can pay out.</p>
+    <table><thead><tr><th>Account</th><th>Status</th><th>Receive limit (R$)</th></tr></thead><tbody id="ops-accounts"></tbody></table>
+    <div class="err" id="ops-err"></div>
+  </div>
+  <div class="card">
+    <h2>Refused book-transfer reports</h2>
+    <p class="hint">cmd/reports: the trck.002 reports the SPI refused for good. Resend puts one back in line for the worker.</p>
+    <div class="row"><button class="btn ghost" onclick="loadReports(this)">Load</button></div>
+    <table><thead><tr><th>Payment</th><th>EndToEndId</th><th>Reason</th><th>Amount</th><th></th></tr></thead><tbody id="reports"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>SPI test accounts</h2>
+    <table><thead><tr><th>Participant</th><th>Account</th><th>Holder</th><th>Status</th><th>How it answers</th></tr></thead><tbody id="spi-accounts"></tbody></table>
+  </div>
+</section>
+
+<section class="tab" data-tab="faults" data-title="Faults">
+  <div class="card">
+    <h2>Break the mocks on purpose</h2>
+    <p class="hint">429 or 503 with Retry-After, or a slow answer, for some requests or until cleared. /mock and /healthz are never affected.</p>
+    <div class="grid">
+      <label>Target<select id="f-target"><option value="spi">SPI</option><option value="dict">DICT</option></select></label>
+      <label>Status<select id="f-status"><option value="503">503 unavailable</option><option value="429">429 too many requests</option><option value="0">none (delay only)</option></select></label>
+      <label>Retry-After (s)<input id="f-retry" value="2"></label>
+      <label>Delay (ms)<input id="f-delay" value="0"></label>
+      <label>Count (empty = until cleared)<input id="f-count" value="3"></label>
+      <label>Path prefix<input id="f-path" placeholder="/api/v1/in/"></label>
+    </div>
+    <div class="row"><button class="btn" onclick="addFault(this)">Add fault</button><button class="btn ghost" onclick="clearFaults(this)">Clear all</button></div>
+    <div class="err" id="f-err"></div>
+    <h3>Active</h3><pre class="xml" id="f-list">-</pre>
+  </div>
+</section>
+
+<section class="tab" data-tab="messages" data-title="SPI messages">
+  <div class="card">
+    <h2>What the SPI exchanged with the wallet</h2>
+    <p class="hint">The ISO 20022 messages, newest first: in = sent by the wallet, out = delivered to it.</p>
+    <div class="row"><button class="btn ghost" onclick="loadMessages(this)">Refresh</button>
+      <label style="flex-direction:row;align-items:center;gap:6px">Participant <select id="m-part"><option>99000001</option><option>99000002</option><option>99000003</option></select></label></div>
+    <table><thead><tr><th>When</th><th>Dir</th><th>Kind</th><th>Resource</th><th></th></tr></thead><tbody id="messages"></tbody></table>
+    <pre class="xml" id="m-xml" hidden></pre>
+  </div>
+</section>
+
+<section class="tab" data-tab="grafana" data-title="Dashboard">
+  <iframe id="dash" loading="lazy"></iframe>
+</section>
+
+</main>
+<aside>
+  <div class="card">
+    <h2>Activity</h2>
+    <p class="hint">Every action, followed until it is final on both sides. Links open its traces and logs in Grafana; a trace can take up to half a minute to show up in a search.</p>
+    <div id="feed"></div>
+  </div>
+</aside>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let CFG = { grafana: "http://localhost:3000", accounts: [] };
+const money = (c) => (c == null ? "-" : "R$ " + (Number(c) / 100).toFixed(2).replace(".", ","));
+const cents = (s) => Math.round(parseFloat(String(s).replace(",", ".")) * 100);
+const short = (s) => (s || "").replace("PAYMENT_STATUS_", "").replace("PAYMENT_TYPE_", "").replace("PAYMENT_DIRECTION_", "").replace("KEY_TYPE_", "");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const when = (t) => (t ? new Date(t).toLocaleTimeString() : "");
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const trace = res.headers.get("X-Trace-Id");
+  let data = null;
+  try { data = await res.json(); } catch { }
+  if (!res.ok) { const e = new Error((data && data.error) || res.status + " " + res.statusText); e.trace = trace; e.data = data; throw e; }
+  return { data, trace };
+}
+async function busy(btn, fn) { if (btn) btn.disabled = true; try { return await fn(); } finally { if (btn) btn.disabled = false; } }
+
+// --- Grafana links ---
+function explore(ds, query, extra) {
+  const q = Object.assign({ refId: "A", datasource: { type: ds, uid: ds } }, query);
+  const panes = { a: { datasource: ds, queries: [q], range: { from: "now-1h", to: "now" } } };
+  return CFG.grafana + "/explore?schemaVersion=1&orgId=1&panes=" + encodeURIComponent(JSON.stringify(panes));
+}
+const traceURL = (id) => explore("tempo", { queryType: "traceql", query: id });
+const paymentTracesURL = (e2e) => explore("tempo", { queryType: "traceql", query: `{ span.pix.end_to_end_id = "${e2e}" || span.pix.return_id = "${e2e}" }`, limit: 50, tableType: "traces" });
+const logsURL = (id) => explore("loki", { expr: `{service_name=~".+"} | trace_id="${id}"` });
+function links(trace, e2e) {
+  let h = "";
+  if (trace) h += `<a target="_blank" href="${traceURL(trace)}">trace of this action</a><a target="_blank" href="${logsURL(trace)}">its logs</a>`;
+  if (e2e) h += `<a target="_blank" href="${paymentTracesURL(e2e)}">every trace of the payment</a>`;
+  return `<div class="links">${h}</div>`;
+}
+
+// --- feed and trackers ---
+function event(kind, title, body, trace, e2e) {
+  const el = document.createElement("div");
+  el.className = "event " + kind;
+  el.innerHTML = `<div class="t">${new Date().toLocaleTimeString()}</div><div class="title">${esc(title)}</div><div class="body">${body || ""}</div>${links(trace, e2e)}`;
+  $("feed").prepend(el);
+  return el;
+}
+
+const FINAL = (s) => s && !/PENDING/.test(s);
+function track(el, e2e, trace, ids) {
+  const started = Date.now();
+  const tick = async () => {
+    let d;
+    try { d = (await api("GET", `/api/track/${encodeURIComponent(e2e)}?ids=${(ids || []).join(",")}`)).data; } catch { return setTimeout(tick, 2000); }
+    const wallet = d.wallet || [], spi = d.spi;
+    const steps = [];
+    for (const p of wallet) {
+      const st = short(p.status);
+      steps.push([`wallet ${short(p.direction).toLowerCase()} ${short(p.type).toLowerCase()} <span class="st ${st}">${st}</span>${p.reject_code ? " " + esc(p.reject_code) + " " + esc(p.reject_reason || "") : ""}`, st === "SETTLED" ? "done" : st === "REJECTED" ? "fail" : "now"]);
+    }
+    if (spi) steps.push([`SPI ${esc(spi.kind.toLowerCase())} <span class="st ${spi.status}">${spi.status}</span>${spi.reason_code ? " " + esc(spi.reason_code) + " " + esc(spi.reason_detail || "") : ""}`, spi.status === "SETTLED" ? "done" : spi.status === "REJECTED" ? "fail" : "now"]);
+    if (!wallet.length && !spi) steps.push(["waiting for the first side", "now"]);
+    el.querySelector(".body").innerHTML = `<div class="mono">${esc(e2e)}</div><ul class="steps">${steps.map(([t, c]) => `<li class="${c}">${t}</li>`).join("")}</ul>`;
+    const done = wallet.length && wallet.every((p) => FINAL(p.status)) && (!spi || FINAL(spi.status));
+    const failed = wallet.some((p) => /REJECTED/.test(p.status)) || (spi && spi.status === "REJECTED");
+    el.className = "event " + (done ? (failed ? "bad" : "ok") : "wait");
+    if (!done && Date.now() - started < 120000) setTimeout(tick, 1200);
+    else refresh();
+  };
+  tick();
+}
+
+// --- data ---
+async function loadStatus() {
+  try {
+    const { data } = await api("GET", "/api/status");
+    $("status").innerHTML = Object.entries({ wallet: "Wallet API", dict: "DICT", spi: "SPI", grafana: "Grafana" })
+      .map(([k, n]) => `<span class="pill ${data[k] ? "up" : "down"}">${n}</span>`).join("");
+  } catch { }
+}
+
+async function loadAccounts() {
+  const { data } = await api("GET", "/api/wallet/accounts");
+  $("accounts").innerHTML = data.map((a) => `<div class="acct"><div class="sub">${esc(a.Name)} · ${a.Branch}/${a.Number}</div>
+    <div class="bal">${a.Error ? '<span class="err">' + esc(a.Error) + "</span>" : money(a.Available)}</div>
+    <div class="sub">reserved ${money(a.Reserved)}</div></div>`).join("");
+}
+
+async function loadPayments() {
+  const id = $("ov-account").value;
+  const { data } = await api("GET", `/api/wallet/accounts/${id}/payments`);
+  $("payments").innerHTML = data.map((p) => {
+    const st = short(p.status);
+    return `<tr><td>${when(p.created_at)}</td><td>${short(p.direction).toLowerCase()} ${short(p.type).toLowerCase()}</td>
+    <td><span class="st ${st}">${st}</span> ${esc(p.reject_code || "")}</td><td>${money(p.amount_cents)}</td>
+    <td>${esc(p.counterparty?.name || p.counterparty?.participant || "")}</td><td class="mono">${esc(p.end_to_end_id)}</td>
+    <td><a target="_blank" href="${paymentTracesURL(p.end_to_end_id)}">traces</a></td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="hint">no payments yet</td></tr>`;
+}
+
+async function loadReturnables() {
+  const id = $("ret-account").value;
+  const { data } = await api("GET", `/api/wallet/accounts/${id}/payments`);
+  const row = (p, act) => `<tr><td>${when(p.created_at)}</td><td>${esc(p.counterparty?.name || p.counterparty?.participant || "")}</td>
+    <td>${money(p.amount_cents)}</td><td>${money(p.returned_cents || 0)}</td>
+    <td><input style="width:80px" id="r-${p.id}" value="${((p.amount_cents - (p.returned_cents || 0)) / 100).toFixed(2)}"> ${act}</td></tr>`;
+  const settledPix = (p) => p.status === "PAYMENT_STATUS_SETTLED" && p.type === "PAYMENT_TYPE_PIX";
+  $("ret-in").innerHTML = data.filter((p) => settledPix(p) && p.direction === "PAYMENT_DIRECTION_INBOUND")
+    .map((p) => row(p, `<button class="btn small" onclick="walletReturn('${p.id}', this)">Return</button>`)).join("") || `<tr><td colspan="5" class="hint">nothing received to return</td></tr>`;
+  $("ret-out").innerHTML = data.filter((p) => settledPix(p) && p.direction === "PAYMENT_DIRECTION_OUTBOUND")
+    .map((p) => row(p, `<button class="btn small" onclick="bankReturn('${p.end_to_end_id}', '${p.id}', this)">Bank returns</button>`)).join("") || `<tr><td colspan="5" class="hint">nothing paid to return</td></tr>`;
+}
+
+async function loadWalletKeys() {
+  const id = $("wk-account").value;
+  const { data } = await api("GET", `/api/wallet/accounts/${id}/keys`);
+  $("wk-list").innerHTML = data.map((k) => `<tr><td class="mono">${esc(k.key)}</td><td>${short(k.type)}</td><td>${when(k.created_at)}</td>
+    <td><button class="btn small danger" onclick="removeWalletKey('${esc(k.key)}', this)">Remove</button></td></tr>`).join("") || `<tr><td colspan="4" class="hint">no keys</td></tr>`;
+}
+
+let SPI_ACCOUNTS = [];
+async function loadSpiAccounts() {
+  const { data } = await api("GET", "/api/spi/accounts");
+  SPI_ACCOUNTS = data.accounts || [];
+  const bank = { "99000001": "Wallet", "99000002": "Banco Alfa", "99000003": "Banco Beta" };
+  $("spi-accounts").innerHTML = SPI_ACCOUNTS.map((a) => `<tr><td>${bank[a.participant] || a.participant}</td><td>${a.branch}/${a.number} ${a.type}</td>
+    <td>${esc(a.holder_name)}</td><td>${a.status}</td><td>${esc(a.scenario)}</td></tr>`).join("");
+  $("dk-account").innerHTML = SPI_ACCOUNTS.filter((a) => a.participant !== "99000001")
+    .map((a, i) => `<option value="${i}">${bank[a.participant]} · ${esc(a.holder_name)} · ${a.number} (${esc(a.scenario)})</option>`).join("");
+}
+
+async function loadDictKeys() {
+  const p = $("dk-filter").value;
+  const { data } = await api("GET", `/api/dict/keys?limit=200${p ? "&participant=" + p : ""}`);
+  $("dk-list").innerHTML = (data.entries || []).map((e) => `<tr><td class="mono">${esc(e.key)}</td><td>${e.key_type}</td><td>${e.account.participant}</td>
+    <td>${e.account.branch}/${e.account.number}</td><td>${esc(e.owner.name)}</td>
+    <td>${e.account.participant === "99000001" ? '<span class="hint">wallet</span>' : `<button class="btn small danger" onclick="removeDictKey('${e.account.participant}', '${esc(e.key)}', this)">Remove</button>`}</td></tr>`).join("");
+}
+
+async function loadMessages(btn) {
+  await busy(btn, async () => {
+    const { data } = await api("GET", `/api/spi/messages?participant=${$("m-part").value}&limit=40`);
+    window._msgs = data.messages || [];
+    $("messages").innerHTML = window._msgs.map((m, i) => {
+      const kind = (m.body.match(/<MsgDefIdr>([^<]+)</) || [, "?"])[1];
+      return `<tr><td>${when(m.created_at)}</td><td>${m.direction}</td><td class="mono">${esc(kind)}</td><td class="mono">${esc(m.resource_id)}</td>
+      <td><button class="btn small ghost" onclick="showXML(${i})">XML</button></td></tr>`;
+    }).join("");
+  });
+}
+function showXML(i) { const el = $("m-xml"); el.hidden = false; el.textContent = window._msgs[i].body; el.scrollIntoView({ behavior: "smooth" }); }
+
+async function loadFaults() {
+  try { const { data } = await api("GET", "/api/faults"); $("f-list").textContent = JSON.stringify(data, null, 2); } catch (e) { $("f-list").textContent = e.message; }
+}
+
+function opsTable() {
+  $("ops-accounts").innerHTML = CFG.accounts.map((a) => `<tr><td>${esc(a.Name)}</td>
+    <td>${["ACTIVE", "BLOCKED", "CLOSED"].map((s) => `<button class="btn small ghost" onclick="setStatus('${a.ID}', '${s}', this)">${s}</button>`).join(" ")}</td>
+    <td><input style="width:90px" id="lim-${a.ID}" placeholder="0 = none"> <button class="btn small ghost" onclick="setLimit('${a.ID}', this)">Set</button></td></tr>`).join("");
+}
+
+async function refresh() {
+  loadStatus();
+  try { await loadAccounts(); } catch { }
+  try { await loadPayments(); } catch { }
+}
+
+// --- actions ---
+async function pay(btn) {
+  $("pay-err").textContent = "";
+  await busy(btn, async () => {
+    const acct = $("pay-account"), key = $("pay-key").value.trim();
+    try {
+      const { data, trace } = await api("POST", "/api/wallet/pay", { account_id: acct.value, key, amount_cents: cents($("pay-amount").value), message: $("pay-message").value });
+      const p = data.payment;
+      const el = event("wait", `${acct.selectedOptions[0].text} pays ${data.payee?.name || key}${data.book_transfer ? " (book transfer)" : ""}`, "", trace, p.end_to_end_id);
+      track(el, p.end_to_end_id, trace, [p.id]);
+    } catch (e) {
+      $("pay-err").textContent = e.message;
+      event("bad", `Payment to ${key} refused`, `<div class="err">${esc(e.message)}</div>`, e.trace);
+    }
+  });
+}
+
+async function receive(btn) {
+  $("recv-err").textContent = "";
+  const acct = CFG.accounts.find((a) => a.ID === $("recv-account").value);
+  const body = { from: $("recv-from").value, to: "99000001", to_account: $("recv-account").selectedOptions[0].dataset.number, amount: (cents($("recv-amount").value) / 100).toFixed(2) };
+  if ($("recv-key").value) body.key = $("recv-key").value;
+  if ($("recv-tax").value) body.to_tax_id = $("recv-tax").value;
+  if ($("recv-type").value) body.to_type = $("recv-type").value;
+  await busy(btn, async () => {
+    try {
+      const { data, trace } = await api("POST", "/api/spi/pay", body);
+      const e2e = data.id || data.end_to_end_id;
+      const el = event("wait", `${$("recv-from").selectedOptions[0].text} pays ${acct ? acct.Name : body.to_account}`, "", trace, e2e);
+      track(el, e2e, trace);
+    } catch (e) {
+      $("recv-err").textContent = e.message;
+      event("bad", "The SPI refused the inbound payment", `<div class="err">${esc(e.message)}</div>`, e.trace);
+    }
+  });
+}
+
+async function walletReturn(id, btn) {
+  await busy(btn, async () => {
+    try {
+      const { data, trace } = await api("POST", "/api/wallet/return", { payment_id: id, amount_cents: cents($("r-" + id).value) });
+      const el = event("wait", "The wallet returns a received payment", "", trace, data.end_to_end_id);
+      track(el, data.end_to_end_id, trace, [data.id, id]);
+    } catch (e) { event("bad", "Return refused", `<div class="err">${esc(e.message)}</div>`, e.trace); }
+    loadReturnables();
+  });
+}
+
+async function bankReturn(e2e, id, btn) {
+  await busy(btn, async () => {
+    try {
+      const { data, trace } = await api("POST", "/api/spi/return", { end_to_end_id: e2e, amount: (cents($("r-" + id).value) / 100).toFixed(2) });
+      const el = event("wait", "A bank returns a payment the wallet made", "", trace, e2e);
+      track(el, data.id || data.end_to_end_id, trace, [id]);
+    } catch (e) { event("bad", "The SPI refused the return", `<div class="err">${esc(e.message)}</div>`, e.trace); }
+    loadReturnables();
+  });
+}
+
+async function registerWalletKey(btn) {
+  $("wk-err").textContent = "";
+  await busy(btn, async () => {
+    try {
+      const { data, trace } = await api("POST", `/api/wallet/accounts/${$("wk-account").value}/keys`, { type: $("wk-type").value, key: $("wk-key").value.trim() });
+      event("ok", `Key ${data.key} registered in the wallet and the DICT`, "", trace);
+      $("wk-key").value = "";
+    } catch (e) { $("wk-err").textContent = e.message; event("bad", "Key registration refused", `<div class="err">${esc(e.message)}</div>`, e.trace); }
+    loadWalletKeys(); loadDictKeys();
+  });
+}
+
+async function removeWalletKey(key, btn) {
+  await busy(btn, async () => {
+    try { const { trace } = await api("POST", `/api/wallet/accounts/${$("wk-account").value}/keys/remove`, { key }); event("ok", `Key ${key} removed`, "", trace); }
+    catch (e) { event("bad", "Key removal failed", `<div class="err">${esc(e.message)}</div>`, e.trace); }
+    loadWalletKeys(); loadDictKeys();
+  });
+}
+
+async function createDictKey(btn) {
+  $("dk-err").textContent = "";
+  const a = SPI_ACCOUNTS.filter((x) => x.participant !== "99000001")[$("dk-account").value];
+  await busy(btn, async () => {
+    try {
+      const { data, trace } = await api("POST", "/api/dict/keys", { Participant: a.participant, KeyType: $("dk-type").value, Key: $("dk-key").value.trim(),
+        Branch: a.branch, Account: a.number, AccountType: a.type, TaxID: a.holder_tax_id, Name: a.holder_name });
+      event("ok", `DICT key ${data.key} for ${a.holder_name}`, `<span class="hint">pay it from the wallet: the SPI answers as ${esc(a.scenario)}</span>`, trace);
+      $("pay-key").value = data.key; $("dk-key").value = "";
+    } catch (e) { $("dk-err").textContent = e.message; event("bad", "The DICT refused the key", `<div class="err">${esc(e.message)}</div>`, e.trace); }
+    loadDictKeys();
+  });
+}
+
+async function removeDictKey(participant, key, btn) {
+  await busy(btn, async () => {
+    try { const { trace } = await api("POST", "/api/dict/keys/remove", { Participant: participant, Key: key }); event("ok", `DICT key ${key} removed`, "", trace); }
+    catch (e) { event("bad", "DICT removal failed", `<div class="err">${esc(e.message)}</div>`, e.trace); }
+    loadDictKeys();
+  });
+}
+
+async function setStatus(id, status, btn) {
+  $("ops-err").textContent = "";
+  await busy(btn, async () => {
+    try { const { trace } = await api("POST", `/api/wallet/accounts/${id}/status`, { status }); event("ok", `${CFG.accounts.find((a) => a.ID === id).Name} is ${status}`, "", trace); }
+    catch (e) { $("ops-err").textContent = e.message; }
+  });
+}
+
+async function setLimit(id, btn) {
+  $("ops-err").textContent = "";
+  const v = $("lim-" + id).value.trim();
+  await busy(btn, async () => {
+    try { const { trace } = await api("POST", `/api/wallet/accounts/${id}/limit`, { cents: v ? cents(v) : 0 }); event("ok", `Receive limit of ${CFG.accounts.find((a) => a.ID === id).Name}: ${v ? money(cents(v)) : "none"}`, "", trace); }
+    catch (e) { $("ops-err").textContent = e.message; }
+  });
+}
+
+async function loadReports(btn) {
+  await busy(btn, async () => {
+    try {
+      const { data } = await api("GET", "/api/wallet/reports");
+      $("reports").innerHTML = data.map((r) => `<tr><td class="mono">${esc(r.ID)}</td><td class="mono">${esc(r.EndToEndID)}</td><td>${esc(r.Reason)}</td><td>${money(r.Cents)}</td>
+        <td><button class="btn small" onclick="resend('${r.ID}', this)">Resend</button></td></tr>`).join("") || `<tr><td colspan="5" class="hint">no refused reports</td></tr>`;
+    } catch (e) { $("reports").innerHTML = `<tr><td colspan="5" class="err">${esc(e.message)}</td></tr>`; }
+  });
+}
+async function resend(id, btn) {
+  await busy(btn, async () => {
+    try { const { trace } = await api("POST", `/api/wallet/reports/${id}/resend`); event("ok", "Report back in line for the worker", "", trace); } catch (e) { event("bad", "Resend failed", esc(e.message), e.trace); }
+    loadReports();
+  });
+}
+
+async function addFault(btn) {
+  $("f-err").textContent = "";
+  const b = {}; const st = Number($("f-status").value);
+  if (st) { b.status = st; b.retry_after = Number($("f-retry").value || 0); }
+  if (Number($("f-delay").value)) b.delay_ms = Number($("f-delay").value);
+  if ($("f-count").value) b.count = Number($("f-count").value);
+  if ($("f-path").value) b.path_prefix = $("f-path").value;
+  await busy(btn, async () => {
+    try { const { trace } = await api("POST", `/api/faults/${$("f-target").value}`, b); event("wait", `Fault on the ${$("f-target").value.toUpperCase()}: ${JSON.stringify(b)}`, "", trace); }
+    catch (e) { $("f-err").textContent = e.message; }
+    loadFaults();
+  });
+}
+async function clearFaults(btn) { await busy(btn, async () => { const { trace } = await api("POST", "/api/faults/clear"); event("ok", "Faults cleared", "", trace); loadFaults(); }); }
+async function resetMocks(btn) {
+  if (!confirm("Put both mocks back to their seed data? Keys registered and SPI payments are dropped; the wallet's own data stays.")) return;
+  await busy(btn, async () => { try { const { trace } = await api("POST", "/api/reset"); event("ok", "Both mocks are back to their seed", "", trace); } catch (e) { event("bad", "Reset failed", esc(e.message), e.trace); } refresh(); loadDictKeys(); });
+}
+
+// --- presets ---
+const PAY = [
+  ["Carlos, Banco Alfa", "+5521999990003", "settles"], ["Daniela, Banco Beta", "16899535009", "settles"],
+  ["Bruno, the wallet", "+5511999990002", "book transfer, no DICT/SPI"], ["Eduardo", "+5521999990005", "AC07 closed"],
+  ["Fernanda", "+5521999990006", "AC06 blocked"], ["Gustavo", "+5531999990007", "AB03 after the SPI timeout"],
+  ["Helena", "10293847541", "DS04"], ["Igor", "56473829164", "FRAD"], ["Julia", "91827364564", "AM02"], ["Kleber", "37281946546", "AG03"],
+  ["Larissa", "64528193728", "ED05"], ["Marcos", "82910476340", "AB09"], ["Natalia", "45197286300", "AC14"], ["Otavio", "73640812913", "CH11"],
+  ["Unknown key", "nobody@example.com", "NOT_FOUND at ResolveKey"],
+];
+const RECV = [
+  ["Normal, to Ana", { acct: 0 }, "credited on ACCC"], ["To Bruno (savings)", { acct: 1 }, "credited"],
+  ["Wrong tax id", { acct: 0, tax: "39053344705" }, "BE01"], ["Wrong account type", { acct: 0, type: "SVGS" }, "AC14"],
+  ["Blocked/closed account", { acct: 0 }, "set the status in Accounts & ops first: AC06/AC07"],
+  ["Above the limit", { acct: 0, amount: "5000.00" }, "set a limit in Accounts & ops first: AM02"],
+];
+function presets() {
+  $("pay-presets").innerHTML = PAY.map(([n, k, x], i) => `<button class="preset" onclick="usePay(${i})">${esc(n)} <span class="x">${esc(x)}</span></button>`).join("");
+  $("recv-presets").innerHTML = RECV.map(([n, o, x], i) => `<button class="preset" onclick="useRecv(${i})">${esc(n)} <span class="x">${esc(x)}</span></button>`).join("");
+}
+function usePay(i) { $("pay-key").value = PAY[i][1]; $("pay-expect").textContent = "expected: " + PAY[i][2]; }
+function useRecv(i) {
+  const o = RECV[i][1];
+  $("recv-account").selectedIndex = o.acct; $("recv-tax").value = o.tax || ""; $("recv-type").value = o.type || "";
+  if (o.amount) $("recv-amount").value = o.amount;
+  $("recv-expect").textContent = "expected: " + RECV[i][2];
+}
+
+// --- tabs ---
+function tabs() {
+  const secs = [...document.querySelectorAll("section.tab")];
+  $("tabs").innerHTML = secs.map((s) => `<button data-t="${s.dataset.tab}">${s.dataset.title}</button>`).join("");
+  const show = (t) => {
+    secs.forEach((s) => s.classList.toggle("active", s.dataset.tab === t));
+    [...$("tabs").children].forEach((b) => b.classList.toggle("active", b.dataset.t === t));
+    try { localStorage.setItem("tab", t); } catch { }
+    if (t === "returns") loadReturnables();
+    if (t === "keys") { loadWalletKeys(); loadDictKeys(); }
+    if (t === "ops") loadSpiAccounts();
+    if (t === "faults") loadFaults();
+    if (t === "messages") loadMessages();
+    if (t === "grafana" && !$("dash").src) $("dash").src = CFG.grafana + "/d/pix-overview/pix-overview?kiosk&refresh=10s&from=now-30m&to=now";
+  };
+  $("tabs").onclick = (e) => e.target.dataset.t && show(e.target.dataset.t);
+  let t = "overview"; try { t = localStorage.getItem("tab") || t; } catch { }
+  show(t);
+}
+
+(async function init() {
+  try { CFG = (await api("GET", "/api/config")).data; } catch { }
+  $("grafana-link").href = CFG.grafana + "/d/pix-overview/pix-overview";
+  const opts = CFG.accounts.map((a) => `<option value="${a.ID}" data-number="${a.Number}">${esc(a.Name)}</option>`).join("");
+  for (const id of ["ov-account", "pay-account", "recv-account", "ret-account", "wk-account"]) $(id).innerHTML = opts;
+  presets(); opsTable(); tabs(); refresh();
+  try { await loadSpiAccounts(); } catch { }
+  setInterval(refresh, 5000);
+})();
+</script>
+</body>
+</html>

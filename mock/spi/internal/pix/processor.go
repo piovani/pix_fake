@@ -87,6 +87,7 @@ func (p *Processor) handlePacs008(ctx context.Context, sender string, m spi.Mess
 	group := groupCheck(msg, sender)
 	for _, tx := range msg.Transactions() {
 		e2e := tx.PmtID.EndToEnd
+		tag(ctx, e2e, "")
 		if !ValidEndToEndID(e2e) {
 			// A pacs.002 needs a valid identifier, so the answer is an admi.002.
 			p.sendError(ctx, sender, m, "Identificador fim a fim inválido", "CdtTrfTxInf/PmtId/EndToEndId", "malformed EndToEndId")
@@ -191,6 +192,11 @@ func (p *Processor) handlePacs002(ctx context.Context, sender string, m spi.Mess
 	}
 	for _, st := range msg.Statuses() {
 		id := st.OrgnlInstrID // the EndToEndId of a payment, the RtrId of a return
+		if id != st.OrgnlEndToEnd {
+			tag(ctx, st.OrgnlEndToEnd, id)
+		} else {
+			tag(ctx, id, "")
+		}
 		pay, err := p.payments.GetPayment(ctx, id)
 		if err != nil {
 			p.log.WarnContext(ctx, "ignore status: unknown payment", "sender", sender, "id", id)

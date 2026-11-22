@@ -19,7 +19,8 @@ func tracedTransport() http.RoundTripper {
 func route(path string) string {
 	parts := strings.Split(path, "/")
 	for i, p := range parts {
-		if strings.IndexFunc(p, func(r rune) bool { return unicode.IsDigit(r) || r == '@' || r == '+' || r == '%' }) >= 0 {
+		hasDigit := strings.IndexFunc(p, unicode.IsDigit) >= 0
+		if strings.ContainsAny(p, "@+%") || (hasDigit && len(p) > 3) { // "v2" stays, "99000001" does not
 			parts[i] = "{id}"
 		}
 	}

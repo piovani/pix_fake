@@ -80,6 +80,7 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true" # the simulator shows the dashboard in a frame
     ports:
       - "3000:3000" # Grafana
       - "4318:4318" # OTLP over HTTP

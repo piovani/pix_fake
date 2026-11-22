@@ -179,6 +179,7 @@ func (s *Service) reportOf(ctx context.Context, p Payment) ([]byte, error) {
 
 // OnReceipt: a refusal worth retrying is sent again later; any other is final and logged, since the wallet built the report.
 func (s *Service) OnReceipt(ctx context.Context, r pix.Receipt) error {
+	tag(ctx, r.Ref, "")
 	p, found, err := s.store.ByEndToEnd(ctx, r.Ref, Outbound)
 	if err != nil {
 		return err

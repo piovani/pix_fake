@@ -199,6 +199,7 @@ func (s *Service) ResolveKey(ctx context.Context, accountID, key string) (Resolu
 	if err != nil {
 		return Resolution{}, err
 	}
+	tag(ctx, e2e, "")
 	res := Resolution{AccountID: acct.ID, Key: key, EndToEndID: e2e, ExpiresAt: now.Add(ResolutionTTL)}
 
 	owner, own, err := s.keys.AccountOf(ctx, key)
@@ -269,6 +270,7 @@ func (s *Service) Pay(ctx context.Context, in PayInput) (Payment, error) {
 	if !found {
 		return Payment{}, ErrResolutionNotFound
 	}
+	tag(ctx, res.EndToEndID, "")
 	if existing, found, err := s.store.ByResolution(ctx, res.ID); err != nil {
 		return Payment{}, err
 	} else if found {

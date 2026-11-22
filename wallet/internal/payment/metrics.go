@@ -35,3 +35,13 @@ func (s *Service) close(ctx context.Context, p Payment, status Status, code, rea
 	}
 	return nil
 }
+
+// tag marks the current span with the payment it is about. The SPI stream carries no trace context, so this id is what
+// joins the traces of the wallet and of the SPI for one payment.
+func tag(ctx context.Context, endToEndID, returnID string) {
+	kv := []attribute.KeyValue{attribute.String("pix.end_to_end_id", endToEndID)}
+	if returnID != "" {
+		kv = append(kv, attribute.String("pix.return_id", returnID))
+	}
+	trace.SpanFromContext(ctx).SetAttributes(kv...)
+}

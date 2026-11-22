@@ -35,6 +35,7 @@ make down
 
 | Target | |
 |--------|-|
+| `make sim` | wallet API + worker + simulator on :8090 (after `make up`) |
 | `make setup` | only the mocks, with seed data |
 | `make check` | closing test against `make setup` |
 | `make reset` | mocks back to their seed |
@@ -45,6 +46,24 @@ make down
 | `make lint` | gofmt + go vet |
 | `make staticcheck`, `make vuln` | staticcheck, govulncheck |
 | `make tidy`, `make proto-check` | go.mod and generated gRPC code are up to date |
+
+## Simulator
+
+```sh
+make up      # the mocks and Grafana
+make sim     # the wallet's API and worker plus the simulator: http://localhost:8090
+```
+
+A web page that drives every situation and shows it happening: a wallet customer pays a key (presets for each answer the
+SPI's test accounts give: settled, `AC07`, `AC06`, timeout, `FRAD`... and book transfers), a simulated bank pays a wallet
+account (`BE01`, `AC14`, blocked, above the limit), returns in both directions, keys registered in the wallet or straight in
+the DICT for a bank's account, account status and limits, refused reports, faults (`429`, `503`, slow answers), and the ISO
+20022 messages the SPI exchanged. Each action is followed until it is final on both sides, with links to its trace, its
+logs and every trace of the payment in Grafana. It is its own module (`simulator/`) and uses the wallet only through its
+gRPC API and the mocks only through their HTTP APIs.
+
+The SPI stream carries no trace context, so the SPI's and the wallet worker's traces of one payment are joined by the
+`pix.end_to_end_id` attribute every service puts on its spans: `{ span.pix.end_to_end_id = "E..." }` in Tempo finds them all.
 
 ## Monitoring
 
@@ -71,6 +90,7 @@ wallet/                 the wallet; shares nothing with mock/
 e2e/                    closing test of the two mocks together
 scripts/                e2e.sh, coverage.sh
 monitoring/             Grafana dashboards
+simulator/              web page to drive and watch every situation (make sim)
 docs/                   architecture, integration guide, roadmap
 ```
 

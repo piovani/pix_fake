@@ -57,6 +57,7 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	if err != nil {
 		return Payment{}, err
 	}
+	tag(ctx, orig.EndToEndID, rtrID)
 	rsv, err := s.accounts.Reserve(ctx, orig.AccountID, in.AmountCents, in.RequestID)
 	if errors.Is(err, ledger.ErrReferenceConflict) {
 		return Payment{}, ErrRequestConflict

@@ -39,6 +39,7 @@ func (p *Processor) handlePacs004(ctx context.Context, sender string, m spi.Mess
 	}
 	group := returnGroupCheck(msg, sender)
 	for _, r := range msg.Returns() {
+		tag(ctx, r.OrgnlEndToEnd, r.RtrID)
 		if !ValidReturnID(r.RtrID) || !ValidEndToEndID(r.OrgnlEndToEnd) {
 			// A pacs.002 needs both identifiers, so the answer is an admi.002.
 			p.sendError(ctx, sender, m, "Identificador inválido", "TxInf/RtrId", "malformed RtrId or EndToEndId")

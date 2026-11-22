@@ -11,6 +11,7 @@ import (
 // OnReturnOrder answers a pacs.004 sent to the wallet: money coming back for a payment it made. An accepted one is recorded
 // as pending and answered ACSP; the payer is credited when the SPI settles it (ACCC).
 func (s *Service) OnReturnOrder(ctx context.Context, r pix.PaymentReturn) error {
+	tag(ctx, r.EndToEndID, r.ReturnID)
 	if known, found, err := s.store.ByEndToEnd(ctx, r.ReturnID, Inbound); err != nil {
 		return err
 	} else if found {

@@ -1,10 +1,13 @@
-MODULES := mock/dict mock/spi e2e wallet
+MODULES := mock/dict mock/spi e2e wallet simulator
 DICT_URL ?= http://localhost:8080
 SPI_URL  ?= http://localhost:8081
 STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.10.0
 
-.PHONY: up test test-integration lint staticcheck vuln tidy proto-check e2e coverage setup down reset logs status check
+.PHONY: sim up test test-integration lint staticcheck vuln tidy proto-check e2e coverage setup down reset logs status check
+
+sim: ## the wallet's API and worker plus the simulator on :8090, against make up (see scripts/sim.sh)
+	./scripts/sim.sh
 
 up: setup ## start everything: both mocks (make setup) and the wallet's own database
 	$(MAKE) -C wallet up

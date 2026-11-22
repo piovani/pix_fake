@@ -80,6 +80,7 @@ func (p *Processor) handleTrck002(ctx context.Context, sender string, m spi.Mess
 	group := reportGroupCheck(msg, sender)
 	var receipts []iso.Receipt
 	for _, tx := range msg.Transactions() {
+		tag(ctx, tx.PmtID.EndToEnd, tx.PmtID.InstrID)
 		if !ValidEndToEndID(tx.PmtID.EndToEnd) || (tx.PmtID.InstrID != "" && !ValidReturnID(tx.PmtID.InstrID)) {
 			p.sendError(ctx, sender, m, "Identificador inválido", "Tx/PmtId", "malformed EndToEndId or InstrId")
 			continue

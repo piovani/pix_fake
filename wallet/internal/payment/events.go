@@ -17,6 +17,11 @@ import (
 // Timeouts are the SPI's to decide (AB03): the wallet never rejects on its own a payment the SPI may have taken, or the money could leave twice.
 func (s *Service) OnStatus(ctx context.Context, st pix.TxStatus) error {
 	isReturn := st.InstrID != "" && st.InstrID != st.EndToEndID
+	if isReturn {
+		tag(ctx, st.EndToEndID, st.InstrID)
+	} else {
+		tag(ctx, st.EndToEndID, "")
+	}
 	key := st.EndToEndID
 	if isReturn {
 		key = st.InstrID

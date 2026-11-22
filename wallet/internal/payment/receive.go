@@ -12,6 +12,7 @@ import (
 // OnPaymentOrder answers a pacs.008 sent to the wallet. An accepted order is recorded as pending and answered ACSP; the money
 // is credited only when the SPI settles it (ACCC). A refused one is only answered: no money moved, so nothing is recorded.
 func (s *Service) OnPaymentOrder(ctx context.Context, o pix.PaymentOrder) error {
+	tag(ctx, o.EndToEndID, "")
 	acct, reason, err := s.receiverOf(ctx, o)
 	if err != nil {
 		return err

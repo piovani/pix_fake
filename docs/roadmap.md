@@ -81,6 +81,7 @@ Not built: a check that the DICT and the wallet's copy of the keys agree; pushin
 - [x] Contract tests: DICT against `openapi.json`, SPI messages against the XSDs
 - [x] Failure simulation (`429`, `503`, slow answers) and a control API in both mocks
 - [x] [Integration guide](integration-guide.md)
+- [x] Simulator (`make sim`): a web page to drive every situation and follow it to its traces and logs
 - [x] Observability: OpenTelemetry in the mocks and the wallet, Grafana with Prometheus, Loki and Tempo in `make up`, a provisioned dashboard
 - [ ] Re-check the Bacen specs from time to time *(proposed)*
 
