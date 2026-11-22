@@ -1,5 +1,19 @@
 # pix_fake
 
+[![CI](https://github.com/piovani/pix_fake/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/piovani/pix_fake/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](wallet/go.mod)
+[![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen)](scripts/coverage.sh)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot&logoColor=white)](.github/dependabot.yml)
+[![Last commit](https://img.shields.io/github/last-commit/piovani/pix_fake)](https://github.com/piovani/pix_fake/commits/main)
+
+[![gRPC](https://img.shields.io/badge/gRPC-API-244c5a?logo=grpc&logoColor=white)](wallet/api/proto/wallet/v1)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](docker-compose.yml)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%C2%B7%20metrics%20%C2%B7%20logs-425CC7?logo=opentelemetry&logoColor=white)](README.md#monitoring)
+[![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800?logo=grafana&logoColor=white)](monitoring/dashboards)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![ISO 20022](https://img.shields.io/badge/ISO%2020022-pacs%20%C2%B7%20camt%20%C2%B7%20trck-6a737d)](mock/spi/README.md#messages)
+
 A Pix wallet built against mocks of the Bacen infrastructure. Only regulated participants can reach the real Pix, so
 this repo mocks the **DICT** (key directory) and the **SPI** (settlement) with the same contracts Bacen documents, and
 the wallet talks to them exactly as it would to the real thing. Going live is a config change.
@@ -106,4 +120,4 @@ obsolete.
 
 ## License
 
-To be defined.
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
