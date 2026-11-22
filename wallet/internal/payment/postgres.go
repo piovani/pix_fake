@@ -191,6 +191,15 @@ func (p *Postgres) ByRequestID(ctx context.Context, id string) (Payment, bool, e
 	return p.one(ctx, `request_id = $1`, id)
 }
 
+func (p *Postgres) ByReferences(ctx context.Context, accountID string, refs []string) ([]Payment, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	return p.many(ctx, `
+		SELECT `+columns+` FROM payments
+		WHERE account_id = $1 AND (end_to_end_id = ANY($2::text[]) OR request_id::text = ANY($2::text[]))`, accountID, refs)
+}
+
 func (p *Postgres) InsertReturn(ctx context.Context, in Payment) (Payment, bool, error) {
 	cp, err := marshalPayee(in.Counterparty)
 	if err != nil {

@@ -22,6 +22,7 @@ type Payments interface {
 	Get(ctx context.Context, id string) (payment.Payment, error)
 	List(ctx context.Context, in payment.ListInput) (payment.Page, error)
 	Return(ctx context.Context, in payment.ReturnInput) (payment.Payment, error)
+	Statement(ctx context.Context, in payment.StatementInput) (payment.Statement, error)
 }
 
 // paymentService answers wallet.v1.PaymentService.

@@ -496,3 +496,43 @@ func TestPaymentsThatCannotBeReturned(t *testing.T) {
 	_, err = e.payments.ReturnPayment(ctx(t), &walletv1.ReturnPaymentRequest{PaymentId: sent.Id, AmountCents: 10, RequestId: "req"})
 	wantCode(t, "bad request id", err, codes.InvalidArgument)
 }
+
+func TestStatement(t *testing.T) {
+	e := setup(t)
+	r := e.resolve(t, "+5511999990002")
+	p, err := e.pay(t, r.ResolutionId, 175, "statement")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	statement := func(account string, size int32, token string) *walletv1.GetStatementResponse {
+		res, err := e.accounts.GetStatement(ctx(t), &walletv1.GetStatementRequest{AccountId: account, PageSize: size, PageToken: token})
+		if err != nil {
+			t.Fatalf("GetStatement: %v", err)
+		}
+		return res
+	}
+
+	first := statement(seed.AnaID, 1, "")
+	if len(first.Entries) != 1 || first.NextPageToken == "" {
+		t.Fatalf("first page: %v", first)
+	}
+	out := first.Entries[0]
+	if out.Type != walletv1.EntryType_ENTRY_TYPE_DEBIT || out.AmountCents != 175 || out.PaymentId != p.Id || out.CounterpartyName != "Bruno Lima" || out.CreatedAt == nil {
+		t.Errorf("Ana's entry: %v", out)
+	}
+	second := statement(seed.AnaID, 1, first.NextPageToken)
+	if len(second.Entries) != 1 || second.Entries[0].Id == out.Id {
+		t.Errorf("second page: %v", second)
+	}
+
+	in := statement(seed.BrunoID, 1, "").Entries[0]
+	if in.Type != walletv1.EntryType_ENTRY_TYPE_CREDIT || in.AmountCents != 175 || in.CounterpartyName != "Ana Souza" || in.PaymentId == "" || in.PaymentId == p.Id {
+		t.Errorf("Bruno's entry: %v", in)
+	}
+
+	_, err = e.accounts.GetStatement(ctx(t), &walletv1.GetStatementRequest{AccountId: "0a1b2c3d-9999-4000-8000-000000000009"})
+	wantCode(t, "unknown account", err, codes.NotFound)
+	_, err = e.accounts.GetStatement(ctx(t), &walletv1.GetStatementRequest{AccountId: seed.AnaID, PageToken: "garbage"})
+	wantCode(t, "bad token", err, codes.InvalidArgument)
+}

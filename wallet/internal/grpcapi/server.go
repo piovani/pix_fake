@@ -10,9 +10,11 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	walletv1 "pixfake/wallet/gen/wallet/v1"
 	"pixfake/wallet/internal/ledger"
+	"pixfake/wallet/internal/payment"
 )
 
 // Ledger is what the API needs from the ledger module, declared here so the adapter is tested without a database.
@@ -20,10 +22,35 @@ type Ledger interface {
 	Balance(ctx context.Context, accountID string) (ledger.Balance, error)
 }
 
-// accountService answers wallet.v1.AccountService. GetStatement returns Unimplemented for now.
+// accountService answers wallet.v1.AccountService. GetStatement needs the payment module.
 type accountService struct {
 	walletv1.UnimplementedAccountServiceServer
-	ledger Ledger
+	ledger   Ledger
+	payments Payments
+}
+
+func (s *accountService) GetStatement(ctx context.Context, req *walletv1.GetStatementRequest) (*walletv1.GetStatementResponse, error) {
+	if s.payments == nil {
+		return nil, status.Error(codes.Unimplemented, "method GetStatement not implemented")
+	}
+	st, err := s.payments.Statement(ctx, payment.StatementInput{
+		AccountID: req.GetAccountId(), PageSize: int(req.GetPageSize()), PageToken: req.GetPageToken(),
+	})
+	if err != nil {
+		return nil, paymentError("get statement", err)
+	}
+	res := &walletv1.GetStatementResponse{NextPageToken: st.NextToken}
+	for _, e := range st.Entries {
+		kind := walletv1.EntryType_ENTRY_TYPE_DEBIT
+		if e.Credit {
+			kind = walletv1.EntryType_ENTRY_TYPE_CREDIT
+		}
+		res.Entries = append(res.Entries, &walletv1.StatementEntry{
+			Id: e.ID, Type: kind, AmountCents: e.AmountCents, PaymentId: e.PaymentID, CounterpartyName: e.CounterpartyName,
+			CreatedAt: timestamppb.New(e.CreatedAt),
+		})
+	}
+	return res, nil
 }
 
 func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanceRequest) (*walletv1.GetBalanceResponse, error) {
@@ -44,7 +71,7 @@ func (s *accountService) GetBalance(ctx context.Context, req *walletv1.GetBalanc
 // payments is not nil) and the health service.
 func New(l Ledger, keys Keys, payments Payments) *grpc.Server {
 	s := grpc.NewServer()
-	walletv1.RegisterAccountServiceServer(s, &accountService{ledger: l})
+	walletv1.RegisterAccountServiceServer(s, &accountService{ledger: l, payments: payments})
 	if keys != nil {
 		walletv1.RegisterKeyServiceServer(s, &keyService{keys: keys})
 	}

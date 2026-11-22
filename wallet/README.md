@@ -3,10 +3,10 @@
 The digital wallet and its Pix integration layer: accounts, balances, a ledger, and the participant side of the DICT and
 the SPI. It is the product of this project; the mocks next to it (`../mock`) only stand in for Bacen.
 
-> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet, receiving payments and returning them are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
+> **Status: the core, the keys, paying a key of another institution and paying another customer of the wallet, receiving payments, returning them and the statement are done.** Stack decided (Go, gRPC, pgx, golang-migrate, modular monolith; see the
 > [roadmap](../docs/roadmap.md#decision-the-stack-of-the-wallet)). The ledger (accounts, balances, reservation) works and
 > is tested on PostgreSQL. The DICT client and the SPI client (`internal/pix`) are in place, with returns and reports. A customer can pay a key of another
-> institution or another customer of the wallet, receive payments and return them, end to end; the statement is next.
+> institution or another customer of the wallet, receive payments and return them, end to end, and read the statement.
 
 ## Independence from the mocks
 
@@ -105,6 +105,14 @@ key of the wallet itself answers `Unimplemented` for now). `CreatePayment` reser
 - **The timeout is the SPI's.** A payment nobody answers in 40 s comes back `RJCT` with `AB03`. The wallet never rejects on its own a
   payment the SPI may have taken, or the money could leave twice.
 - **Not handled yet by the worker:** a return of a payment the wallet made (`pacs.004` received) is logged and skipped.
+
+## Statement
+
+`GetStatement` lists, newest first and paged, the money that moved in an account: settled payments sent and returns (`DEBIT`), payments
+received and settled (`CREDIT`), both sides of a book transfer, and deposits. Payments in flight are not in it (their money is only
+reserved; see `ListPayments`), nor are rejected ones. Each entry names the payment and its counterparty, found from the ledger
+movement's reference (the `EndToEndId`, or the `request_id` of a return); a deposit has neither. The entries of an account add up
+to its available plus reserved balance.
 
 ## Returning a received payment
 

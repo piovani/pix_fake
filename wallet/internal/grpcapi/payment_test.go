@@ -17,14 +17,16 @@ import (
 )
 
 type fakePayments struct {
-	resolved   [2]string
-	paid       payment.PayInput
-	listed     payment.ListInput
-	returned   payment.ReturnInput
-	resolution payment.Resolution
-	payment    payment.Payment
-	page       payment.Page
-	err        error
+	resolved     [2]string
+	paid         payment.PayInput
+	listed       payment.ListInput
+	returned     payment.ReturnInput
+	statementFor payment.StatementInput
+	statement    payment.Statement
+	resolution   payment.Resolution
+	payment      payment.Payment
+	page         payment.Page
+	err          error
 }
 
 func (f *fakePayments) ResolveKey(_ context.Context, accountID, key string) (payment.Resolution, error) {
@@ -40,6 +42,11 @@ func (f *fakePayments) Pay(_ context.Context, in payment.PayInput) (payment.Paym
 func (f *fakePayments) Return(_ context.Context, in payment.ReturnInput) (payment.Payment, error) {
 	f.returned = in
 	return f.payment, f.err
+}
+
+func (f *fakePayments) Statement(_ context.Context, in payment.StatementInput) (payment.Statement, error) {
+	f.statementFor = in
+	return f.statement, f.err
 }
 
 func (f *fakePayments) Get(context.Context, string) (payment.Payment, error) { return f.payment, f.err }
@@ -174,7 +181,8 @@ func TestPaymentErrors(t *testing.T) {
 		_, e3 := client.GetPayment(ctx5(t), &walletv1.GetPaymentRequest{})
 		_, e4 := client.ListPayments(ctx5(t), &walletv1.ListPaymentsRequest{})
 		_, e5 := client.ReturnPayment(ctx5(t), &walletv1.ReturnPaymentRequest{})
-		for _, err := range []error{e1, e2, e3, e4, e5} {
+		_, e6 := walletv1.NewAccountServiceClient(dialAll(t, fakeLedger{}, nil, &fakePayments{err: tt.err})).GetStatement(ctx5(t), &walletv1.GetStatementRequest{})
+		for _, err := range []error{e1, e2, e3, e4, e5, e6} {
 			if status.Code(err) != tt.want || strings.Contains(err.Error(), "10.0.0.5") {
 				t.Errorf("%v: want %v, got %v", tt.err, tt.want, err)
 			}
@@ -214,5 +222,43 @@ func TestReceivedPaymentShowsWhatWasReturned(t *testing.T) {
 	res, err := walletv1.NewPaymentServiceClient(dialAll(t, fakeLedger{}, nil, f)).GetPayment(ctx5(t), &walletv1.GetPaymentRequest{PaymentId: "pay-1"})
 	if err != nil || res.GetPayment().GetReturnedCents() != 400 {
 		t.Fatalf("%v, %v", res, err)
+	}
+}
+
+func TestGetStatement(t *testing.T) {
+	at := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	f := &fakePayments{statement: payment.Statement{
+		Entries: []payment.Entry{
+			{ID: "9", Credit: true, AmountCents: 1050, PaymentID: "pay-1", CounterpartyName: "Carlos Mendes", CreatedAt: at},
+			{ID: "8", AmountCents: 200, CreatedAt: at},
+		},
+		NextToken: "next",
+	}}
+	client := walletv1.NewAccountServiceClient(dialAll(t, fakeLedger{}, nil, f))
+
+	res, err := client.GetStatement(ctx5(t), &walletv1.GetStatementRequest{AccountId: "acc", PageSize: 2, PageToken: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.statementFor != (payment.StatementInput{AccountID: "acc", PageSize: 2, PageToken: "tok"}) {
+		t.Fatalf("input %+v", f.statementFor)
+	}
+	e := res.GetEntries()
+	if len(e) != 2 || res.GetNextPageToken() != "next" {
+		t.Fatalf("response = %v", res)
+	}
+	if e[0].GetId() != "9" || e[0].GetType() != walletv1.EntryType_ENTRY_TYPE_CREDIT || e[0].GetAmountCents() != 1050 ||
+		e[0].GetPaymentId() != "pay-1" || e[0].GetCounterpartyName() != "Carlos Mendes" || !e[0].GetCreatedAt().AsTime().Equal(at) {
+		t.Errorf("entry 0 = %v", e[0])
+	}
+	if e[1].GetType() != walletv1.EntryType_ENTRY_TYPE_DEBIT || e[1].GetPaymentId() != "" {
+		t.Errorf("entry 1 = %v", e[1])
+	}
+}
+
+func TestGetStatementNeedsThePaymentModule(t *testing.T) {
+	_, err := walletv1.NewAccountServiceClient(dial(t, fakeLedger{})).GetStatement(ctx5(t), &walletv1.GetStatementRequest{AccountId: "acc"})
+	if status.Code(err) != codes.Unimplemented {
+		t.Errorf("err = %v", err)
 	}
 }

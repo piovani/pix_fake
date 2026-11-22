@@ -3,7 +3,7 @@
 The plan for the whole project, from the mocked Bacen systems to the wallet. It has **no dates**: it lists what comes
 first, what depends on what, and when each piece is considered done.
 
-Statuses: **Done**, **Next**, **Planned**, **Later**, **Idea**. Items marked *(proposed)* are suggestions that have
+Statuses: **Done**, **In progress**, **Next**, **Planned**, **Later**, **Idea**. Items marked *(proposed)* are suggestions that have
 not been agreed yet. Everything else comes from the project's scope (see the [README](../README.md)).
 
 ## Overview
@@ -11,7 +11,7 @@ not been agreed yet. Everything else comes from the project's scope (see the [RE
 ```mermaid
 flowchart LR
     P1["1. DICT mock<br/>Done"] --> P2["2. SPI mock<br/>Done"]
-    P2 --> P3["3. Wallet and<br/>Pix integration layer<br/>Next"]
+    P2 --> P3["3. Wallet and<br/>Pix integration layer<br/>In progress"]
     P3 --> P4["4. MED 2<br/>Later"]
     P1 -.-> P3
     X["Environment and quality<br/>make setup, CI, contract tests"] -.-> P2
@@ -22,7 +22,7 @@ flowchart LR
 |-------|-----------|--------|
 | 1 | DICT mock: Pix key directory | **Done** (entries and keys, seed data) |
 | 2 | SPI mock: instant payment settlement | **Done** (payments, returns, reports, rejections, timeout; closing test `make e2e`) |
-| 3 | Digital wallet and Pix integration layer | **Next** |
+| 3 | Digital wallet and Pix integration layer | **In progress** (every flow is built; returns received and the real-endpoints check are pending) |
 | 4 | MED 2: funds recovery | **Later** |
 | - | Environment and quality (cross-cutting) | Mostly done: `make setup`, containers, CI workflow, DICT contract tests, failure simulation, control API; specification tracking pending |
 
@@ -135,7 +135,7 @@ an internal transaction is accepted. Query and cancellation messages (`camt.*`) 
 
 Listed in Phase 1: confirm the wallet's real ISPB. It does not block the SPI. (The `PI-EndToEndId` pattern is validated.)
 
-## Phase 3: Wallet and Pix integration layer (Next)
+## Phase 3: Wallet and Pix integration layer (In progress)
 
 **Goal:** wallet users can register keys, pay, receive and see their history, talking to the mocks only through the
 Bacen contracts.
@@ -171,8 +171,7 @@ Bacen contracts.
   - **A return is a payment** of type `RETURN` with the id of the payment it returns; a received payment shows how much was
     already returned.
   - **Idempotency keys are chosen by the client** (`request_id`, `resolution_id`) and errors are gRPC status codes.
-  - Built: `AccountService.GetBalance`, `KeyService` and, in `PaymentService`, `ResolveKey`, `CreatePayment`, `GetPayment` and
-    `ListPayments` (for a key of another institution). `GetStatement` and `ReturnPayment` are there for the modules to implement.
+  - The whole contract is built: `AccountService` (`GetBalance`, `GetStatement`), `KeyService` and `PaymentService`.
 - **Not decided yet:** the HTTP/XML client for Bacen beyond the DICT and SPI clients already built (`internal/pix`).
 
 ### Decision: the wallet is independent of the mocks
@@ -254,7 +253,10 @@ The wallet is the project's real challenge and the mocks are auxiliary, so it li
     once are serialized on the original payment so they never exceed it. A return's `end_to_end_id` is its `RtrId`. Tested on
     PostgreSQL and end to end (`make e2e`): partial returns until nothing is left, and the refusals.
     Known gap: the return of a payment the wallet made (a `pacs.004` received) is skipped by the worker
-  - [ ] Statement and payment history
+  - [x] Statement and payment history. `GetStatement` lists the money that moved (`ledger.Movements`: `CREDIT`, `DEBIT` and `SETTLE`,
+    not `RESERVE` or `RELEASE`), paged by the ledger entry id, each entry joined in the `payment` module with its payment and
+    counterparty by the movement's reference; a deposit has neither. `ListPayments` is the history with status. Tested on PostgreSQL,
+    including that the entries add up to the balance, and end to end
 - [ ] **Status tracking:** payments move from pending to settled or rejected, including timeouts and retries. Done for the outbound flow,
   the book transfer, received payments and returns sent (see above); still to do for returns received.
 - [ ] **Switching to real endpoints is configuration only,** checked by tests that fail if the integration layer depends

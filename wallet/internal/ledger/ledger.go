@@ -114,6 +114,48 @@ func (l *Ledger) AccountByNumber(ctx context.Context, branch, number string) (Ac
 	return a, err
 }
 
+type MovementKind string
+
+const (
+	Credited MovementKind = "CREDITED"
+	Debited  MovementKind = "DEBITED"
+)
+
+// Movement is money that moved in or out of an account; a reservation and its release are not movements.
+type Movement struct {
+	ID          int64
+	Kind        MovementKind
+	AmountCents int64
+	Reference   string
+	CreatedAt   time.Time
+}
+
+// Movements returns the movements of an account, newest first, older than the movement with ID beforeID (0 for the newest).
+func (l *Ledger) Movements(ctx context.Context, accountID string, beforeID int64, limit int) ([]Movement, error) {
+	rows, err := l.pool.Query(ctx, `
+		SELECT id, kind, amount_cents, reference, created_at FROM ledger_entries
+		WHERE account_id = $1 AND kind IN ('CREDIT', 'DEBIT', 'SETTLE') AND ($2 = 0 OR id < $2)
+		ORDER BY id DESC LIMIT $3`, strings.ToLower(accountID), beforeID, limit)
+	if err != nil {
+		return nil, mapAccountErr(err)
+	}
+	defer rows.Close()
+	var out []Movement
+	for rows.Next() {
+		var m Movement
+		var kind string
+		if err := rows.Scan(&m.ID, &kind, &m.AmountCents, &m.Reference, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Kind = Debited
+		if kind == string(kindCredit) {
+			m.Kind = Credited
+		}
+		out = append(out, m)
+	}
+	return out, mapAccountErr(rows.Err())
+}
+
 // Balance returns the balance of an account.
 func (l *Ledger) Balance(ctx context.Context, accountID string) (Balance, error) {
 	var b Balance

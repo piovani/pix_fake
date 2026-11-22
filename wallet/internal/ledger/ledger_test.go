@@ -393,3 +393,58 @@ func TestAccountByNumber(t *testing.T) {
 		}
 	}
 }
+
+func TestMovementsAreTheMoneyThatMoved(t *testing.T) {
+	ctx := context.Background()
+	l := newLedger(t)
+	a, b := account(t, l, "001", 10000), account(t, l, "002", 0)
+
+	r1, _ := l.Reserve(ctx, a, 1000, "E-settled")
+	if err := l.Settle(ctx, r1.ID); err != nil {
+		t.Fatal(err)
+	}
+	r2, _ := l.Reserve(ctx, a, 500, "E-released")
+	if err := l.Release(ctx, r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(ctx, a, 300, "E-held"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Transfer(ctx, a, b, 200, "E-book"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Credit(ctx, a, 50, "E-received"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := l.Movements(ctx, a, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type want struct {
+		kind  ledger.MovementKind
+		cents int64
+		ref   string
+	}
+	expected := []want{{ledger.Credited, 50, "E-received"}, {ledger.Debited, 200, "E-book"}, {ledger.Debited, 1000, "E-settled"}, {ledger.Credited, 10000, "deposit-001"}}
+	if len(got) != len(expected) {
+		t.Fatalf("%d movements: %+v", len(got), got)
+	}
+	for i, w := range expected {
+		if got[i].Kind != w.kind || got[i].AmountCents != w.cents || got[i].Reference != w.ref || got[i].ID == 0 || got[i].CreatedAt.IsZero() {
+			t.Errorf("movement %d = %+v, want %+v", i, got[i], w)
+		}
+	}
+
+	page, _ := l.Movements(ctx, a, 0, 2)
+	rest, _ := l.Movements(ctx, a, page[1].ID, 10)
+	if len(page) != 2 || len(rest) != 2 || rest[0].Reference != "E-settled" {
+		t.Errorf("paging: %+v then %+v", page, rest)
+	}
+	if other, _ := l.Movements(ctx, b, 0, 10); len(other) != 1 || other[0].Kind != ledger.Credited || other[0].Reference != "E-book" {
+		t.Errorf("the other account: %+v", other)
+	}
+	if _, err := l.Movements(ctx, "not-a-uuid", 0, 10); !errors.Is(err, ledger.ErrAccountNotFound) {
+		t.Errorf("malformed account: %v", err)
+	}
+}

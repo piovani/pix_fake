@@ -124,6 +124,7 @@ type Accounts interface {
 	Transfer(ctx context.Context, fromAccountID, toAccountID string, cents int64, reference string) error
 	Credit(ctx context.Context, accountID string, cents int64, reference string) error
 	AccountByNumber(ctx context.Context, branch, number string) (ledger.Account, error)
+	Movements(ctx context.Context, accountID string, beforeID int64, limit int) ([]ledger.Movement, error)
 }
 
 type Keys interface {
@@ -152,6 +153,8 @@ type Store interface {
 	ByResolution(ctx context.Context, resolutionID string) (Payment, bool, error)
 	ByResource(ctx context.Context, resourceID string) (Payment, bool, error)
 	ByRequestID(ctx context.Context, requestID string) (Payment, bool, error)
+	// ByReferences returns the payments of an account whose EndToEndId or request id is among refs.
+	ByReferences(ctx context.Context, accountID string, refs []string) ([]Payment, error)
 	InsertReturn(ctx context.Context, p Payment) (stored Payment, created bool, err error)
 	MarkSubmitted(ctx context.Context, id, resourceID string, at time.Time) error
 	Close(ctx context.Context, id string, status Status, rejectCode, rejectReason string, at time.Time) (bool, error)

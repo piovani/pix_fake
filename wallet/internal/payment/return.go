@@ -44,6 +44,12 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 		return Payment{}, err
 	}
 	if err := s.checkReturnable(orig, in.AmountCents); err != nil {
+		if errors.Is(err, ErrReturnTooLarge) {
+			// a call with the same request id may have used up what was left since the lookup above
+			if existing, found, rerr := s.store.ByRequestID(ctx, in.RequestID); rerr == nil && found {
+				return s.repeatReturn(ctx, existing, in)
+			}
+		}
 		return Payment{}, err
 	}
 
