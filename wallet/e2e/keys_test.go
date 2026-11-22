@@ -4,6 +4,8 @@
 //	WALLET_E2E_GRPC_ADDR  the wallet API, such as localhost:9090
 //	WALLET_E2E_DICT_URL   the DICT, such as http://localhost:8080/api/v2
 //	WALLET_E2E_SPI_URL    the SPI, such as http://localhost:8081/api/v1 (optional: without it the test that makes the SPI fail is skipped)
+//	WALLET_E2E_BIN        where the built cmd/accounts and cmd/reports are, as wallet-accounts and wallet-reports (optional)
+//	WALLET_E2E_DATABASE_URL  the wallet's database, for those commands and to read report statuses (optional)
 //
 // The wallet's worker must be running too: it settles the payments.
 package e2e

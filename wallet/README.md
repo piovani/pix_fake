@@ -141,11 +141,11 @@ an `RJCT` from the SPI (such as `AB03`) rejects it with no credit.
 - **Delivered again.** The same order twice is answered again and recorded once; an order already settled or rejected is not answered.
 - **Answer that cannot be sent.** The batch is not acknowledged, so the SPI delivers it again and the answer is retried.
 - **The answer must reach the SPI within 40 s,** or the SPI rejects the payment with `AB03` at the payer.
-- **Account status.** An account is `ACTIVE`, `BLOCKED` or `CLOSED` (`ledger.SetStatus`; there is no API to change it yet). A payment
+- **Account status.** An account is `ACTIVE`, `BLOCKED` or `CLOSED` (`go run ./cmd/accounts status <account-id> BLOCKED`; there is no gRPC call for it). A payment
   to a blocked account is refused with `AC06`, to a closed one with `AC07`. Such an account cannot reserve or transfer money out, nor
   be the payee of a book transfer (`ErrAccountNotActive`, `FAILED_PRECONDITION` in the API). A payment already accepted is still credited
   when the SPI settles it, since the money has moved.
-- **Limit per payment.** `accounts.receive_limit_cents` (`ledger.SetReceiveLimit`, 0 means none; no API to set it yet): a payment above
+- **Limit per payment.** `accounts.receive_limit_cents` (`go run ./cmd/accounts limit <account-id> <cents>`, 0 means none): a payment above
   it is refused with `AM02`. It does not apply to a book transfer.
 - **Not checked:** salary accounts (`AG03`, which `AC14` covers since the wallet only has `CACC`, `SVGS` and `TRAN`).
 

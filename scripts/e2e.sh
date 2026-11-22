@@ -49,7 +49,8 @@ echo "==> starting PostgreSQL"
 echo "==> building"
 (cd "$ROOT/mock/dict" && go build -o "$WORK/dict" ./cmd/dict && go build -o "$WORK/dict-seed" ./cmd/seed)
 (cd "$ROOT/mock/spi" && go build -o "$WORK/spi" ./cmd/spi && go build -o "$WORK/spi-seed" ./cmd/seed)
-(cd "$ROOT/wallet" && go build -o "$WORK/wallet-api" ./cmd/api && go build -o "$WORK/wallet-worker" ./cmd/worker && go build -o "$WORK/wallet-seed" ./cmd/seed)
+(cd "$ROOT/wallet" && go build -o "$WORK/wallet-api" ./cmd/api && go build -o "$WORK/wallet-worker" ./cmd/worker && go build -o "$WORK/wallet-seed" ./cmd/seed \
+  && go build -o "$WORK/wallet-accounts" ./cmd/accounts && go build -o "$WORK/wallet-reports" ./cmd/reports)
 
 echo "==> loading the seed data"
 "$WORK/dict-seed"
@@ -88,7 +89,8 @@ if [ "$rc" -eq 0 ]; then
 
   echo "==> running the wallet end-to-end tests"
   (cd "$ROOT/wallet" && WALLET_E2E_GRPC_ADDR="localhost:$WALLET_PORT" WALLET_E2E_DICT_URL="http://localhost:$DICT_PORT/api/v2" \
-    WALLET_E2E_SPI_URL="http://localhost:$SPI_PORT/api/v1" go test -count=1 -v ./e2e) || rc=$?
+    WALLET_E2E_SPI_URL="http://localhost:$SPI_PORT/api/v1" WALLET_E2E_BIN="$WORK" WALLET_E2E_DATABASE_URL="$WALLET_DATABASE_URL" \
+    go test -count=1 -v ./e2e) || rc=$?
 fi
 
 if [ "$rc" -ne 0 ]; then
