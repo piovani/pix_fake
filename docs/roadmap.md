@@ -6,7 +6,9 @@ What comes first and what depends on what. No dates.
 flowchart LR
     P1["1. DICT mock<br/>Done"] --> P2["2. SPI mock<br/>Done"]
     P2 --> P3["3. Wallet<br/>Done"]
-    P3 --> P4["4. MED 2<br/>Later"]
+    P3 --> P32["3.2 Wallet follow-ups<br/>Next"]
+    P32 --> P4["4. MED 2<br/>Later"]
+    P4 --> P5["5. More Pix products<br/>Later"]
     P1 -.-> P3
 ```
 
@@ -15,8 +17,10 @@ flowchart LR
 | 1 | DICT mock: Pix key directory | Done |
 | 2 | SPI mock: instant payment settlement | Done |
 | 3 | Wallet and its Pix integration layer | Done |
+| 3.2 | Wallet follow-ups: keys check, spec re-check | Next |
 | 4 | MED 2: funds recovery | Later |
-| - | Environment and quality | Mostly done |
+| 5 | More Pix products: BR Code, charges, Pix Automático... | Later |
+| - | Environment and quality | Done |
 
 ## Principles
 
@@ -64,26 +68,28 @@ Decisions:
   or hard-codes an endpoint.
 - **Paying is two steps** (`ResolveKey`, `CreatePayment`), so the user sees the payee first; the resolution carries the
   `EndToEndId` and makes the payment idempotent. `CreatePayment` doesn't wait for the SPI.
-- **No authentication yet.** ISPB stays the placeholder `99000001`.
+- **No authentication yet.** The ISPB is fictional and comes from `WALLET_ISPB` (default `99000001`).
 
 Built: keys, paying another bank, book transfers (with `trck.002` reports), receiving, returns sent and received, statement,
 account status and receive limit, worker sweeps (resend, resume, report, orphaned reservations), and ops commands
 (`cmd/accounts`, `cmd/reports`). All tested end to end.
 
-Not built: a check that the DICT and the wallet's copy of the keys agree; pushing status changes to clients.
-
 ## Environment and quality
 
 - [x] `make setup` / `up` / `down` / `reset`, containers for the mocks
 - [x] `make test`, `make test-integration`, `make e2e`, `make coverage`
-- [x] CI workflow ([`ci.yml`](../.github/workflows/ci.yml)): lint, tidy, staticcheck, govulncheck (also every Saturday), generated code, unit, PostgreSQL, e2e with a coverage floor of 85%, containers. Not run on GitHub yet
+- [x] CI workflow ([`ci.yml`](../.github/workflows/ci.yml)): lint, tidy, staticcheck, govulncheck (also every Saturday), generated code, unit, PostgreSQL, e2e with a coverage floor of 85%, containers. Runs on GitHub Actions
 - [x] Dependabot for the Go modules and the actions, every Saturday
 - [x] Contract tests: DICT against `openapi.json`, SPI messages against the XSDs
 - [x] Failure simulation (`429`, `503`, slow answers) and a control API in both mocks
 - [x] [Integration guide](integration-guide.md)
 - [x] Simulator (`make sim`): a web page to drive every situation and follow it to its traces and logs
 - [x] Observability: OpenTelemetry in the mocks and the wallet, Grafana with Prometheus, Loki and Tempo in `make up`, a provisioned dashboard
-- [ ] Re-check the Bacen specs from time to time *(proposed)*
+
+## Phase 3.2: Wallet follow-ups (next)
+
+- [ ] Check that the DICT and the wallet's copy of the keys agree
+- [ ] Re-check the Bacen specs from time to time (DICT API v2.13.0, SPI catalog 5.13, checked 2026-11-14)
 
 ## Phase 4: MED 2, funds recovery (later)
 
@@ -109,15 +115,17 @@ If claims come back, the first version (removed to keep the mock lean) was: its 
 per key via a partial unique index; `confirm` and `complete` each in one transaction; deadlines configurable (7 days by
 default); no automatic transitions; visible only to donor and claimer.
 
-## Ideas
+## Phase 5: More Pix products (later)
 
-QR codes (BR Code), Pix charges and Pix Automático, scheduled payments, Pix Saque/Troco.
+- [ ] QR codes (BR Code)
+- [ ] Pix charges
+- [ ] Pix Automático
+- [ ] Scheduled payments
+- [ ] Pix Saque and Pix Troco
 
 ## Open decisions
 
 | Decision | For |
 |----------|-----|
-| The wallet's real ISPB | Seed, config |
 | Whether users need claims | Backlog |
 | Where MED 2 lives | Phase 4 |
-| Where CI runs | Environment |
