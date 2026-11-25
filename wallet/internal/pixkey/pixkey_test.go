@@ -3,6 +3,9 @@ package pixkey
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +35,25 @@ type fakeDict struct {
 	evpKey    string
 	deleted   []string
 	deleteErr error
+	gone      map[string]bool // keys the DICT does not have
+	checked   [][]string
+	checkErr  error
+	dropOne   bool // answer for one key less than asked
+}
+
+func (f *fakeDict) CheckKeys(_ context.Context, keys []string) ([]pix.KeyStatus, error) {
+	f.checked = append(f.checked, keys)
+	if f.checkErr != nil {
+		return nil, f.checkErr
+	}
+	out := make([]pix.KeyStatus, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, pix.KeyStatus{Key: k, HasEntry: !f.gone[k]})
+	}
+	if f.dropOne {
+		out = out[1:]
+	}
+	return out, nil
 }
 
 func (f *fakeDict) DeleteEntry(_ context.Context, key string, reason pix.EntryReason) error {
@@ -78,6 +100,18 @@ func (m *memStore) ByAccount(_ context.Context, accountID string) ([]Key, error)
 	var out []Key
 	for _, k := range m.keys {
 		if k.AccountID == accountID {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) Page(_ context.Context, after string, limit int) ([]Key, error) {
+	sorted := slices.Clone(m.keys)
+	slices.SortFunc(sorted, func(a, b Key) int { return strings.Compare(a.Key, b.Key) })
+	var out []Key
+	for _, k := range sorted {
+		if k.Key > after && len(out) < limit {
 			out = append(out, k)
 		}
 	}
@@ -352,5 +386,48 @@ func TestRemoveValidation(t *testing.T) {
 	}
 	if err := s.Remove(ctx, "nope", "k"); !errors.Is(err, ledger.ErrAccountNotFound) {
 		t.Errorf("unknown account: %v", err)
+	}
+}
+
+func TestCheck(t *testing.T) {
+	s, d, st := setup()
+	for i := range 450 {
+		st.keys = append(st.keys, Key{Key: fmt.Sprintf("k%03d@example.com", i), Type: pix.KeyEmail, AccountID: ana.ID})
+	}
+	d.gone = map[string]bool{"k007@example.com": true, "k399@example.com": true}
+
+	missing, err := s.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 2 || missing[0].Key != "k007@example.com" || missing[1].Key != "k399@example.com" || missing[0].AccountID != ana.ID {
+		t.Fatalf("missing = %+v", missing)
+	}
+	if len(d.checked) != 3 || len(d.checked[0]) != 200 || len(d.checked[1]) != 200 || len(d.checked[2]) != 50 {
+		t.Fatalf("batches: %d", len(d.checked))
+	}
+	if d.checked[1][0] != "k200@example.com" {
+		t.Fatalf("second batch starts at %s", d.checked[1][0])
+	}
+}
+
+func TestCheckEmpty(t *testing.T) {
+	s, d, _ := setup()
+	if missing, err := s.Check(context.Background()); err != nil || len(missing) != 0 || len(d.checked) != 0 {
+		t.Fatalf("missing = %v, err = %v, calls = %d", missing, err, len(d.checked))
+	}
+}
+
+func TestCheckDICTErrors(t *testing.T) {
+	s, d, st := setup()
+	st.keys = []Key{{Key: "a@example.com"}, {Key: "b@example.com"}}
+
+	d.checkErr = pix.ErrUnavailable
+	if _, err := s.Check(context.Background()); !errors.Is(err, pix.ErrUnavailable) {
+		t.Fatalf("DICT down: %v", err)
+	}
+	d.checkErr, d.dropOne = nil, true
+	if _, err := s.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "a@example.com") {
+		t.Fatalf("an answer without a key must fail: %v", err)
 	}
 }

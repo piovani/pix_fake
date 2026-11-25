@@ -42,6 +42,7 @@ type Accounts interface {
 type Directory interface {
 	CreateEntry(ctx context.Context, e pix.Entry, requestID string) (pix.Entry, error)
 	DeleteEntry(ctx context.Context, key string, reason pix.EntryReason) error
+	CheckKeys(ctx context.Context, keys []string) ([]pix.KeyStatus, error)
 }
 
 // Insert returns the existing key when the request id was already stored, and ErrKeyTaken when the key belongs to another request.
@@ -49,6 +50,8 @@ type Store interface {
 	ByRequestID(ctx context.Context, requestID string) (Key, bool, error)
 	ByKey(ctx context.Context, key string) (Key, bool, error)
 	ByAccount(ctx context.Context, accountID string) ([]Key, error)
+	// Page returns up to limit keys ordered by key, starting after the given one ("" for the first page).
+	Page(ctx context.Context, after string, limit int) ([]Key, error)
 	Insert(ctx context.Context, k Key) (Key, error)
 	Delete(ctx context.Context, key string) error
 }
@@ -137,6 +140,51 @@ func (s *Service) Remove(ctx context.Context, accountID, key string) error {
 		return mapDictError(err)
 	}
 	return s.store.Delete(ctx, key)
+}
+
+// checkBatch is the most keys the DICT's checkKeys takes in one call.
+const checkBatch = 200
+
+// Check returns the keys of the wallet's copy that the DICT does not have, such as a key removed from the DICT by someone
+// else, or a removal that reached the DICT but not the wallet. A wallet holding one of them treats a payment to it as a
+// book transfer while other banks are told it does not exist.
+//
+// checkKeys only says whether a key exists, not whose it is, so a key in the DICT under another participant, or one the
+// DICT has and the wallet lost, goes unnoticed: that takes the DICT's reconciliation (CIDs), left out on purpose.
+func (s *Service) Check(ctx context.Context) ([]Key, error) {
+	var missing []Key
+	after := ""
+	for {
+		page, err := s.store.Page(ctx, after, checkBatch)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			return missing, nil
+		}
+		keys := make([]string, len(page))
+		for i, k := range page {
+			keys[i] = k.Key
+		}
+		statuses, err := s.dict.CheckKeys(ctx, keys)
+		if err != nil {
+			return nil, err
+		}
+		has := make(map[string]bool, len(statuses))
+		for _, st := range statuses {
+			has[st.Key] = st.HasEntry
+		}
+		for _, k := range page {
+			found, answered := has[k.Key]
+			if !answered {
+				return nil, fmt.Errorf("pixkey: the DICT did not answer for key %q", k.Key)
+			}
+			if !found {
+				missing = append(missing, k)
+			}
+		}
+		after = page[len(page)-1].Key
+	}
 }
 
 func validate(in RegisterInput) error {

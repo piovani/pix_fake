@@ -62,6 +62,18 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatalf("by account: %+v, %v", keys, err)
 	}
 
+	first, err := store.Page(ctx, "", 1)
+	if err != nil || len(first) != 1 || first[0].Key != "a@example.com" {
+		t.Fatalf("first page: %+v, %v", first, err)
+	}
+	next, err := store.Page(ctx, first[0].Key, 10)
+	if err != nil || len(next) != 1 || next[0].Key != "b@example.com" {
+		t.Fatalf("next page: %+v, %v", next, err)
+	}
+	if last, err := store.Page(ctx, "b@example.com", 10); err != nil || len(last) != 0 {
+		t.Fatalf("after the last key: %+v, %v", last, err)
+	}
+
 	if err := store.Delete(ctx, "a@example.com"); err != nil {
 		t.Fatal(err)
 	}
