@@ -427,7 +427,7 @@ func TestCheckDICTErrors(t *testing.T) {
 		t.Fatalf("DICT down: %v", err)
 	}
 	d.checkErr, d.dropOne = nil, true
-	if _, err := s.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "a@example.com") {
+	if _, err := s.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "1 of 2") {
 		t.Fatalf("an answer without a key must fail: %v", err)
 	}
 }

@@ -160,6 +160,7 @@ func (s *Service) Check(ctx context.Context) ([]Key, error) {
 			return nil, err
 		}
 		if len(page) == 0 {
+			missingInDict.Record(ctx, int64(len(missing)))
 			return missing, nil
 		}
 		keys := make([]string, len(page))
@@ -177,7 +178,8 @@ func (s *Service) Check(ctx context.Context) ([]Key, error) {
 		for _, k := range page {
 			found, answered := has[k.Key]
 			if !answered {
-				return nil, fmt.Errorf("pixkey: the DICT did not answer for key %q", k.Key)
+				// the key itself stays out of the error, which ends up in the logs
+				return nil, fmt.Errorf("pixkey: the DICT answered for %d of %d keys", len(has), len(keys))
 			}
 			if !found {
 				missing = append(missing, k)

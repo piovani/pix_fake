@@ -90,9 +90,12 @@ account status and receive limit, worker sweeps (resend, resume, report, orphane
 
 ## Phase 3.2: Wallet follow-ups (next)
 
-- [x] Check that the DICT and the wallet's copy of the keys agree: `cmd/keys check`, through `checkKeys`. It finds keys
-  the wallet has and the DICT doesn't; the other direction needs the CID reconciliation, still left out
-- [ ] Re-check the Bacen specs from time to time (DICT API v2.13.0, SPI catalog 5.13, checked 2026-11-14)
+- [x] Check that the DICT and the wallet's copy of the keys agree: `cmd/keys check`, through `checkKeys`, also run by the
+  worker every hour into the gauge `wallet.keys.missing_in_dict` (a panel of the dashboard). It finds keys the wallet has
+  and the DICT doesn't; the other direction needs the CID reconciliation, still left out
+- [x] Re-check the Bacen specs (2026-11-25): DICT API still v2.13.0 (final of 2026-10-26, the copy in
+  `mock/dict/docs`), SPI catalog 5.13 (`spi.5.13.2` still the newest package, the only version in production since
+  2026-10-25), Manual das Interfaces de Comunicação 1.12. Nothing to change; re-check at every new version
 
 ## Phase 4: MED 2, funds recovery (later)
 
