@@ -1,6 +1,7 @@
 // Command worker is the wallet's second process. It applies what the SPI stream says about the payments the wallet sent,
-// and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them, and check
-// every hour that the wallet's keys are still in the DICT. It also answers the payments and returns other banks send to the wallet and credits them when the SPI settles.
+// and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them, and
+// reconcile the wallet's keys with the DICT every 6 hours. It also answers the payments and returns other banks send to
+// the wallet and credits them when the SPI settles.
 package main
 
 import (
@@ -23,8 +24,9 @@ import (
 
 const (
 	everyTick = 5 * time.Second
-	// checkKeys has its own rate limit in the DICT (KEYS_CHECK); once an hour is plenty for keys that rarely change.
-	keysCheckEvery = time.Hour
+	// A reconciliation that finds a difference asks the DICT for a CID file per key type, and the DICT allows 40 a day
+	// (CIDS_FILES_WRITE): every 6 hours, with 5 key types, stays at 20 even when a difference persists.
+	keysCheckEvery = 6 * time.Hour
 )
 
 func main() {
@@ -106,16 +108,25 @@ func main() {
 	slog.Info("worker stopped")
 }
 
-// checkKeys only logs how many keys the DICT no longer has: the keys are CPFs, emails and phones, kept out of the logs.
+// checkKeys logs only how many keys disagree, by kind: the keys are CPFs, emails and phones, kept out of the logs.
 // `cmd/keys check` lists them.
 func checkKeys(ctx context.Context, keys *pixkey.Service) {
-	missing, err := keys.Check(ctx)
-	switch {
-	case err != nil && ctx.Err() == nil:
-		slog.Warn("job failed", "job", "keys-check", "err", err)
-	case err == nil && len(missing) > 0:
-		slog.WarnContext(ctx, "keys of the wallet not in the DICT, see cmd/keys check", "count", len(missing))
+	findings, err := keys.Check(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			slog.Warn("job failed", "job", "keys-check", "err", err)
+		}
+		return
 	}
+	if len(findings) == 0 {
+		return
+	}
+	count := map[pixkey.Divergence]int{}
+	for _, f := range findings {
+		count[f.Kind]++
+	}
+	slog.WarnContext(ctx, "keys of the wallet disagree with the DICT, see cmd/keys check", "count", len(findings),
+		"missing_in_dict", count[pixkey.MissingInDict], "data_differs", count[pixkey.DataDiffers], "only_in_dict", count[pixkey.OnlyInDict])
 }
 
 func sweep(ctx context.Context, did string, job func(context.Context) (int, error)) {

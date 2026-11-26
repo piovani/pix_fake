@@ -31,20 +31,18 @@ func entries() []entry {
 	}
 }
 
-// keys use fixed request ids, which is what makes loading them again harmless.
+// keys use fixed request ids, which is what makes loading them again harmless. They are the ones the DICT mock seed
+// creates these keys with, so the CIDs both sides compute from them agree (see pixkey.Service.Reconcile).
 func keys() []pixkey.Key {
-	k := func(n int, account string, typ pix.KeyType, key string) pixkey.Key {
-		return pixkey.Key{Key: key, Type: typ, AccountID: account, RequestID: fmt.Sprintf("0a1b2c3d-1000-4000-8000-%012d", n)}
-	}
 	return []pixkey.Key{
-		k(1, AnaID, pix.KeyCPF, "52998224725"),
-		k(2, AnaID, pix.KeyPhone, "+5511999990001"),
-		k(3, AnaID, pix.KeyEmail, "ana.souza@example.com"),
-		k(4, AnaID, pix.KeyEVP, "8f3c1a52-6b7d-4e0a-9c11-2d5a7b3e9f01"),
-		k(5, BrunoID, pix.KeyCPF, "11144477735"),
-		k(6, BrunoID, pix.KeyPhone, "+5511999990002"),
-		k(7, PadariaID, pix.KeyCNPJ, "11222333000181"),
-		k(8, PadariaID, pix.KeyEmail, "contato@paoquente.example.com"),
+		{Key: "52998224725", Type: pix.KeyCPF, AccountID: AnaID, RequestID: "462dd5b8-4828-40bf-b224-359a271bd7c9"},
+		{Key: "+5511999990001", Type: pix.KeyPhone, AccountID: AnaID, RequestID: "b7d16d8f-f1a5-4106-b507-f735142919d9"},
+		{Key: "ana.souza@example.com", Type: pix.KeyEmail, AccountID: AnaID, RequestID: "f432103e-5079-4cdf-877c-982a8efeaecb"},
+		{Key: "8f3c1a52-6b7d-4e0a-9c11-2d5a7b3e9f01", Type: pix.KeyEVP, AccountID: AnaID, RequestID: "8f47aee1-70d1-4be6-9315-d17c2ac4ebc0"},
+		{Key: "11144477735", Type: pix.KeyCPF, AccountID: BrunoID, RequestID: "d3b39643-440e-4ae0-900b-9f09f274c815"},
+		{Key: "+5511999990002", Type: pix.KeyPhone, AccountID: BrunoID, RequestID: "75bb4f7a-e4be-42ec-9841-4634c04d049e"},
+		{Key: "11222333000181", Type: pix.KeyCNPJ, AccountID: PadariaID, RequestID: "34197520-2f30-484f-b66b-bd80dee58ecb"},
+		{Key: "contato@paoquente.example.com", Type: pix.KeyEmail, AccountID: PadariaID, RequestID: "5f49fb05-03c8-4bc1-9e74-0e82d69d367f"},
 	}
 }
 

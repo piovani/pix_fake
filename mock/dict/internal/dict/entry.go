@@ -65,6 +65,8 @@ type Entry struct {
 	Owner            Owner
 	CreationDate     time.Time
 	KeyOwnershipDate time.Time
+	RequestID        string // of the request that created it
+	CID              string // content identifier, see CID
 }
 
 // KeyStatus is the result of checking a key (/keys/check).

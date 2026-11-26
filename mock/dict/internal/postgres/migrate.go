@@ -8,6 +8,8 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"pixfake/mock/dict/internal/dict"
 )
 
 //go:embed migrations/*.sql
@@ -55,7 +57,50 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("migration %s: %w", f, err)
 		}
 	}
+	if err := backfillCIDs(ctx, conn); err != nil {
+		return fmt.Errorf("backfill CIDs: %w", err)
+	}
 	return nil
+}
+
+// backfillCIDs gives a CID, and its ADDED event, to the entries created before the reconciliation existed.
+func backfillCIDs(ctx context.Context, conn *pgxpool.Conn) error {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	rows, err := tx.Query(ctx, `SELECT `+selectColumns+` FROM entries WHERE cid IS NULL ORDER BY creation_date, key`)
+	if err != nil {
+		return err
+	}
+	var todo []dict.Entry
+	for rows.Next() {
+		e, err := scanEntry(rows)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		todo = append(todo, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, e := range todo {
+		cid, err := dict.CID(e, e.RequestID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE entries SET cid = $2 WHERE key = $1`, e.Key, cid); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO cid_events (participant, key_type, type, cid, at) VALUES ($1, $2, 'ADDED', $3, $4)`,
+			e.Account.Participant, e.KeyType, cid, e.CreationDate); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func applyMigration(ctx context.Context, conn *pgxpool.Conn, name, sql string) error {

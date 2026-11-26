@@ -36,7 +36,13 @@ func (s *Service) Seed(ctx context.Context, entries []Entry) (SeedResult, error)
 	var res SeedResult
 	for _, e := range entries {
 		e.CreationDate, e.KeyOwnershipDate = now, now
-		switch err := s.repo.Create(ctx, e, deterministicUUID("seed:"+e.Key)); {
+		e.RequestID = SeedRequestID(e.Key)
+		cid, err := CID(e, e.RequestID)
+		if err != nil {
+			return res, err
+		}
+		e.CID = cid
+		switch err := s.repo.Create(ctx, e, e.RequestID); {
 		case err == nil:
 			res.Created = append(res.Created, e.Key)
 		case errors.Is(err, ErrKeyExists), errors.Is(err, ErrRequestIDUsed):
@@ -47,6 +53,10 @@ func (s *Service) Seed(ctx context.Context, entries []Entry) (SeedResult, error)
 	}
 	return res, nil
 }
+
+// SeedRequestID is the RequestId a seed entry is created with. The wallet's own seed uses the same ones for its keys, so
+// both sides compute the same CIDs.
+func SeedRequestID(key string) string { return deterministicUUID("seed:" + key) }
 
 // validateSeedEntry applies the same rules as creation, but accepts a supplied EVP key.
 func validateSeedEntry(e Entry) violations {

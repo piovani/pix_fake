@@ -177,31 +177,62 @@ func TestResendRefusedReport(t *testing.T) {
 	}
 }
 
-// A key removed from the DICT behind the wallet's back shows up in `keys check`, which fails until the copy is fixed.
+// The reconciliation (`keys check`) finds each way the DICT can disagree with the wallet, done behind the wallet's back
+// with the wallet's own participant, and passes again once both sides are put right.
 func TestKeysCheck(t *testing.T) {
 	e := setup(t)
 	if out, code := runExit(t, "keys", "check"); code != 0 {
 		t.Fatalf("the seed data disagrees with the DICT:\n%s", out)
 	}
 
-	key := uniqueEmail(t)
-	if _, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, key, requestID(t)); err != nil {
+	missing, differs, only := uniqueEmail(t), uniqueEmail(t), uniqueEmail(t)
+	for _, key := range []string{missing, differs} {
+		if _, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, key, requestID(t)); err != nil {
+			t.Fatal(err)
+		}
+		e.cleanup(t, seed.AnaID, key)
+	}
+	if err := e.wallet.DeleteEntry(ctx(t), missing, pix.ReasonUserRequested); err != nil {
 		t.Fatal(err)
 	}
-	e.cleanup(t, seed.AnaID, key)
-	if err := e.wallet.DeleteEntry(ctx(t), key, pix.ReasonUserRequested); err != nil {
+	ana := pix.Owner{Type: pix.NaturalPerson, TaxIDNumber: anaCPF, Name: "Ana Souza"}
+	renamed := ana
+	renamed.Name = "Ana Souza Lima"
+	if _, err := e.wallet.UpdateEntry(ctx(t), pix.UpdateEntryParams{Key: differs, Owner: &renamed, Reason: pix.ReasonUserRequested}); err != nil {
 		t.Fatal(err)
 	}
+	account := pix.Account{Participant: walletISPB, Branch: "0001", AccountNumber: "00123456", AccountType: pix.AccountChecking,
+		OpeningDate: time.Date(2020, 3, 10, 3, 0, 0, 0, time.UTC)}
+	if _, err := e.wallet.CreateEntry(ctx(t), pix.Entry{Key: only, KeyType: pix.KeyEmail, Account: account, Owner: ana}, requestID(t)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.wallet.DeleteEntry(context.Background(), only, pix.ReasonUserRequested) })
 
 	out, code := runExit(t, "keys", "check")
-	if code != 1 || !strings.Contains(out, key+"\tEMAIL\t"+seed.AnaID) {
-		t.Fatalf("exit %d, want 1 and the key listed:\n%s", code, out)
+	for _, line := range []string{
+		"MISSING_IN_DICT\t" + missing + "\tEMAIL\t" + seed.AnaID,
+		"DATA_DIFFERS\t" + differs + "\tEMAIL\t" + seed.AnaID,
+		"ONLY_IN_DICT\t" + only + "\tEMAIL\t",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("%q not listed", line)
+		}
+	}
+	if code != 1 || t.Failed() {
+		t.Fatalf("exit %d, want 1 and the three keys listed:\n%s", code, out)
 	}
 
-	if err := e.remove(t, seed.AnaID, key); err != nil {
+	// put each one right: forget the key the DICT lost, undo the rename, remove the stray entry
+	if err := e.remove(t, seed.AnaID, missing); err != nil {
 		t.Fatalf("removing a key the DICT no longer has: %v", err)
 	}
+	if _, err := e.wallet.UpdateEntry(ctx(t), pix.UpdateEntryParams{Key: differs, Owner: &ana, Reason: pix.ReasonUserRequested}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.wallet.DeleteEntry(ctx(t), only, pix.ReasonUserRequested); err != nil {
+		t.Fatal(err)
+	}
 	if out, code := runExit(t, "keys", "check"); code != 0 {
-		t.Fatalf("after removing it: exit %d\n%s", code, out)
+		t.Fatalf("after putting them right: exit %d\n%s", code, out)
 	}
 }

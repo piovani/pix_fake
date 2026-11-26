@@ -62,6 +62,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT "+BasePath+"/entries/{Key}", s.api(s.updateEntry))
 	mux.Handle("POST "+BasePath+"/entries/{Key}/delete", s.api(s.deleteEntry))
 	mux.Handle("POST "+BasePath+"/keys/check", s.api(s.checkKeys))
+	mux.Handle("POST "+BasePath+"/sync-verifications", s.api(s.createSyncVerification))
+	mux.Handle("POST "+BasePath+"/cids/files", s.api(s.createCidSetFile))
+	mux.Handle("GET "+BasePath+"/cids/files/{Id}", s.api(s.getCidSetFile))
+	mux.Handle("GET "+BasePath+"/cids/events", s.api(s.listCidSetEvents))
+	mux.Handle("GET "+BasePath+"/cids/entries/{Cid}", s.api(s.getEntryByCid))
+	mux.HandleFunc("GET "+cidFilesPath+"{Id}", s.cidFileContent)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, &dict.Error{Kind: dict.KindNotFound, Detail: "Resource does not exist"})
 	})
@@ -70,7 +76,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	var h http.Handler = mux
 	if s.faults != nil {
-		h = s.faults.Middleware(h, []string{"/mock/", "/healthz"}, func(w http.ResponseWriter, r *http.Request, status int) {
+		h = s.faults.Middleware(h, []string{"/mock/", "/healthz", cidFilesPath}, func(w http.ResponseWriter, r *http.Request, status int) {
 			kind := kindServiceUnavailable
 			if status == http.StatusTooManyRequests {
 				kind = kindTooManyRequests

@@ -127,6 +127,84 @@ type checkKeysResponse struct {
 	} `xml:"Keys"`
 }
 
+// --- Reconciliation ---
+
+type syncVerificationXML struct {
+	Participant             string `xml:"Participant"`
+	KeyType                 string `xml:"KeyType"`
+	ParticipantSyncVerifier string `xml:"ParticipantSyncVerifier"`
+	ID                      int64  `xml:"Id,omitempty"`
+	Result                  string `xml:"Result,omitempty"`
+}
+
+type createSyncVerificationRequest struct {
+	XMLName          xml.Name            `xml:"CreateSyncVerificationRequest"`
+	SyncVerification syncVerificationXML `xml:"SyncVerification"`
+}
+
+type createSyncVerificationResponse struct {
+	XMLName xml.Name `xml:"CreateSyncVerificationResponse"`
+	header
+	SyncVerification syncVerificationXML `xml:"SyncVerification"`
+}
+
+type createCidSetFileRequest struct {
+	XMLName     xml.Name `xml:"CreateCidSetFileRequest"`
+	Participant string   `xml:"Participant"`
+	KeyType     string   `xml:"KeyType"`
+}
+
+type cidSetFileXML struct {
+	ID           int64    `xml:"Id"`
+	Status       string   `xml:"Status"`
+	Participant  string   `xml:"Participant"`
+	KeyType      string   `xml:"KeyType"`
+	RequestTime  isoTime  `xml:"RequestTime"`
+	CreationTime *isoTime `xml:"CreationTime,omitempty"`
+	URL          string   `xml:"Url,omitempty"`
+	Bytes        *int     `xml:"Bytes,omitempty"`
+	Sha256       string   `xml:"Sha256,omitempty"`
+}
+
+type createCidSetFileResponse struct {
+	XMLName xml.Name `xml:"CreateCidSetFileResponse"`
+	header
+	CidSetFile cidSetFileXML `xml:"CidSetFile"`
+}
+
+type getCidSetFileResponse struct {
+	XMLName xml.Name `xml:"GetCidSetFileResponse"`
+	header
+	CidSetFile cidSetFileXML `xml:"CidSetFile"`
+}
+
+type cidSetEventXML struct {
+	Type      string  `xml:"Type"`
+	Cid       string  `xml:"Cid"`
+	Timestamp isoTime `xml:"Timestamp"`
+}
+
+type listCidSetEventsResponse struct {
+	XMLName xml.Name `xml:"ListCidSetEventsResponse"`
+	header
+	HasMoreElements   bool             `xml:"HasMoreElements"`
+	Participant       string           `xml:"Participant"`
+	KeyType           string           `xml:"KeyType"`
+	StartTime         isoTime          `xml:"StartTime"`
+	EndTime           isoTime          `xml:"EndTime"`
+	SyncVerifierStart string           `xml:"SyncVerifierStart"`
+	SyncVerifierEnd   string           `xml:"SyncVerifierEnd"`
+	CidSetEvents      []cidSetEventXML `xml:"CidSetEvents>CidSetEvent"`
+}
+
+type getEntryByCidResponse struct {
+	XMLName xml.Name `xml:"GetEntryByCidResponse"`
+	header
+	Cid       string   `xml:"Cid"`
+	Entry     entryXML `xml:"Entry"`
+	RequestID string   `xml:"RequestId"`
+}
+
 // --- Anti-fraud statistics (always zero in the mock) ---
 
 type windowed struct {

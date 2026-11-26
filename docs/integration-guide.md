@@ -198,6 +198,11 @@ same entry back. Same `RequestId`, other data: `400 RequestIdAlreadyUsed`. Key t
 and the DICT generates it. Remove with `POST /entries/{Key}/delete`, change account or name with `PUT /entries/{Key}`,
 and `POST /keys/check` tells which of up to 200 keys exist. Writes must come from the participant that holds the key.
 
+Keep the `RequestId` of each key: it is the key of the key's CID, which the reconciliation compares. Per key type, send
+the XOR of your CIDs to `POST /sync-verifications`; on `NOK`, `POST /cids/files` and then `GET /cids/files/{Id}` give a
+`Url` with every CID the DICT has for you, and `GET /cids/entries/{Cid}` reads one of them. `GET /cids/events` lists
+the changes. The wallet's `cmd/keys check` does all of it ([wallet README](../wallet/README.md)).
+
 ## Reading what the SPI sends
 
 Everything the SPI has for you comes from one stream:

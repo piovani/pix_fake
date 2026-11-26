@@ -491,9 +491,9 @@
     },
     {
       "type": "stat",
-      "title": "Keys missing in the DICT",
+      "title": "Keys out of sync with the DICT",
       "id": 25,
-      "description": "Keys of the wallet's copy that the DICT did not have at the worker's last hourly check. Above 0, run cmd/keys check to list them.",
+      "description": "Keys that disagreed with the DICT at the worker's last reconciliation (every 6 hours), by kind: MISSING_IN_DICT, DATA_DIFFERS, ONLY_IN_DICT. Above 0, run cmd/keys check to list them.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -511,8 +511,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(wallet_keys_missing_in_dict)",
-          "instant": true
+          "expr": "max by (kind) (wallet_keys_out_of_sync)",
+          "instant": true,
+          "legendFormat": "{{kind}}"
         }
       ],
       "fieldConfig": {

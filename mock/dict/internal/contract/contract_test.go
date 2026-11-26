@@ -28,6 +28,11 @@ var operations = []struct{ method, path string }{
 	{"PUT", "/entries/{Key}"},
 	{"POST", "/entries/{Key}/delete"},
 	{"POST", "/keys/check"},
+	{"POST", "/sync-verifications"},
+	{"POST", "/cids/files"},
+	{"GET", "/cids/files/{Id}"},
+	{"GET", "/cids/events"},
+	{"GET", "/cids/entries/{Cid}"},
 }
 
 type server struct {
@@ -212,6 +217,35 @@ func TestSpecRequests(t *testing.T) {
 		t.Fatalf("checkKeys with the example = %d\n%s", r.status, r.body)
 	}
 
+	// Reconciliation, by the participant of the create example.
+	r = s.do("POST", "/sync-verifications", example("POST", "/sync-verifications"), asHolder)
+	conforms(t, sp, "POST", "/sync-verifications", r)
+	if r.status != http.StatusCreated {
+		t.Fatalf("createSyncVerification with the example = %d\n%s", r.status, r.body)
+	}
+	r = s.do("POST", "/cids/files", example("POST", "/cids/files"), asHolder)
+	conforms(t, sp, "POST", "/cids/files", r)
+	if r.status != http.StatusCreated {
+		t.Fatalf("createCidSetFile with the example = %d\n%s", r.status, r.body)
+	}
+	fileID := between(string(r.body), "<Id>", "</Id>")
+	r = s.do("GET", "/cids/files/"+fileID, "", with(asHolder, "PI-RequestingParticipant", holder))
+	conforms(t, sp, "GET", "/cids/files/{Id}", r)
+	if r.status != http.StatusOK || !strings.Contains(string(r.body), "<Url>") {
+		t.Fatalf("getCidSetFile = %d\n%s", r.status, r.body)
+	}
+	r = s.do("GET", "/cids/events?Participant="+holder+"&KeyType="+between(create, "<KeyType>", "</KeyType>"), "", asHolder)
+	conforms(t, sp, "GET", "/cids/events", r)
+	if r.status != http.StatusOK {
+		t.Fatalf("listCidSetEvents = %d\n%s", r.status, r.body)
+	}
+	cid := between(string(r.body), "<Cid>", "</Cid>")
+	r = s.do("GET", "/cids/entries/"+cid, "", asHolder)
+	conforms(t, sp, "GET", "/cids/entries/{Cid}", r)
+	if r.status != http.StatusOK {
+		t.Fatalf("getEntryByCid(%q) = %d\n%s", cid, r.status, r.body)
+	}
+
 	del := example("POST", "/entries/{Key}/delete")
 	r = s.do("POST", "/entries/"+between(del, "<Key>", "</Key>")+"/delete", del, asHolder)
 	conforms(t, sp, "POST", "/entries/{Key}/delete", r)
@@ -271,9 +305,36 @@ func createBody(entry, reason, requestID string) string {
 	return `<CreateEntryRequest>` + entry + `<Reason>` + reason + `</Reason><RequestId>` + requestID + `</RequestId></CreateEntryRequest>`
 }
 
+// carlosCID is the CID of Carlos Mendes' CPF key in the seed, held by Banco Alfa.
+func carlosCID(t *testing.T) string {
+	t.Helper()
+	for _, e := range seed.Entries() {
+		if e.Key == carlos {
+			cid, err := dict.CID(e, dict.SeedRequestID(e.Key))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return cid
+		}
+	}
+	t.Fatal("Carlos Mendes is not in the seed")
+	return ""
+}
+
+func syncBody(participant, keyType, verifier string) string {
+	return `<CreateSyncVerificationRequest><SyncVerification><Participant>` + participant + `</Participant><KeyType>` + keyType +
+		`</KeyType><ParticipantSyncVerifier>` + verifier + `</ParticipantSyncVerifier></SyncVerification></CreateSyncVerificationRequest>`
+}
+
+func cidFileBody(participant, keyType string) string {
+	return `<CreateCidSetFileRequest><Participant>` + participant + `</Participant><KeyType>` + keyType + `</KeyType></CreateCidSetFileRequest>`
+}
+
 func TestSpecAnswers(t *testing.T) {
 	sp := loadSpec(t)
 	s := newServer(t)
+	cid := carlosCID(t)
+	asRequester := map[string]string{httpapi.ParticipantHeader: requester}
 	asHolder := map[string]string{httpapi.ParticipantHeader: holder}
 	newEntry := entryXML("+5521988887777", "PHONE", holder, "00700001", "CACC", carlos, "Carlos Mendes")
 	const req1, req2 = "5c1f4ac6-8d2e-4f6b-9a4e-1f2d3c4b5a69", "6d2f5bd7-9e3f-4a7c-8b5f-2a3e4d5c6b7a"
@@ -314,6 +375,30 @@ func TestSpecAnswers(t *testing.T) {
 		{"check keys", "POST", "/keys/check", "/keys/check", `<CheckKeysRequest><Keys><Key>` + carlos + `</Key><Key>mail@mail.com</Key></Keys></CheckKeysRequest>`, asHolder, 200},
 		{"check no keys", "POST", "/keys/check", "/keys/check", `<CheckKeysRequest><Keys></Keys></CheckKeysRequest>`, asHolder, 400},
 
+		{"sync verification that agrees", "POST", "/sync-verifications", "/sync-verifications", syncBody(holder, "CPF", cid), asHolder, 201},
+		{"sync verification that disagrees", "POST", "/sync-verifications", "/sync-verifications", syncBody(holder, "CPF", dict.ZeroVSync), asHolder, 201},
+		{"sync verification of another participant", "POST", "/sync-verifications", "/sync-verifications", syncBody(holder, "CPF", cid), asRequester, 403},
+		{"sync verification with a bad verifier", "POST", "/sync-verifications", "/sync-verifications", syncBody(holder, "CPF", "abc"), asHolder, 400},
+		{"sync verification of an unknown key type", "POST", "/sync-verifications", "/sync-verifications", syncBody(holder, "IBAN", cid), asHolder, 400},
+
+		{"CID file", "POST", "/cids/files", "/cids/files", cidFileBody(holder, "CPF"), asHolder, 201},
+		{"CID file of another participant", "POST", "/cids/files", "/cids/files", cidFileBody(holder, "CPF"), asRequester, 403},
+		{"CID file of an unknown key type", "POST", "/cids/files", "/cids/files", cidFileBody(holder, "IBAN"), asHolder, 400},
+		{"get the CID file", "GET", "/cids/files/{Id}", "/cids/files/1", "", with(asHolder, "PI-RequestingParticipant", holder), 200},
+		{"get a CID file of another participant", "GET", "/cids/files/{Id}", "/cids/files/1", "", with(asRequester, "PI-RequestingParticipant", requester), 403},
+		{"get a CID file without PI-RequestingParticipant", "GET", "/cids/files/{Id}", "/cids/files/1", "", asHolder, 403},
+		{"get an unknown CID file", "GET", "/cids/files/{Id}", "/cids/files/999", "", with(asHolder, "PI-RequestingParticipant", holder), 404},
+
+		{"CID events", "GET", "/cids/events", "/cids/events?Participant=" + holder + "&KeyType=CPF&Limit=10", "", asHolder, 200},
+		{"CID events in a window", "GET", "/cids/events", "/cids/events?Participant=" + holder + "&KeyType=CPF&StartTime=2020-01-01T00:00:00Z&EndTime=2099-01-01T00:00:00Z", "", asHolder, 200},
+		{"CID events of another participant", "GET", "/cids/events", "/cids/events?Participant=" + holder + "&KeyType=CPF", "", asRequester, 403},
+		{"CID events with a bad limit", "GET", "/cids/events", "/cids/events?Participant=" + holder + "&KeyType=CPF&Limit=500", "", asHolder, 400},
+		{"CID events without a key type", "GET", "/cids/events", "/cids/events?Participant=" + holder, "", asHolder, 400},
+
+		{"entry by CID", "GET", "/cids/entries/{Cid}", "/cids/entries/" + cid, "", asHolder, 200},
+		{"entry by CID of another participant", "GET", "/cids/entries/{Cid}", "/cids/entries/" + cid, "", asRequester, 403},
+		{"entry by an unknown CID", "GET", "/cids/entries/{Cid}", "/cids/entries/" + dict.ZeroVSync, "", asHolder, 404},
+
 		{"delete a key of another participant", "POST", "/entries/{Key}/delete", "/entries/+5521988887777/delete",
 			`<DeleteEntryRequest><Key>+5521988887777</Key><Participant>` + holder + `</Participant><Reason>USER_REQUESTED</Reason></DeleteEntryRequest>`, map[string]string{httpapi.ParticipantHeader: "12345678"}, 403},
 		{"delete", "POST", "/entries/{Key}/delete", "/entries/+5521988887777/delete",
@@ -353,7 +438,7 @@ func TestSpecFaults(t *testing.T) {
 		if _, err := s.faults.Add(fault.Rule{Status: 503, Count: 1}); err != nil {
 			t.Fatal(err)
 		}
-		path := strings.ReplaceAll(o.path, "{Key}", "+5521988887777")
+		path := strings.NewReplacer("{Key}", "+5521988887777", "{Id}", "1", "{Cid}", dict.ZeroVSync).Replace(o.path)
 		r := s.do(o.method, path, "<x/>", map[string]string{httpapi.ParticipantHeader: holder})
 		if r.status != 503 {
 			t.Fatalf("%s %s = %d", o.method, o.path, r.status)

@@ -69,6 +69,13 @@ curl -s -H "X-Participant-ISPB: 99000001" -H "PI-RequestingParticipant: 99000001
 - **`getEntry`** needs `PI-RequestingParticipant`, `PI-PayerId` and `PI-EndToEndId`. The `EndToEndId` shape is checked
   against the SPI pattern, stricter than the OpenAPI file (which only says "string").
 - **`checkKeys`** takes 1–200 keys and keeps their order.
+- **Reconciliation.** Every entry has a CID (`hmacSha256` keyed by the `RequestId` that created it, over the key, owner
+  and account, as the spec's Reconciliation section says), and every write records a CID event (`ADDED`, `REMOVED`, both
+  for an update) in the same transaction. `createSyncVerification` compares the caller's VSync (XOR of its CIDs of one
+  key type) with the DICT's. `createCidSetFile` answers `REQUESTED`, as the spec's asynchronous DICT does, but the file
+  is ready at once: `getCidSetFile` gives `AVAILABLE` with a `Url` under `/files/cids/{Id}` on the mock itself, which
+  stands for the DICT's storage and asks for no participant. `listCidSetEvents` gives `SyncVerifierStart`/`End` from the
+  events themselves. A participant only reconciles its own entries (`403` otherwise).
 
 | Operation | Path | Success |
 |-----------|------|---------|
@@ -77,9 +84,14 @@ curl -s -H "X-Participant-ISPB: 99000001" -H "PI-RequestingParticipant: 99000001
 | `updateEntry` | `PUT /entries/{Key}` | 200 |
 | `deleteEntry` | `POST /entries/{Key}/delete` | 200 |
 | `checkKeys` | `POST /keys/check` | 200 |
+| `createSyncVerification` | `POST /sync-verifications` | 201 |
+| `createCidSetFile` | `POST /cids/files` | 201 |
+| `getCidSetFile` | `GET /cids/files/{Id}` | 200 |
+| `listCidSetEvents` | `GET /cids/events` | 200 |
+| `getEntryByCid` | `GET /cids/entries/{Cid}` | 200 |
 
 Everything else (claims, funds recovery, infraction reports, refunds, fraud markers, statistics, notifications,
-policies, CID) returns `404`.
+policies) returns `404`.
 
 ## Control API
 
@@ -87,7 +99,7 @@ JSON under `/mock`, not part of Bacen's contract.
 
 | | |
 |-|-|
-| `GET /mock/entries[?participant=&limit=]` | registered keys |
+| `GET /mock/entries[?participant=&limit=]` | registered keys, with their CID |
 | `POST /mock/reset` | back to the seed, faults cleared |
 | `POST /mock/faults`, `GET`, `DELETE /mock/faults[/{id}]` | answer `429`/`503` (with `Retry-After`) or late |
 
@@ -109,6 +121,9 @@ Known gap: the spec documents no `400` for `checkKeys`, which the mock returns f
 - No rate limiting of its own; statistics are always zero; no claims.
 - A key already registered is `409 ResourceConflict`; an unexpected error is `503` with `Retry-After` (the spec has no `500`).
 - Deleting removes the row, so its `RequestId` can be reused. Check digits are not verified.
+- The wallet's seed keys are created with the `RequestId`s the wallet's own seed uses (`dict.SeedRequestID`), and the
+  wallet's Padaria has no trade name, as the wallet registers keys: so the CIDs of both sides agree from the start.
+  Migration `002` brings a database seeded before in line, and gives CIDs to the entries it already had.
 
 ## Layout
 
