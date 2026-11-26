@@ -17,10 +17,11 @@ type Store struct {
 	events    map[string][]dict.CIDEvent // "participant/keyType" -> oldest first
 	files     []dict.CIDFile
 	syncs     int64
+	med       med
 }
 
 func New() *Store {
-	return &Store{entries: map[string]dict.Entry{}, requestID: map[string]string{}, events: map[string][]dict.CIDEvent{}}
+	return &Store{entries: map[string]dict.Entry{}, requestID: map[string]string{}, events: map[string][]dict.CIDEvent{}, med: newMED()}
 }
 
 func scope(participant string, kt dict.KeyType) string { return participant + "/" + string(kt) }
@@ -98,7 +99,7 @@ func (s *Store) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// DeleteAll removes every entry (control API).
+// DeleteAll removes every entry, and every MED record (control API).
 func (s *Store) DeleteAll(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,6 +107,7 @@ func (s *Store) DeleteAll(_ context.Context) error {
 	s.requestID = map[string]string{}
 	s.events = map[string][]dict.CIDEvent{}
 	s.files, s.syncs = nil, 0
+	s.med = newMED()
 	return nil
 }
 

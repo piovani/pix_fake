@@ -16,6 +16,7 @@ const (
 	KindForbidden            Kind = "Forbidden"
 	KindNotFound             Kind = "NotFound"
 	KindConflict             Kind = "ResourceConflict"
+	KindReportInvalid        Kind = "InfractionReportInvalid"
 )
 
 // Violation describes an invalid field (the <violation> element of the problem+xml).

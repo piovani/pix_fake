@@ -151,9 +151,9 @@ func (r *Repository) Delete(ctx context.Context, key string) error {
 	return tx.Commit(ctx)
 }
 
-// DeleteAll removes every entry and what the reconciliation kept about them (control API).
+// DeleteAll removes every entry, what the reconciliation kept about them, and every MED record (control API).
 func (r *Repository) DeleteAll(ctx context.Context) error {
-	_, err := r.pool.Exec(ctx, `TRUNCATE entries, cid_events, sync_verifications, cid_files RESTART IDENTITY`)
+	_, err := r.pool.Exec(ctx, `TRUNCATE entries, cid_events, sync_verifications, cid_files, transactions, infraction_reports, fraud_markers, refunds RESTART IDENTITY`)
 	return err
 }
 

@@ -342,7 +342,8 @@ func (s *spec) node(n *node, sc sch, path string, errs *[]string) {
 	for _, kid := range n.kids {
 		p, ok := byName[kid.name]
 		if !ok {
-			if kid.name != "Signature" {
+			// an element the schema requires without declaring it (Total of ListFraudMarkersResponse) is expected
+			if kid.name != "Signature" && !sc.required[kid.name] {
 				add("unexpected element <%s>", kid.name)
 			}
 			continue

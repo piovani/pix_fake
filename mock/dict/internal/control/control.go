@@ -5,11 +5,13 @@
 //	GET    /mock/entries[?participant=&limit=]   the registered keys, ordered by key
 //	POST   /mock/reset                           removes every entry and loads the seed data again
 //	GET    /mock/faults, POST /mock/faults, DELETE /mock/faults[/{id}]   make the API answer 429/503 or late
+//	GET    /mock/transactions, POST /mock/transactions   the transactions settled in the SPI that the DICT knows (MED)
 package control
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,12 +28,19 @@ type Store interface {
 	ListEntries(ctx context.Context, participant string, limit int) ([]dict.Entry, error)
 }
 
+// Transactions is how the control API tells the DICT of transactions settled in the SPI.
+type Transactions interface {
+	AddTransaction(ctx context.Context, t dict.Transaction) error
+	Transactions(ctx context.Context) ([]dict.Transaction, error)
+}
+
 // Control serves the control API.
 type Control struct {
 	Store Store
 	// Reseed loads the seed data again; it runs after the entries are removed.
-	Reseed func(ctx context.Context) error
-	Faults *fault.Set
+	Reseed       func(ctx context.Context) error
+	Faults       *fault.Set
+	Transactions Transactions // nil: no /mock/transactions
 }
 
 // New creates the control API. faults is the set the API consults; when nil the control API gets one of its own.
@@ -40,6 +49,12 @@ func New(store Store, reseed func(ctx context.Context) error, faults *fault.Set)
 		faults = &fault.Set{}
 	}
 	return &Control{Store: store, Reseed: reseed, Faults: faults}
+}
+
+// WithTransactions serves /mock/transactions with t (the DICT service).
+func (c *Control) WithTransactions(t Transactions) *Control {
+	c.Transactions = t
+	return c
 }
 
 // Handler returns the routes, all under /mock/.
@@ -51,6 +66,10 @@ func (c *Control) Handler() http.Handler {
 	mux.HandleFunc("POST /mock/faults", c.addFault)
 	mux.HandleFunc("DELETE /mock/faults", c.clearFaults)
 	mux.HandleFunc("DELETE /mock/faults/{id}", c.removeFault)
+	if c.Transactions != nil {
+		mux.HandleFunc("GET /mock/transactions", c.transactions)
+		mux.HandleFunc("POST /mock/transactions", c.addTransaction)
+	}
 	mux.HandleFunc("/mock/", func(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "no such control endpoint: "+r.URL.Path)
 	})
@@ -157,4 +176,65 @@ func (c *Control) removeFault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type partyView struct {
+	Participant string `json:"participant"`
+	TaxID       string `json:"tax_id"`
+	Key         string `json:"key,omitempty"` // creditor only: the key that was paid
+}
+
+type transactionView struct {
+	EndToEndID string    `json:"end_to_end_id"`
+	Amount     string    `json:"amount"` // reais, "150.00"
+	SettledAt  time.Time `json:"settled_at,omitzero"`
+	Debtor     partyView `json:"debtor"`
+	Creditor   partyView `json:"creditor"`
+}
+
+func (c *Control) transactions(w http.ResponseWriter, r *http.Request) {
+	list, err := c.Transactions.Transactions(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]transactionView, len(list))
+	for i, t := range list {
+		out[i] = transactionView{
+			EndToEndID: t.ID, Amount: dict.FormatAmount(t.Amount), SettledAt: t.SettlementTime,
+			Debtor:   partyView{Participant: t.DebtorParticipant, TaxID: t.DebtorTaxID},
+			Creditor: partyView{Participant: t.CreditorParticipant, TaxID: t.CreditorTaxID, Key: t.CreditorKey},
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"transactions": out})
+}
+
+// addTransaction tells the DICT of a transaction settled in the SPI, so that it can be reported and refunded.
+func (c *Control) addTransaction(w http.ResponseWriter, r *http.Request) {
+	var v transactionView
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&v); err != nil {
+		fail(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	amount, err := dict.ParseAmount(v.Amount)
+	if err != nil {
+		fail(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	err = c.Transactions.AddTransaction(r.Context(), dict.Transaction{
+		ID: v.EndToEndID, Amount: amount, SettlementTime: v.SettledAt,
+		DebtorParticipant: v.Debtor.Participant, DebtorTaxID: v.Debtor.TaxID,
+		CreditorParticipant: v.Creditor.Participant, CreditorTaxID: v.Creditor.TaxID, CreditorKey: v.Creditor.Key,
+	})
+	var de *dict.Error
+	switch {
+	case errors.As(err, &de):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": de.Detail, "violations": de.Violations})
+	case err != nil:
+		fail(w, http.StatusInternalServerError, err.Error())
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }

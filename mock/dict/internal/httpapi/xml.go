@@ -205,7 +205,7 @@ type getEntryByCidResponse struct {
 	RequestID string   `xml:"RequestId"`
 }
 
-// --- Anti-fraud statistics (always zero in the mock) ---
+// --- Anti-fraud statistics ---
 
 type windowed struct {
 	D90 int `xml:"d90,attr"`
@@ -250,13 +250,4 @@ type keyStatsXML struct {
 		Watermark        isoTime  `xml:"Watermark"`
 		DistinctAccounts windowed `xml:"DistinctAccounts"`
 	} `xml:"Entries"`
-}
-
-func zeroStats(now time.Time) (*ownerStatsXML, *keyStatsXML) {
-	w := isoTime(now)
-	var o ownerStatsXML
-	o.Spi.Watermark, o.FraudMarkers.Watermark, o.InfractionReports.Watermark, o.Entries.Watermark = w, w, w, w
-	var k keyStatsXML
-	k.Spi.Watermark, k.FraudMarkers.Watermark, k.InfractionReports.Watermark, k.Entries.Watermark = w, w, w, w
-	return &o, &k
 }

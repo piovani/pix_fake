@@ -71,7 +71,11 @@ func (s *Server) getEntry(r *http.Request, _ string) (int, any, error) {
 	}
 	resp := getEntryResponse{header: s.newHeader(r), Entry: entryToXML(e)}
 	if includeStats {
-		resp.OwnerStatistics, resp.KeyStatistics = zeroStats(s.now())
+		owner, ks, err := s.svc.EntryStatistics(r.Context(), e.Key)
+		if err != nil {
+			return 0, nil, err
+		}
+		resp.OwnerStatistics, resp.KeyStatistics = ownerStats(owner), keyStats(ks)
 	}
 	return http.StatusOK, resp, nil
 }

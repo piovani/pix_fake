@@ -27,6 +27,7 @@ var problems = map[dict.Kind]struct {
 	dict.KindForbidden:            {http.StatusForbidden, "Forbidden"},
 	dict.KindNotFound:             {http.StatusNotFound, "Not found"},
 	dict.KindConflict:             {http.StatusConflict, "Conflict"},
+	dict.KindReportInvalid:        {http.StatusBadRequest, "InfractionReport is invalid"},
 	kindServiceUnavailable:        {http.StatusServiceUnavailable, "Service Unavailable"},
 	kindTooManyRequests:           {http.StatusTooManyRequests, "Too Many Requests"},
 }

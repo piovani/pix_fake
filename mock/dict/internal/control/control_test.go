@@ -36,7 +36,7 @@ func newEnv(t *testing.T) *env {
 	}
 	faults := &fault.Set{}
 	api := httpapi.New(svc, slog.New(slog.NewTextHandler(io.Discard, nil)), nil).WithFaults(faults).
-		WithControl(control.New(store, reseed, faults).Handler())
+		WithControl(control.New(store, reseed, faults).WithTransactions(svc).Handler())
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	return &env{t: t, url: srv.URL, store: store}
@@ -189,5 +189,55 @@ func TestFaultsAdmin(t *testing.T) {
 	}
 	if s, _, _ := e.call("GET", "/mock/nope", nil, nil); s != 404 {
 		t.Fatalf("unknown control endpoint = %d", s)
+	}
+}
+
+// A transaction told to the DICT through the control API can be reported, and a reset forgets it.
+func TestTransactions(t *testing.T) {
+	e := newEnv(t)
+	tx := map[string]any{
+		"end_to_end_id": "E9900000120261120100000000000001", "amount": "150.00",
+		"debtor":   map[string]any{"participant": "99000001", "tax_id": "52998224725"},
+		"creditor": map[string]any{"participant": "99000002", "tax_id": "39053344705", "key": "+5521999990003"},
+	}
+	if status, out, _ := e.call("POST", "/mock/transactions", tx, nil); status != http.StatusNoContent {
+		t.Fatalf("add = %d %v", status, out["_body"])
+	}
+	status, out, _ := e.call("GET", "/mock/transactions", nil, nil)
+	list, _ := out["transactions"].([]any)
+	if status != 200 || len(list) != 1 || list[0].(map[string]any)["amount"] != "150.00" || list[0].(map[string]any)["settled_at"] == nil {
+		t.Fatalf("list = %d %v", status, out["_body"])
+	}
+
+	report := `<CreateInfractionReportRequest><Participant>99000001</Participant><InfractionReport><TransactionId>E9900000120261120100000000000001</TransactionId>` +
+		`<Reason>REFUND_REQUEST</Reason><SituationType>SCAM</SituationType></InfractionReport></CreateInfractionReportRequest>`
+	req, _ := http.NewRequest("POST", e.url+"/api/v2/infraction-reports", strings.NewReader(report))
+	req.Header.Set("X-Participant-ISPB", "99000001")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("report on the transaction = %d", resp.StatusCode)
+	}
+
+	bad := map[string]any{"end_to_end_id": "E1", "amount": "1.234", "debtor": map[string]any{}, "creditor": map[string]any{}}
+	if status, _, _ := e.call("POST", "/mock/transactions", bad, nil); status != http.StatusUnprocessableEntity {
+		t.Fatalf("bad amount = %d", status)
+	}
+	bad["amount"] = "1.00"
+	if status, out, _ := e.call("POST", "/mock/transactions", bad, nil); status != http.StatusUnprocessableEntity || out["violations"] == nil {
+		t.Fatalf("bad fields = %d %v", status, out["_body"])
+	}
+	if status, _, _ := e.call("POST", "/mock/transactions", map[string]any{"nope": 1}, nil); status != http.StatusBadRequest {
+		t.Fatalf("unknown field = %d", status)
+	}
+
+	if status, _, _ := e.call("POST", "/mock/reset", nil, nil); status != http.StatusNoContent {
+		t.Fatalf("reset = %d", status)
+	}
+	if _, out, _ := e.call("GET", "/mock/transactions", nil, nil); len(out["transactions"].([]any)) != 0 {
+		t.Fatalf("after reset = %v", out["_body"])
 	}
 }

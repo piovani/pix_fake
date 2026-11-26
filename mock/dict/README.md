@@ -89,9 +89,60 @@ curl -s -H "X-Participant-ISPB: 99000001" -H "PI-RequestingParticipant: 99000001
 | `getCidSetFile` | `GET /cids/files/{Id}` | 200 |
 | `listCidSetEvents` | `GET /cids/events` | 200 |
 | `getEntryByCid` | `GET /cids/entries/{Cid}` | 200 |
+| `createInfractionReport` | `POST /infraction-reports` | 201 |
+| `listInfractionReport` | `GET /infraction-reports` | 200 |
+| `getInfractionReport` | `GET /infraction-reports/{InfractionReportId}` | 200 |
+| `updateInfractionReport` | `PUT /infraction-reports/{InfractionReportId}` | 200 |
+| `acknowledgeInfractionReport` | `POST /infraction-reports/{InfractionReportId}/acknowledge` | 200 |
+| `cancelInfractionReport` | `POST /infraction-reports/{InfractionReportId}/cancel` | 200 |
+| `closeInfractionReport` | `POST /infraction-reports/{InfractionReportId}/close` | 200 |
+| `createFraudMarker` | `POST /fraud-markers` | 201 |
+| `listFraudMarkers` | `GET /fraud-markers` | 200 |
+| `getFraudMarker` | `GET /fraud-markers/{FraudMarkerId}` | 200 |
+| `cancelFraudMarker` | `POST /fraud-markers/{FraudMarkerId}/cancel` | 200 |
+| `createRefund` | `POST /refunds` | 201 |
+| `listRefund` | `GET /refunds` | 200 |
+| `getRefund` | `GET /refunds/{RefundId}` | 200 |
+| `cancelRefund` | `POST /refunds/{RefundId}/cancel` | 200 |
+| `closeRefund` | `POST /refunds/{RefundId}/close` | 200 |
+| `getPersonStatistics` | `GET /persons/{TaxIdNumber}/statistics` | 200 |
+| `getEntryStatistics` | `GET /entries/{Key}/statistics` | 200 |
 
-Everything else (claims, funds recovery, infraction reports, refunds, fraud markers, statistics, notifications,
-policies) returns `404`.
+Everything else (claims, funds recovery, event notifications, policies) returns `404`.
+
+### MED: infraction reports, fraud markers, refunds
+
+The real DICT knows every transaction settled in the SPI. The mock only knows the ones it is told about through
+`POST /mock/transactions` (below): a report or refund on any other `TransactionId` is `400`.
+
+- **Infraction reports.** `REFUND_REQUEST` is opened by the payer's participant, `REFUND_CANCELLED` by the payee's
+  (with `SituationType` `OTHER`); the other one is the counterparty. One report per transaction and reason can be
+  `OPEN` or `ACKNOWLEDGED` at a time (`409`). The counterparty acknowledges (repeating it is harmless) and closes an
+  `ACKNOWLEDGED` report; closing again with the same analysis is harmless, with another one `409`. `AGREED` needs a
+  `FraudType` (`OTHER` also needs `AnalysisDetails`) and creates a fraud marker on the user the report is about (the
+  payee; the payer for `REFUND_CANCELLED`), with the paid key, registered by the counterparty. The reporter updates
+  while `OPEN`/`ACKNOWLEDGED` and cancels at any moment; cancelling a report closed with `AGREED` cancels its marker.
+  A participant that is not part of a report gets `404`, one that is but has the wrong role `403`.
+  `InfractionAmount` is the amount of the transaction. `UNKNOWN` (API v1) is never accepted.
+- **Fraud markers.** Created by a participant on its own user, idempotent per `RequestId`; a `Key` registered to
+  someone else is `400`. Visible to the registrant and to the reporter of the report it came from; only the
+  registrant cancels. `listFraudMarkers` lists the caller's own markers: `Limit` cuts the set, `page.*` pages it.
+- **Refunds.** Asked by the payer's participant. `FRAUD` needs a `REFUND_REQUEST` report of the caller on the
+  transaction closed with `AGREED`; `OPERATIONAL_FLAW` and `PIX_AUTOMATICO` need `RefundDetails`. One open refund
+  per transaction (`409`), and the open and accepted ones never ask for more than its amount. The contested
+  participant closes: accepted with the `RefundTransactionId` of the return it made in the SPI (`pacs.004`),
+  rejected with a `RefundRejectionReason` (`INVALID_REQUEST` only for `OPERATIONAL_FLAW`). The requesting one
+  cancels while open. `listRefund` pages with an opaque `Cursor`.
+- **Statistics** are counted from what the mock knows, in the windows of the spec (`d90`, `m12`, `m60`, in BRT):
+  settlements as payee, fraud markers while `REGISTERED` by type, their transactions' total and distinct
+  registrants, open and rejected (`DISAGREED`) reports, and the accounts of the user's keys. `getEntry` with
+  `IncludeStatistics=true` gives the same numbers.
+
+The file documents no `400` for `updateInfractionReport`, `closeInfractionReport` and `closeRefund`, though their
+bodies can be invalid, and no `403` for the reads, though they need `PI-RequestingParticipant`: the mock answers
+both, and the contract tests list them as known gaps. Two slips of the file are tolerated there too: the `Total` of
+`ListFraudMarkersResponse` is required but not declared, and the refund examples write `<TaxId>` for
+`<TaxIdNumber>`.
 
 ## Control API
 
@@ -102,12 +153,21 @@ JSON under `/mock`, not part of Bacen's contract.
 | `GET /mock/entries[?participant=&limit=]` | registered keys, with their CID |
 | `POST /mock/reset` | back to the seed, faults cleared |
 | `POST /mock/faults`, `GET`, `DELETE /mock/faults[/{id}]` | answer `429`/`503` (with `Retry-After`) or late |
+| `POST /mock/transactions`, `GET` | the transactions settled in the SPI that the DICT knows, for the MED |
 
 ```sh
 curl -s -X POST localhost:8080/mock/faults -d '{"method":"GET","status":429,"retry_after":5,"count":3}'
 ```
 
 A rule is `{method, path_prefix, status, retry_after, delay_ms, count}` and never touches `/mock` or `/healthz`.
+
+```sh
+curl -s -X POST localhost:8080/mock/transactions -d '{"end_to_end_id":"E9900000120261120100000000000001",
+  "amount":"150.00","debtor":{"participant":"99000001","tax_id":"52998224725"},
+  "creditor":{"participant":"99000002","tax_id":"39053344705","key":"+5521999990003"}}'
+```
+
+`settled_at` defaults to now. Adding the same `end_to_end_id` again replaces it; `POST /mock/reset` removes them.
 
 ## Contract tests
 
@@ -118,7 +178,9 @@ Known gap: the spec documents no `400` for `checkKeys`, which the mock returns f
 ## Deliberate simplifications and mock decisions
 
 - No mTLS or XML signatures (`<Signature>` is empty).
-- No rate limiting of its own; statistics are always zero; no claims.
+- No rate limiting of its own; no claims. Statistics count only what the mock knows (see MED).
+- MED without funds recovery yet: no reports or refunds linked to one, no `EffectiveRefundedAmount`, `RefundAccount` or
+  `MonitorAccount`. A refund closed as accepted is not checked against the SPI.
 - A key already registered is `409 ResourceConflict`; an unexpected error is `503` with `Retry-After` (the spec has no `500`).
 - Deleting removes the row, so its `RequestId` can be reused. Check digits are not verified.
 - The wallet's seed keys are created with the `RequestId`s the wallet's own seed uses (`dict.SeedRequestID`), and the
