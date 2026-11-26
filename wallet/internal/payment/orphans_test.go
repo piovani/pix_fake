@@ -15,6 +15,7 @@ func TestReleaseOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 	paid := f.pay(t, f.resolve(t), 300)
+	f.stampReservations(t)
 
 	if n, err := f.svc.ReleaseOrphans(ctx); err != nil || n != 0 {
 		t.Fatalf("too early: %d, %v", n, err)
@@ -43,6 +44,7 @@ func TestReturnAfterOrphanReleased(t *testing.T) {
 	if _, err := f.ledger.Reserve(ctx, anaID, 500, id); err != nil {
 		t.Fatal(err)
 	}
+	f.stampReservations(t)
 	f.advance(24 * time.Hour)
 	if n, err := f.svc.ReleaseOrphans(ctx); err != nil || n != 1 {
 		t.Fatalf("released %d, %v", n, err)

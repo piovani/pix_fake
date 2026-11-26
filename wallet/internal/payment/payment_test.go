@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"pixfake/wallet/internal/ledger"
 	"pixfake/wallet/internal/pix"
 	"pixfake/wallet/internal/platform/db/dbtest"
@@ -75,9 +77,19 @@ type fixture struct {
 	bank   *fakeBank
 	keys   fakeKeys
 	clock  time.Time
+	pool   *pgxpool.Pool
 }
 
 func (f *fixture) advance(d time.Duration) { f.clock = f.clock.Add(d) }
+
+// stampReservations moves the reservations to the fixture's clock: the database dates them with its own now(), which
+// would otherwise be later than the fixed clock and never look old to the sweep.
+func (f *fixture) stampReservations(t *testing.T) {
+	t.Helper()
+	if _, err := f.pool.Exec(context.Background(), `UPDATE reservations SET created_at = $1`, f.clock); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
@@ -93,6 +105,7 @@ func newFixture(t *testing.T) *fixture {
 		bank:  &fakeBank{},
 		keys:  fakeKeys{anaKey: anaID, brunoKey: brunoID},
 		clock: time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC),
+		pool:  pool,
 	}
 	f.svc = New(f.ledger, f.keys, f.dict, f.bank, f.store, walletISPB)
 	f.svc.now = func() time.Time { return f.clock }
