@@ -190,8 +190,8 @@ func TestMigrateTwice(t *testing.T) {
 		t.Fatalf("second Migrate failed: %v", err)
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 2 {
-		t.Fatalf("schema_migrations rows = %d, %v; want 2", n, err)
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("schema_migrations rows = %d, %v; want 3", n, err)
 	}
 }
 

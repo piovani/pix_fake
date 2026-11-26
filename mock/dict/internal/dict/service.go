@@ -29,16 +29,19 @@ type Repository interface {
 	CreateSyncVerification(ctx context.Context, v SyncVerification) (SyncVerification, error)
 	CreateCIDFile(ctx context.Context, f CIDFile) (CIDFile, error)
 	GetCIDFile(ctx context.Context, id int64) (CIDFile, error)
+
+	MEDStore
 }
 
 type Service struct {
 	repo   Repository
 	now    func() time.Time
 	newEVP func() string
+	newID  func() string // of infraction reports, fraud markers and refunds
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now, newEVP: NewEVP}
+	return &Service{repo: repo, now: time.Now, newEVP: NewEVP, newID: NewEVP}
 }
 
 type CreateEntryInput struct {

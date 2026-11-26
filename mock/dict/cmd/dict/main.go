@@ -62,7 +62,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 	api := httpapi.New(svc, log, pool.Ping).WithFaults(faults)
 	if cfg.Control {
 		reseed := func(ctx context.Context) error { _, err := svc.Seed(ctx, seed.Entries()); return err }
-		api.WithControl(control.New(repo, reseed, faults).Handler())
+		api.WithControl(control.New(repo, reseed, faults).WithTransactions(svc).Handler())
 	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
