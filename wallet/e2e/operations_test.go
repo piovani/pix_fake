@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,11 +14,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 
+	walletv1 "pixfake/wallet/gen/wallet/v1"
+	"pixfake/wallet/internal/pix"
 	"pixfake/wallet/internal/seed"
 )
 
 // run calls one of the wallet's operations commands the way an operator would, on the wallet's database.
 func run(t *testing.T, name string, args ...string) string {
+	t.Helper()
+	out, code := runExit(t, name, args...)
+	if code != 0 {
+		t.Fatalf("%s %v: exit %d\n%s", name, args, code, out)
+	}
+	return out
+}
+
+// runExit is run for a command whose exit code is part of the answer.
+func runExit(t *testing.T, name string, args ...string) (string, int) {
 	t.Helper()
 	bin, url := os.Getenv("WALLET_E2E_BIN"), os.Getenv("WALLET_E2E_DATABASE_URL")
 	if bin == "" || url == "" {
@@ -25,11 +38,18 @@ func run(t *testing.T, name string, args ...string) string {
 	}
 	cmd := exec.Command(filepath.Join(bin, "wallet-"+name), args...)
 	cmd.Env = append(os.Environ(), "WALLET_DATABASE_URL="+url)
+	if dict := os.Getenv("WALLET_E2E_DICT_URL"); dict != "" {
+		cmd.Env = append(cmd.Env, "DICT_BASE_URL="+dict)
+	}
 	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return string(out), exit.ExitCode()
+	}
 	if err != nil {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
 	}
-	return string(out)
+	return string(out), 0
 }
 
 func database(t *testing.T) *pgxpool.Pool {
@@ -154,5 +174,34 @@ func TestResendRefusedReport(t *testing.T) {
 	waitReport(t, pool, p.Id, "ACCEPTED")
 	if out := run(t, "reports", "list"); strings.Contains(out, p.Id) {
 		t.Fatalf("still listed after it was accepted:\n%s", out)
+	}
+}
+
+// A key removed from the DICT behind the wallet's back shows up in `keys check`, which fails until the copy is fixed.
+func TestKeysCheck(t *testing.T) {
+	e := setup(t)
+	if out, code := runExit(t, "keys", "check"); code != 0 {
+		t.Fatalf("the seed data disagrees with the DICT:\n%s", out)
+	}
+
+	key := uniqueEmail(t)
+	if _, err := e.register(t, seed.AnaID, walletv1.KeyType_KEY_TYPE_EMAIL, key, requestID(t)); err != nil {
+		t.Fatal(err)
+	}
+	e.cleanup(t, seed.AnaID, key)
+	if err := e.wallet.DeleteEntry(ctx(t), key, pix.ReasonUserRequested); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code := runExit(t, "keys", "check")
+	if code != 1 || !strings.Contains(out, key+"\tEMAIL\t"+seed.AnaID) {
+		t.Fatalf("exit %d, want 1 and the key listed:\n%s", code, out)
+	}
+
+	if err := e.remove(t, seed.AnaID, key); err != nil {
+		t.Fatalf("removing a key the DICT no longer has: %v", err)
+	}
+	if out, code := runExit(t, "keys", "check"); code != 0 {
+		t.Fatalf("after removing it: exit %d\n%s", code, out)
 	}
 }

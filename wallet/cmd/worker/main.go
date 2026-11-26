@@ -1,6 +1,6 @@
 // Command worker is the wallet's second process. It applies what the SPI stream says about the payments the wallet sent,
-// and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them. It also
-// answers the payments and returns other banks send to the wallet and credits them when the SPI settles.
+// and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them, and check
+// every hour that the wallet's keys are still in the DICT. It also answers the payments and returns other banks send to the wallet and credits them when the SPI settles.
 package main
 
 import (
@@ -21,7 +21,11 @@ import (
 	"pixfake/wallet/internal/platform/telemetry"
 )
 
-const everyTick = 5 * time.Second
+const (
+	everyTick = 5 * time.Second
+	// checkKeys has its own rate limit in the DICT (KEYS_CHECK); once an hour is plenty for keys that rarely change.
+	keysCheckEvery = time.Hour
+)
 
 func main() {
 	cfg := config.Load()
@@ -61,7 +65,7 @@ func main() {
 
 	slog.Info("worker started", "spi", cfg.SPIBaseURL, "ispb", cfg.ISPB)
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		if err := payments.Consume(ctx, spi); err != nil {
@@ -85,8 +89,33 @@ func main() {
 			}
 		}
 	}()
+	go func() {
+		defer wg.Done()
+		tick := time.NewTicker(keysCheckEvery)
+		defer tick.Stop()
+		for {
+			checkKeys(ctx, keys)
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+		}
+	}()
 	wg.Wait()
 	slog.Info("worker stopped")
+}
+
+// checkKeys only logs how many keys the DICT no longer has: the keys are CPFs, emails and phones, kept out of the logs.
+// `cmd/keys check` lists them.
+func checkKeys(ctx context.Context, keys *pixkey.Service) {
+	missing, err := keys.Check(ctx)
+	switch {
+	case err != nil && ctx.Err() == nil:
+		slog.Warn("job failed", "job", "keys-check", "err", err)
+	case err == nil && len(missing) > 0:
+		slog.WarnContext(ctx, "keys of the wallet not in the DICT, see cmd/keys check", "count", len(missing))
+	}
 }
 
 func sweep(ctx context.Context, did string, job func(context.Context) (int, error)) {

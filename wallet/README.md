@@ -17,6 +17,7 @@ cmd/api, cmd/worker    the two processes
 cmd/seed               migrations + test accounts and keys
 cmd/accounts           ops: block/close an account, set its receive limit
 cmd/reports            ops: list and resend refused book-transfer reports
+cmd/keys               ops: list the wallet's keys the DICT no longer has
 internal/ledger        accounts, balance with reservations, movement log
 internal/pixkey        the wallet's keys, registered in the DICT
 internal/payment       payment flows and their status
@@ -74,7 +75,15 @@ money moves in one DB transaction and the call returns `SETTLED`. The worker rep
 in flight and rejected included.
 
 **Worker jobs**, every 5 s: resend what the SPI didn't take, finish interrupted book transfers, send reports, release
-reservations no payment points to (after 10 min, longer than a resolution lives).
+reservations no payment points to (after 10 min, longer than a resolution lives). Every hour, and when it starts, it
+also checks the keys (below): the gauge `wallet.keys.missing_in_dict` goes to the dashboard, and the log carries only the
+count, since the keys are CPFs, emails and phones.
+
+**Checking the keys.** `cmd/keys check` sends every key of the wallet's copy to the DICT's `checkKeys`, 200 at a time,
+prints the ones the DICT doesn't have (`key`, type, account) and exits with 1 if there are any. Such a key would be paid
+as a book transfer inside the wallet while other banks are told it doesn't exist; `RemoveKey` clears it. `checkKeys`
+only says whether a key exists, not whose it is, so a key the DICT holds under another participant, or one the wallet
+lost, is not caught: that needs the DICT's reconciliation (CIDs), left out on purpose.
 
 ## Test accounts
 

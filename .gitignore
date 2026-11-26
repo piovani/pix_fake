@@ -36,3 +36,4 @@ go.work.sum
 
 # tools installed by make
 .bin/
+.DS_Store

@@ -4,7 +4,7 @@
 //	WALLET_E2E_GRPC_ADDR  the wallet API, such as localhost:9090
 //	WALLET_E2E_DICT_URL   the DICT, such as http://localhost:8080/api/v2
 //	WALLET_E2E_SPI_URL    the SPI, such as http://localhost:8081/api/v1 (optional: without it the test that makes the SPI fail is skipped)
-//	WALLET_E2E_BIN        where the built cmd/accounts and cmd/reports are, as wallet-accounts and wallet-reports (optional)
+//	WALLET_E2E_BIN        where the built cmd/accounts, cmd/reports and cmd/keys are, as wallet-accounts, wallet-reports and wallet-keys (optional)
 //	WALLET_E2E_DATABASE_URL  the wallet's database, for those commands and to read report statuses (optional)
 //
 // The wallet's worker must be running too: it settles the payments.
@@ -31,9 +31,10 @@ import (
 )
 
 const (
-	bankAlfa = "99000002"
-	anaCPF   = "52998224725"
-	brunoCPF = "11144477735"
+	bankAlfa   = "99000002"
+	walletISPB = "99000001"
+	anaCPF     = "52998224725"
+	brunoCPF   = "11144477735"
 )
 
 type env struct {
@@ -42,6 +43,7 @@ type env struct {
 	accounts walletv1.AccountServiceClient
 	spi      string          // the SPI mock's control API, empty when not given
 	bank     *pix.DictClient // Banco Alfa looking keys up, the way a payer's bank does
+	wallet   *pix.DictClient // the wallet's own participant, to change the DICT behind the wallet's back
 	control  string          // the DICT mock's control API
 }
 
@@ -62,6 +64,7 @@ func setup(t *testing.T) env {
 		payments: walletv1.NewPaymentServiceClient(conn),
 		accounts: walletv1.NewAccountServiceClient(conn),
 		bank:     pix.NewDictClient(dictURL, bankAlfa),
+		wallet:   pix.NewDictClient(dictURL, walletISPB),
 		control:  strings.TrimSuffix(dictURL, "/api/v2"),
 		spi:      strings.TrimSuffix(os.Getenv("WALLET_E2E_SPI_URL"), "/api/v1"),
 	}

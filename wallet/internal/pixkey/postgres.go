@@ -37,7 +37,11 @@ func (p *Postgres) ByKey(ctx context.Context, key string) (Key, bool, error) {
 }
 
 func (p *Postgres) ByAccount(ctx context.Context, accountID string) ([]Key, error) {
-	rows, err := p.pool.Query(ctx, `SELECT `+columns+` FROM pix_keys WHERE account_id = $1 ORDER BY created_at, key`, accountID)
+	return p.many(ctx, `SELECT `+columns+` FROM pix_keys WHERE account_id = $1 ORDER BY created_at, key`, accountID)
+}
+
+func (p *Postgres) many(ctx context.Context, query string, args ...any) ([]Key, error) {
+	rows, err := p.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +55,10 @@ func (p *Postgres) ByAccount(ctx context.Context, accountID string) ([]Key, erro
 		keys = append(keys, k)
 	}
 	return keys, rows.Err()
+}
+
+func (p *Postgres) Page(ctx context.Context, after string, limit int) ([]Key, error) {
+	return p.many(ctx, `SELECT `+columns+` FROM pix_keys WHERE key > $1 ORDER BY key LIMIT $2`, after, limit)
 }
 
 func (p *Postgres) Delete(ctx context.Context, key string) error {

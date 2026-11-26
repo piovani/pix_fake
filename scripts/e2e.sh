@@ -61,7 +61,7 @@ if [ -n "${WALLET_COVERDIR:-}" ]; then
   mkdir -p "$WALLET_COVERDIR"
   COVER=(-cover "-coverpkg=./internal/...,./cmd/...")
 fi
-(cd "$ROOT/wallet" && for c in api worker seed accounts reports; do go build ${COVER[@]+"${COVER[@]}"} -o "$WORK/wallet-$c" "./cmd/$c" || exit 1; done)
+(cd "$ROOT/wallet" && for c in api worker seed accounts reports keys; do go build ${COVER[@]+"${COVER[@]}"} -o "$WORK/wallet-$c" "./cmd/$c" || exit 1; done)
 
 echo "==> loading the seed data"
 "$WORK/dict-seed"

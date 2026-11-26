@@ -8,7 +8,8 @@ flowchart LR
     P2 --> P3["3. Wallet<br/>Done"]
     P3 --> P32["3.2 Wallet follow-ups<br/>Next"]
     P32 --> P4["4. MED 2<br/>Later"]
-    P4 --> P5["5. More Pix products<br/>Later"]
+    P4 --> P5["5. Pix Offline<br/>Later"]
+    P5 --> P6["6. More Pix products<br/>Later"]
     P1 -.-> P3
 ```
 
@@ -19,7 +20,8 @@ flowchart LR
 | 3 | Wallet and its Pix integration layer | Done |
 | 3.2 | Wallet follow-ups: keys check, spec re-check | Next |
 | 4 | MED 2: funds recovery | Later |
-| 5 | More Pix products: BR Code, charges, Pix Automático... | Later |
+| 5 | Pix Offline: paying with no internet | Later |
+| 6 | More Pix products: BR Code, charges, Pix Automático... | Later |
 | - | Environment and quality | Done |
 
 ## Principles
@@ -88,8 +90,12 @@ account status and receive limit, worker sweeps (resend, resume, report, orphane
 
 ## Phase 3.2: Wallet follow-ups (next)
 
-- [ ] Check that the DICT and the wallet's copy of the keys agree
-- [ ] Re-check the Bacen specs from time to time (DICT API v2.13.0, SPI catalog 5.13, checked 2026-11-14)
+- [x] Check that the DICT and the wallet's copy of the keys agree: `cmd/keys check`, through `checkKeys`, also run by the
+  worker every hour into the gauge `wallet.keys.missing_in_dict` (a panel of the dashboard). It finds keys the wallet has
+  and the DICT doesn't; the other direction needs the CID reconciliation, still left out
+- [x] Re-check the Bacen specs (2026-11-25): DICT API still v2.13.0 (final of 2026-10-26, the copy in
+  `mock/dict/docs`), SPI catalog 5.13 (`spi.5.13.2` still the newest package, the only version in production since
+  2026-10-25), Manual das Interfaces de Comunicação 1.12. Nothing to change; re-check at every new version
 
 ## Phase 4: MED 2, funds recovery (later)
 
@@ -115,7 +121,16 @@ If claims come back, the first version (removed to keep the mock lean) was: its 
 per key via a partial unique index; `confirm` and `complete` each in one transaction; deadlines configurable (7 days by
 default); no automatic transitions; visible only to donor and claimer.
 
-## Phase 5: More Pix products (later)
+## Phase 5: Pix Offline (later)
+
+Paying by proximity when the payer has no internet. It is on the Bacen's agenda for 2026 and 2027, but no spec has been
+published yet (checked 2026-11-23), so this phase waits for one, as the [principles](#principles) ask.
+
+- [ ] Get the Bacen spec and keep it in the mock's `docs/`, with version and date
+- [ ] Decide whether it extends `mock/spi` or becomes its own mock
+- [ ] Wallet side, once the spec says what each participant does
+
+## Phase 6: More Pix products (later)
 
 - [ ] QR codes (BR Code)
 - [ ] Pix charges
@@ -129,3 +144,4 @@ default); no automatic transitions; visible only to donor and claimer.
 |----------|-----|
 | Whether users need claims | Backlog |
 | Where MED 2 lives | Phase 4 |
+| Where Pix Offline lives | Phase 5 |

@@ -490,13 +490,70 @@
       }
     },
     {
+      "type": "stat",
+      "title": "Keys missing in the DICT",
+      "id": 25,
+      "description": "Keys of the wallet's copy that the DICT did not have at the worker's last hourly check. Above 0, run cmd/keys check to list them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(wallet_keys_missing_in_dict)",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "not checked yet",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
       "type": "row",
       "title": "Mocks",
       "id": 12,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 33,
         "w": 24,
         "h": 1
       },
@@ -512,7 +569,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 34,
         "w": 12,
         "h": 8
       },
@@ -562,7 +619,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 30,
+        "y": 34,
         "w": 12,
         "h": 8
       },
@@ -612,7 +669,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 38,
+        "y": 42,
         "w": 8,
         "h": 8
       },
@@ -656,7 +713,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 38,
+        "y": 42,
         "w": 8,
         "h": 8
       },
@@ -700,7 +757,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 38,
+        "y": 42,
         "w": 8,
         "h": 8
       },
@@ -744,7 +801,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 50,
         "w": 24,
         "h": 6
       },
@@ -791,7 +848,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 56,
         "w": 24,
         "h": 1
       },
@@ -807,7 +864,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 53,
+        "y": 57,
         "w": 12,
         "h": 7
       },
@@ -857,7 +914,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 53,
+        "y": 57,
         "w": 12,
         "h": 7
       },
@@ -904,7 +961,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 64,
         "w": 24,
         "h": 1
       },
@@ -920,7 +977,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 65,
         "w": 24,
         "h": 10
       },
@@ -951,7 +1008,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 71,
+        "y": 75,
         "w": 24,
         "h": 10
       },
