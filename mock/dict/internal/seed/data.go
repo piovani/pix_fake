@@ -54,7 +54,8 @@ func (h holder) key(typ dict.KeyType, key string) dict.Entry {
 func Entries() []dict.Entry {
 	ana := natural(WalletISPB, "00123456", dict.AccountChecking, "52998224725", "Ana Souza")
 	bruno := natural(WalletISPB, "00234567", dict.AccountSavings, "11144477735", "Bruno Lima")
-	padaria := legal(WalletISPB, "00345678", dict.AccountChecking, "11222333000181", "Padaria Pão Quente Ltda", "Padaria Pão Quente")
+	// No trade name: the wallet registers its keys without one, and the CIDs of both sides must match.
+	padaria := legal(WalletISPB, "00345678", dict.AccountChecking, "11222333000181", "Padaria Pão Quente Ltda", "")
 	carlos := natural(AlfaISPB, "00456789", dict.AccountChecking, "39053344705", "Carlos Mendes")
 	daniela := natural(BetaISPB, "00567890", dict.AccountTransact, "16899535009", "Daniela Rocha")
 	mercadinho := legal(BetaISPB, "00678901", dict.AccountChecking, "45678912000155", "Mercadinho do Zé ME", "Mercadinho do Ze")

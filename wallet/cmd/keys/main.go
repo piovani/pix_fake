@@ -1,9 +1,13 @@
-// Command keys is for operations: it checks that every key in the wallet's copy is still in the DICT, and lists the ones
-// that are not. It exits with 1 when it finds any, so it can run from a schedule and raise an alert.
+// Command keys is for operations: it reconciles the wallet's keys with the DICT (sync verification by key type, then the
+// DICT's file of CIDs where they differ) and lists each key that disagrees, as kind, key, type and account:
+//
+//	MISSING_IN_DICT  the wallet has it, the DICT does not
+//	DATA_DIFFERS     both have it, with other account, holder or RequestId
+//	ONLY_IN_DICT     the DICT has it under the wallet, the wallet does not (no account)
+//
+// It exits with 1 when it finds any, so it can run from a schedule and raise an alert.
 //
 //	keys check
-//
-// The DICT only says whether a key exists, not whose it is: see pixkey.Service.Check for what goes unnoticed.
 package main
 
 import (
@@ -34,17 +38,17 @@ func main() {
 	defer pool.Close()
 
 	keys := pixkey.New(ledger.New(pool), pix.NewDictClient(cfg.DictBaseURL, cfg.ISPB), pixkey.NewPostgres(pool), cfg.ISPB)
-	missing, err := keys.Check(ctx)
+	findings, err := keys.Check(ctx)
 	if err != nil {
 		slog.Error("check", "err", err)
 		os.Exit(1)
 	}
-	for _, k := range missing {
-		fmt.Printf("%s\t%s\t%s\n", k.Key, k.Type, k.AccountID)
+	for _, f := range findings {
+		fmt.Printf("%s\t%s\t%s\t%s\n", f.Kind, f.Key, f.Type, f.AccountID)
 	}
-	if len(missing) > 0 {
-		fmt.Fprintf(os.Stderr, "%d key(s) of the wallet are not in the DICT\n", len(missing))
+	if len(findings) > 0 {
+		fmt.Fprintf(os.Stderr, "%d key(s) disagree with the DICT\n", len(findings))
 		os.Exit(1)
 	}
-	fmt.Fprintln(os.Stderr, "every key of the wallet is in the DICT")
+	fmt.Fprintln(os.Stderr, "the wallet's keys and the DICT agree")
 }

@@ -32,10 +32,21 @@ func entry(key string) dict.Entry {
 	}
 }
 
+// stamp gives the entry what the service sets before writing it: the RequestId and the CID.
+func stamp(t *testing.T, e dict.Entry, requestID string) dict.Entry {
+	t.Helper()
+	cid, err := dict.CID(e, requestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.RequestID, e.CID = requestID, cid
+	return e
+}
+
 func TestRepository(t *testing.T) {
 	ctx := context.Background()
 	repo := newRepo(t)
-	e := entry("pix@bcb.gov.br")
+	e := stamp(t, entry("pix@bcb.gov.br"), reqA)
 
 	if err := repo.Create(ctx, e, reqA); err != nil {
 		t.Fatal(err)
@@ -50,19 +61,31 @@ func TestRepository(t *testing.T) {
 		t.Fatalf("GetByRequestID = %+v, %v", got, err)
 	}
 
-	if err := repo.Create(ctx, entry("pix@bcb.gov.br"), reqB); !errors.Is(err, dict.ErrKeyExists) {
+	if err := repo.Create(ctx, stamp(t, entry("pix@bcb.gov.br"), reqB), reqB); !errors.Is(err, dict.ErrKeyExists) {
 		t.Fatalf("duplicate key: err = %v, want ErrKeyExists", err)
 	}
-	if err := repo.Create(ctx, entry("other@bcb.gov.br"), reqA); !errors.Is(err, dict.ErrRequestIDUsed) {
+	if err := repo.Create(ctx, stamp(t, entry("other@bcb.gov.br"), reqA), reqA); !errors.Is(err, dict.ErrRequestIDUsed) {
 		t.Fatalf("duplicate request id: err = %v, want ErrRequestIDUsed", err)
 	}
 
+	created := e
 	e.Account.AccountNumber, e.Owner.Name = "0001111111", "Padaria Nova Ltda"
+	e = stamp(t, e, reqA)
 	if err := repo.Update(ctx, e); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ = repo.Get(ctx, e.Key); got != e {
 		t.Fatalf("after Update = %+v, want %+v", got, e)
+	}
+
+	if got, err := repo.GetByCID(ctx, e.CID); err != nil || got.Key != e.Key {
+		t.Fatalf("GetByCID = %+v, %v", got, err)
+	}
+	if _, err := repo.GetByCID(ctx, created.CID); !errors.Is(err, dict.ErrNotFound) {
+		t.Fatalf("the CID from before the update: %v", err)
+	}
+	if cids, err := repo.CIDs(ctx, e.Account.Participant, e.KeyType); err != nil || len(cids) != 1 || cids[0] != e.CID {
+		t.Fatalf("CIDs = %v, %v", cids, err)
 	}
 
 	existing, err := repo.Existing(ctx, []string{e.Key, "nope@bcb.gov.br"})
@@ -82,6 +105,82 @@ func TestRepository(t *testing.T) {
 	if err := repo.Update(ctx, e); !errors.Is(err, dict.ErrNotFound) {
 		t.Fatalf("Update missing: err = %v, want ErrNotFound", err)
 	}
+
+	// create, update (removed + added), delete; failed writes leave no event
+	events, err := repo.CIDEvents(ctx, e.Account.Participant, e.KeyType)
+	if err != nil || len(events) != 4 {
+		t.Fatalf("events = %+v, %v", events, err)
+	}
+	want := []struct {
+		typ dict.CIDEventType
+		cid string
+	}{{dict.CIDAdded, created.CID}, {dict.CIDRemoved, created.CID}, {dict.CIDAdded, e.CID}, {dict.CIDRemoved, e.CID}}
+	for i, w := range want {
+		if events[i].Type != w.typ || events[i].CID != w.cid || events[i].Timestamp.IsZero() {
+			t.Fatalf("event %d = %+v, want %s %s", i, events[i], w.typ, w.cid)
+		}
+	}
+	if cids, _ := repo.CIDs(ctx, e.Account.Participant, e.KeyType); len(cids) != 0 {
+		t.Fatalf("CIDs after delete = %v", cids)
+	}
+}
+
+func TestRepositoryReconciliationRecords(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepo(t)
+
+	v, err := repo.CreateSyncVerification(ctx, dict.SyncVerification{Participant: "12345678", KeyType: dict.KeyCPF,
+		Verifier: dict.ZeroVSync, DictVSync: dict.ZeroVSync, Result: dict.SyncOK})
+	if err != nil || v.ID == 0 {
+		t.Fatalf("sync verification = %+v, %v", v, err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	f, err := repo.CreateCIDFile(ctx, dict.CIDFile{Status: dict.FileAvailable, Participant: "12345678", KeyType: dict.KeyCPF,
+		RequestTime: now, CreationTime: now, Content: []byte("abc\n"), Sha256: "x"})
+	if err != nil || f.ID == 0 {
+		t.Fatalf("file = %+v, %v", f, err)
+	}
+	got, err := repo.GetCIDFile(ctx, f.ID)
+	if err != nil || string(got.Content) != "abc\n" || got.Status != dict.FileAvailable || !got.CreationTime.Equal(now) || got.KeyType != dict.KeyCPF {
+		t.Fatalf("get file = %+v, %v", got, err)
+	}
+	if _, err := repo.GetCIDFile(ctx, f.ID+1); !errors.Is(err, dict.ErrNotFound) {
+		t.Fatalf("unknown file: %v", err)
+	}
+}
+
+// Entries written before the reconciliation existed get their CID, and its ADDED event, when the mock starts.
+func TestMigrateBackfillsCIDs(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.NewPool(t)
+	e := entry("old@bcb.gov.br")
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO entries (key, key_type, participant, branch, account_number, account_type, opening_date,
+			owner_type, owner_tax_id, owner_name, owner_trade_name, request_id, creation_date, key_ownership_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		e.Key, e.KeyType, e.Account.Participant, e.Account.Branch, e.Account.AccountNumber, e.Account.Type,
+		e.Account.OpeningDate, e.Owner.Type, e.Owner.TaxID, e.Owner.Name, e.Owner.TradeName, reqA, e.CreationDate, e.KeyOwnershipDate); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	repo := postgres.NewRepository(pool)
+	got, err := repo.Get(ctx, e.Key)
+	if want := stamp(t, e, reqA); err != nil || got.CID != want.CID {
+		t.Fatalf("cid = %q, want %q (%v)", got.CID, want.CID, err)
+	}
+	events, err := repo.CIDEvents(ctx, e.Account.Participant, e.KeyType)
+	if err != nil || len(events) != 1 || events[0].Type != dict.CIDAdded || !events[0].Timestamp.Equal(e.CreationDate) {
+		t.Fatalf("events = %+v, %v", events, err)
+	}
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if events, _ := repo.CIDEvents(ctx, e.Account.Participant, e.KeyType); len(events) != 1 {
+		t.Fatalf("a second start added events: %+v", events)
+	}
 }
 
 func TestMigrateTwice(t *testing.T) {
@@ -91,8 +190,8 @@ func TestMigrateTwice(t *testing.T) {
 		t.Fatalf("second Migrate failed: %v", err)
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("schema_migrations rows = %d, %v; want 1", n, err)
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("schema_migrations rows = %d, %v; want 2", n, err)
 	}
 }
 
@@ -104,7 +203,8 @@ func TestRepositoryControl(t *testing.T) {
 	other := entry("b@bcb.gov.br")
 	other.Account.Participant = "87654321"
 	for i, e := range []dict.Entry{entry("c@bcb.gov.br"), entry("a@bcb.gov.br"), other} {
-		if err := repo.Create(ctx, e, []string{reqA, reqB, "c946d533-7f22-42a5-9a9b-e87cd55c0f4d"}[i]); err != nil {
+		req := []string{reqA, reqB, "c946d533-7f22-42a5-9a9b-e87cd55c0f4d"}[i]
+		if err := repo.Create(ctx, stamp(t, e, req), req); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -128,8 +228,11 @@ func TestRepositoryControl(t *testing.T) {
 		t.Fatalf("entries left: %v", keys(left))
 	}
 	// The RequestIds are free again.
-	if err := repo.Create(ctx, entry("a@bcb.gov.br"), reqA); err != nil {
+	if err := repo.Create(ctx, stamp(t, entry("a@bcb.gov.br"), reqA), reqA); err != nil {
 		t.Fatalf("create after DeleteAll: %v", err)
+	}
+	if events, _ := repo.CIDEvents(ctx, "12345678", dict.KeyEmail); len(events) != 1 {
+		t.Fatalf("DeleteAll must clear the CID events too: %+v", events)
 	}
 }
 

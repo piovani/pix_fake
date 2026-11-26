@@ -17,7 +17,7 @@ cmd/api, cmd/worker    the two processes
 cmd/seed               migrations + test accounts and keys
 cmd/accounts           ops: block/close an account, set its receive limit
 cmd/reports            ops: list and resend refused book-transfer reports
-cmd/keys               ops: list the wallet's keys the DICT no longer has
+cmd/keys               ops: reconcile the wallet's keys with the DICT (CIDs) and list the ones that disagree
 internal/ledger        accounts, balance with reservations, movement log
 internal/pixkey        the wallet's keys, registered in the DICT
 internal/payment       payment flows and their status
@@ -75,15 +75,19 @@ money moves in one DB transaction and the call returns `SETTLED`. The worker rep
 in flight and rejected included.
 
 **Worker jobs**, every 5 s: resend what the SPI didn't take, finish interrupted book transfers, send reports, release
-reservations no payment points to (after 10 min, longer than a resolution lives). Every hour, and when it starts, it
-also checks the keys (below): the gauge `wallet.keys.missing_in_dict` goes to the dashboard, and the log carries only the
-count, since the keys are CPFs, emails and phones.
+reservations no payment points to (after 10 min, longer than a resolution lives). Every 6 hours, and when it starts, it
+also reconciles the keys (below): the gauge `wallet.keys.out_of_sync`, by kind, goes to the dashboard, and the log
+carries only the counts, since the keys are CPFs, emails and phones. Not more often: a difference makes it ask for a
+CID file per key type, and the DICT allows 40 a day.
 
-**Checking the keys.** `cmd/keys check` sends every key of the wallet's copy to the DICT's `checkKeys`, 200 at a time,
-prints the ones the DICT doesn't have (`key`, type, account) and exits with 1 if there are any. Such a key would be paid
-as a book transfer inside the wallet while other banks are told it doesn't exist; `RemoveKey` clears it. `checkKeys`
-only says whether a key exists, not whose it is, so a key the DICT holds under another participant, or one the wallet
-lost, is not caught: that needs the DICT's reconciliation (CIDs), left out on purpose.
+**Reconciling the keys.** `cmd/keys check` does what the DICT API's Reconciliation describes. For each key type it
+computes the CID of every key from the wallet's records (key, account, holder, and the `RequestId` that registered it)
+and sends their XOR (the VSync) to `createSyncVerification`. Where the DICT answers `NOK` it fetches the DICT's file of
+CIDs and compares: a CID only the wallet has is `MISSING_IN_DICT` or `DATA_DIFFERS` (`checkKeys` tells which), and one
+only the DICT has is looked up with `getEntryByCid` and, unless it is the other side of a `DATA_DIFFERS`, is
+`ONLY_IN_DICT`. It prints `kind`, key, type and account, and exits with 1 if anything disagrees. A `MISSING_IN_DICT` key
+would be paid as a book transfer inside the wallet while other banks are told it doesn't exist (`RemoveKey` clears
+it); an `ONLY_IN_DICT` key receives payments the wallet can't place.
 
 ## Test accounts
 

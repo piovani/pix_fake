@@ -18,6 +18,17 @@ type Repository interface {
 	Delete(ctx context.Context, key string) error
 	// Existing returns the subset of keys that have an entry.
 	Existing(ctx context.Context, keys []string) (map[string]bool, error)
+
+	// Create, Update and Delete record the change of CID as CID events (see CIDEvent), in the same write.
+
+	// CIDs returns the CIDs of the participant's entries of one key type.
+	CIDs(ctx context.Context, participant string, kt KeyType) ([]string, error)
+	GetByCID(ctx context.Context, cid string) (Entry, error)
+	// CIDEvents returns every CID event of the participant's entries of one key type, oldest first.
+	CIDEvents(ctx context.Context, participant string, kt KeyType) ([]CIDEvent, error)
+	CreateSyncVerification(ctx context.Context, v SyncVerification) (SyncVerification, error)
+	CreateCIDFile(ctx context.Context, f CIDFile) (CIDFile, error)
+	GetCIDFile(ctx context.Context, id int64) (CIDFile, error)
 }
 
 type Service struct {
@@ -78,6 +89,12 @@ func (s *Service) CreateEntry(ctx context.Context, caller string, in CreateEntry
 	}
 	e.CreationDate = s.now().UTC().Truncate(time.Millisecond)
 	e.KeyOwnershipDate = e.CreationDate
+	e.RequestID = in.RequestID
+	cid, err := CID(e, in.RequestID)
+	if err != nil {
+		return Entry{}, err
+	}
+	e.CID = cid
 
 	switch err := s.repo.Create(ctx, e, in.RequestID); {
 	case err == nil:
@@ -190,6 +207,10 @@ func (s *Service) UpdateEntry(ctx context.Context, caller, key string, in Update
 	}
 	if len(v) > 0 {
 		return Entry{}, invalid(KindBadRequest, "Request has invalid fields", v)
+	}
+	// the CID keeps the RequestId of the creation and changes with the data
+	if e.CID, err = CID(e, e.RequestID); err != nil {
+		return Entry{}, err
 	}
 
 	if err := s.repo.Update(ctx, e); err != nil {

@@ -4,6 +4,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,16 +22,29 @@ type Repository struct {
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 const selectColumns = `key, key_type, participant, branch, account_number, account_type, opening_date,
-	owner_type, owner_tax_id, owner_name, owner_trade_name, creation_date, key_ownership_date`
+	owner_type, owner_tax_id, owner_name, owner_trade_name, creation_date, key_ownership_date, request_id::text,
+	COALESCE(cid, '')`
+
+// addEvent records a change to the CIDs, in the transaction of the change.
+func addEvent(ctx context.Context, tx pgx.Tx, participant string, kt dict.KeyType, typ dict.CIDEventType, cid string) error {
+	_, err := tx.Exec(ctx, `INSERT INTO cid_events (participant, key_type, type, cid) VALUES ($1, $2, $3, $4)`,
+		participant, kt, typ, cid)
+	return err
+}
 
 func (r *Repository) Create(ctx context.Context, e dict.Entry, requestID string) error {
-	_, err := r.pool.Exec(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `
 		INSERT INTO entries (key, key_type, participant, branch, account_number, account_type, opening_date,
-			owner_type, owner_tax_id, owner_name, owner_trade_name, request_id, creation_date, key_ownership_date)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+			owner_type, owner_tax_id, owner_name, owner_trade_name, request_id, creation_date, key_ownership_date, cid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		e.Key, e.KeyType, e.Account.Participant, e.Account.Branch, e.Account.AccountNumber, e.Account.Type,
 		e.Account.OpeningDate, e.Owner.Type, e.Owner.TaxID, e.Owner.Name, e.Owner.TradeName,
-		requestID, e.CreationDate, e.KeyOwnershipDate)
+		requestID, e.CreationDate, e.KeyOwnershipDate, e.CID)
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -39,7 +53,13 @@ func (r *Repository) Create(ctx context.Context, e dict.Entry, requestID string)
 		}
 		return dict.ErrKeyExists
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if err := addEvent(ctx, tx, e.Account.Participant, e.KeyType, dict.CIDAdded, e.CID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) Get(ctx context.Context, key string) (dict.Entry, error) {
@@ -64,7 +84,7 @@ func scanEntry(row pgx.Row) (dict.Entry, error) {
 	err := row.Scan(
 		&e.Key, &keyType, &e.Account.Participant, &e.Account.Branch, &e.Account.AccountNumber, &accType,
 		&e.Account.OpeningDate, &ownerType, &e.Owner.TaxID, &e.Owner.Name, &e.Owner.TradeName,
-		&e.CreationDate, &e.KeyOwnershipDate)
+		&e.CreationDate, &e.KeyOwnershipDate, &e.RequestID, &e.CID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return dict.Entry{}, dict.ErrNotFound
 	}
@@ -78,35 +98,62 @@ func scanEntry(row pgx.Row) (dict.Entry, error) {
 }
 
 func (r *Repository) Update(ctx context.Context, e dict.Entry) error {
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE entries SET branch = $2, account_number = $3, account_type = $4, opening_date = $5,
-			owner_name = $6, owner_trade_name = $7
-		WHERE key = $1`,
-		e.Key, e.Account.Branch, e.Account.AccountNumber, e.Account.Type, e.Account.OpeningDate,
-		e.Owner.Name, e.Owner.TradeName)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer func() { _ = tx.Rollback(ctx) }()
+	var participant, keyType, oldCID string
+	err = tx.QueryRow(ctx, `SELECT participant, key_type, COALESCE(cid, '') FROM entries WHERE key = $1 FOR UPDATE`, e.Key).
+		Scan(&participant, &keyType, &oldCID)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return dict.ErrNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE entries SET branch = $2, account_number = $3, account_type = $4, opening_date = $5,
+			owner_name = $6, owner_trade_name = $7, cid = $8
+		WHERE key = $1`,
+		e.Key, e.Account.Branch, e.Account.AccountNumber, e.Account.Type, e.Account.OpeningDate,
+		e.Owner.Name, e.Owner.TradeName, e.CID); err != nil {
+		return err
+	}
+	kt := dict.KeyType(keyType)
+	if err := addEvent(ctx, tx, participant, kt, dict.CIDRemoved, oldCID); err != nil {
+		return err
+	}
+	if err := addEvent(ctx, tx, participant, kt, dict.CIDAdded, e.CID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) Delete(ctx context.Context, key string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM entries WHERE key = $1`, key)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer func() { _ = tx.Rollback(ctx) }()
+	var participant, keyType, cid string
+	err = tx.QueryRow(ctx, `DELETE FROM entries WHERE key = $1 RETURNING participant, key_type, COALESCE(cid, '')`, key).
+		Scan(&participant, &keyType, &cid)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return dict.ErrNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if err := addEvent(ctx, tx, participant, dict.KeyType(keyType), dict.CIDRemoved, cid); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
-// DeleteAll removes every entry (control API).
+// DeleteAll removes every entry and what the reconciliation kept about them (control API).
 func (r *Repository) DeleteAll(ctx context.Context) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM entries`)
+	_, err := r.pool.Exec(ctx, `TRUNCATE entries, cid_events, sync_verifications, cid_files RESTART IDENTITY`)
 	return err
 }
 
@@ -147,4 +194,64 @@ func (r *Repository) Existing(ctx context.Context, keys []string) (map[string]bo
 		out[k] = true
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) CIDs(ctx context.Context, participant string, kt dict.KeyType) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT cid FROM entries WHERE participant = $1 AND key_type = $2 ORDER BY cid`, participant, kt)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+func (r *Repository) GetByCID(ctx context.Context, cid string) (dict.Entry, error) {
+	return r.queryOne(ctx, `SELECT `+selectColumns+` FROM entries WHERE cid = $1`, cid)
+}
+
+func (r *Repository) CIDEvents(ctx context.Context, participant string, kt dict.KeyType) ([]dict.CIDEvent, error) {
+	rows, err := r.pool.Query(ctx, `SELECT type, cid, at FROM cid_events WHERE participant = $1 AND key_type = $2 ORDER BY seq`,
+		participant, kt)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (dict.CIDEvent, error) {
+		var ev dict.CIDEvent
+		var typ string
+		err := row.Scan(&typ, &ev.CID, &ev.Timestamp)
+		ev.Type, ev.Timestamp = dict.CIDEventType(typ), ev.Timestamp.UTC()
+		return ev, err
+	})
+}
+
+func (r *Repository) CreateSyncVerification(ctx context.Context, v dict.SyncVerification) (dict.SyncVerification, error) {
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO sync_verifications (participant, key_type, participant_verifier, dict_verifier, result)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		v.Participant, v.KeyType, v.Verifier, v.DictVSync, v.Result).Scan(&v.ID)
+	return v, err
+}
+
+func (r *Repository) CreateCIDFile(ctx context.Context, f dict.CIDFile) (dict.CIDFile, error) {
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO cid_files (participant, key_type, status, request_time, creation_time, content, sha256)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		f.Participant, f.KeyType, f.Status, f.RequestTime, f.CreationTime, f.Content, f.Sha256).Scan(&f.ID)
+	return f, err
+}
+
+func (r *Repository) GetCIDFile(ctx context.Context, id int64) (dict.CIDFile, error) {
+	var f dict.CIDFile
+	var kt, status string
+	var created *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, participant, key_type, status, request_time, creation_time, content, sha256 FROM cid_files WHERE id = $1`, id).
+		Scan(&f.ID, &f.Participant, &kt, &status, &f.RequestTime, &created, &f.Content, &f.Sha256)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return dict.CIDFile{}, dict.ErrNotFound
+	}
+	f.KeyType, f.Status, f.RequestTime = dict.KeyType(kt), dict.FileStatus(status), f.RequestTime.UTC()
+	if created != nil {
+		f.CreationTime = created.UTC()
+	}
+	return f, err
 }

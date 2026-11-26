@@ -86,6 +86,7 @@ type entryView struct {
 		TradeName string `json:"trade_name,omitempty"`
 	} `json:"owner"`
 	CreatedAt time.Time `json:"created_at"`
+	CID       string    `json:"cid"`
 }
 
 func (c *Control) entries(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +101,7 @@ func (c *Control) entries(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]entryView, len(list))
 	for i, e := range list {
-		v := entryView{Key: e.Key, KeyType: string(e.KeyType), CreatedAt: e.CreationDate}
+		v := entryView{Key: e.Key, KeyType: string(e.KeyType), CreatedAt: e.CreationDate, CID: e.CID}
 		v.Account.Participant, v.Account.Branch, v.Account.Number = e.Account.Participant, e.Account.Branch, e.Account.AccountNumber
 		v.Account.Type, v.Account.OpenedAt = string(e.Account.Type), e.Account.OpeningDate
 		v.Owner.Type, v.Owner.TaxID, v.Owner.Name, v.Owner.TradeName = string(e.Owner.Type), e.Owner.TaxID, e.Owner.Name, e.Owner.TradeName
