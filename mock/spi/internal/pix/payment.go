@@ -79,3 +79,11 @@ type PaymentStore interface {
 	// longer pending it changes nothing and returns changed == false with its current state.
 	FinalizePayment(ctx context.Context, id, status, reasonCode, reasonDetail string, at time.Time) (p Payment, changed bool, err error)
 }
+
+// NotificationStore is the outbox of the DICT feed: the settled payments (not returns) the DICT was not told of yet.
+type NotificationStore interface {
+	// PendingNotifications returns up to limit of them settled at or after since, the oldest first.
+	PendingNotifications(ctx context.Context, since time.Time, limit int) ([]Payment, error)
+	// MarkNotified takes the payment out of the outbox.
+	MarkNotified(ctx context.Context, id string, at time.Time) error
+}

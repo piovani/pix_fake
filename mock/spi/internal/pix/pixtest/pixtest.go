@@ -5,6 +5,7 @@ package pixtest
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -391,6 +392,78 @@ func RunInspector(t *testing.T, newStore func(t *testing.T) Backend) {
 		after, _ := s.ReadAfter(ctx, "11111111", 0, 1)
 		if len(after) != 1 || after[0].Seq <= before[0].Seq {
 			t.Fatalf("sequence went back: %d after %d", after[0].Seq, before[0].Seq)
+		}
+	})
+}
+
+// NotificationBackend is a store with payments and the DICT feed's outbox.
+type NotificationBackend interface {
+	pix.PaymentStore
+	pix.NotificationStore
+}
+
+// RunNotifications executes the cases of the DICT feed's outbox.
+func RunNotifications(t *testing.T, newStore func(t *testing.T) NotificationBackend) {
+	ctx := context.Background()
+	at := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	settle := func(t *testing.T, s NotificationBackend, p pix.Payment, settledAt time.Time) {
+		t.Helper()
+		if _, _, err := s.CreatePayment(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.FinalizePayment(ctx, p.ID, pix.StatusSettled, "", "", settledAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(ps []pix.Payment) []string {
+		out := make([]string, len(ps))
+		for i, p := range ps {
+			out[i] = p.ID
+		}
+		return out
+	}
+
+	t.Run("settled payments, oldest first", func(t *testing.T) {
+		s := newStore(t)
+		settle(t, s, payment("E9900000120261114120000000000002"), at.Add(time.Minute))
+		settle(t, s, payment("E9900000120261114120000000000001"), at)
+		pending := payment("E9900000120261114120000000000003")
+		_, _, _ = s.CreatePayment(ctx, pending)
+		rejected := payment("E9900000120261114120000000000004")
+		_, _, _ = s.CreatePayment(ctx, rejected)
+		_, _, _ = s.FinalizePayment(ctx, rejected.ID, pix.StatusRejected, "AC03", "", at)
+		ret := payment("D99000002202611141200RETURN00001")
+		ret.Kind, ret.EndToEndID = pix.KindReturn, "E9900000120261114120000000000001"
+		settle(t, s, ret, at)
+
+		got, err := s.PendingNotifications(ctx, at.Add(-time.Hour), 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{"E9900000120261114120000000000001", "E9900000120261114120000000000002"}; !slices.Equal(ids(got), want) {
+			t.Fatalf("pending = %v, want %v", ids(got), want)
+		}
+		if got[0].PayeeKey != "39053344705" || got[0].SettledAt.IsZero() {
+			t.Fatalf("pending payment = %+v", got[0])
+		}
+		if got, _ := s.PendingNotifications(ctx, at.Add(-time.Hour), 1); len(got) != 1 {
+			t.Fatalf("limit 1 gave %d", len(got))
+		}
+		if got, _ := s.PendingNotifications(ctx, at.Add(time.Second), 10); !slices.Equal(ids(got), []string{"E9900000120261114120000000000002"}) {
+			t.Fatalf("since a second later = %v", ids(got))
+		}
+	})
+
+	t.Run("marked ones leave the outbox", func(t *testing.T) {
+		s := newStore(t)
+		settle(t, s, payment("E9900000120261114120000000000001"), at)
+		settle(t, s, payment("E9900000120261114120000000000002"), at)
+		if err := s.MarkNotified(ctx, "E9900000120261114120000000000001", at); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.PendingNotifications(ctx, at.Add(-time.Hour), 10)
+		if err != nil || !slices.Equal(ids(got), []string{"E9900000120261114120000000000002"}) {
+			t.Fatalf("pending = %v, %v", ids(got), err)
 		}
 	})
 }

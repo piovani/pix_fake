@@ -22,9 +22,10 @@ import (
 // returnLimit is how long after settling a payment it can still be returned (regulated by the Pix scheme).
 const returnLimit = 90 * 24 * time.Hour
 
-// returnReason is the only return reason the mock supports: the receiver asked for the money back.
-// The others (BE08, FR01, SL02) belong to the MED and to Pix Saque/Troco, which are out of scope.
-const returnReason = "MD06"
+// returnReasons are the return reasons the mock accepts: MD06, the receiver asked for the money back, and the two of
+// the MED, BE08 (an operational flaw) and FR01 (a well-founded suspicion of fraud). SL02 belongs to Pix Saque/Troco,
+// which is out of scope. The MED returns follow the same rules as the others.
+var returnReasons = map[string]bool{"MD06": true, "BE08": true, "FR01": true}
 
 var returnIDPattern = regexp.MustCompile(`^D[0-9A-Z]{8}[0-9]{4}[0-1][0-9][0-3][0-9][0-2][0-9][0-5][0-9][a-zA-Z0-9]{11}$`)
 
@@ -176,8 +177,8 @@ func checkReturnContent(r iso.Return, now time.Time) *rejection {
 		return reject(reasonInvalidContent, "only HIGH priority is supported")
 	case r.ChrgBr != "SLEV":
 		return reject(reasonInvalidContent, "ChrgBr must be SLEV")
-	case r.Reason() != returnReason:
-		return reject(reasonInvalidContent, "only return reason "+returnReason+" is supported")
+	case !returnReasons[r.Reason()]:
+		return reject(reasonInvalidContent, "only the return reasons MD06, BE08 and FR01 are supported")
 	case len(r.RtrRsnInf.AddtlInf) > 105:
 		return reject(reasonInvalidContent, "return reason text is longer than 105 characters")
 	case len(r.Info()) > 140:

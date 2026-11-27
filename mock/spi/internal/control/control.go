@@ -403,6 +403,7 @@ type inboundReturn struct {
 	EndToEndID string `json:"end_to_end_id"` // the payment to return
 	Amount     string `json:"amount,omitempty"`
 	ReturnID   string `json:"return_id,omitempty"`
+	Reason     string `json:"reason,omitempty"` // MD06 (default), or BE08 and FR01 of the MED
 }
 
 func (c *Control) inboundReturn(w http.ResponseWriter, r *http.Request) {
@@ -432,6 +433,11 @@ func (c *Control) inboundReturn(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, `amount must be a positive value such as "10.50"`)
 		return
 	}
+	reason := orDefault(req.Reason, "MD06")
+	if reason != "MD06" && reason != "BE08" && reason != "FR01" {
+		fail(w, http.StatusUnprocessableEntity, "reason must be MD06, BE08 or FR01")
+		return
+	}
 	if req.ReturnID != "" && !pix.ValidReturnID(req.ReturnID) {
 		fail(w, http.StatusUnprocessableEntity, "return_id is not a valid RtrId")
 		return
@@ -440,7 +446,7 @@ func (c *Control) inboundReturn(w http.ResponseWriter, r *http.Request) {
 	sender := orig.PayeeISPB
 	rtr := orDefault(req.ReturnID, c.newID("D", sender))
 	now := iso.FormatTime(c.Now())
-	ret := iso.NewReturn(rtr, orig.EndToEndID, amount, "MD06", sender, orig.PayerISPB)
+	ret := iso.NewReturn(rtr, orig.EndToEndID, amount, reason, sender, orig.PayerISPB)
 	body, err := iso.NewPacs004(sender, pix.SPIISPB, "M"+sender+randomText(23), now, ret).Marshal()
 	if err != nil {
 		internal(w, err)

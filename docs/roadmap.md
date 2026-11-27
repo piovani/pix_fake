@@ -51,7 +51,7 @@ See [`mock/spi`](../mock/spi/README.md). Catalog 5.13 (`spi.5.13.2`, checked 202
   errors, gzip, multipart.
 - `pacs.008` → `pacs.002` in two phases (receiver answers `ACSP`, SPI sends `ACSC`/`ACCC`). Simulated banks accept or
   reject by creditor account; the 40 s timeout is `AB03`. No liquidity management.
-- `pacs.004` returns (90 days, no return of a return, partial allowed, `MD06` only) and `trck.002` reports answered with
+- `pacs.004` returns (90 days, no return of a return, partial allowed; `MD06`, and `BE08`/`FR01` of the MED) and `trck.002` reports answered with
   `camt.025`.
 - XML is validated by hand in code and checked against the official XSDs in contract tests.
 - Closing test: [`e2e/closing_test.go`](../e2e/closing_test.go).
@@ -107,7 +107,9 @@ It extends `mock/dict`, since the DICT API is where the spec puts it.
   control API tells it about (`POST /mock/transactions`)
 - [x] Funds recovery (the `AUTOMATED` flow: tracking graph, block and refund when it is created and analysed) and event
   notifications in `mock/dict`
-- [ ] The DICT learns the transactions from the SPI mock; MED returns (`pacs.004`) in the SPI mock
+- [x] The DICT learns the transactions from the SPI mock (an outbox of the settled payments, sent to
+  `POST /mock/transactions`); MED returns (`pacs.004` `BE08` and `FR01`) in the SPI mock. Closing test:
+  [`e2e/med_test.go`](../e2e/med_test.go)
 - [ ] Wallet side: blocks, refund requests, notifications
 - [x] Decide whether it extends `mock/dict` or becomes `mock/med`: `mock/dict`
 

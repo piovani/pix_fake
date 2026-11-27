@@ -70,7 +70,7 @@ echo "==> loading the seed data"
 echo "==> starting the mocks"
 DICT_ADDR=":$DICT_PORT" "$WORK/dict" >"$WORK/dict.log" 2>&1 &
 pids+=("$!")
-SPI_ADDR=":$SPI_PORT" SPI_POLL_WAIT=1s SPI_TIMEOUT="$TIMEOUT" "$WORK/spi" >"$WORK/spi.log" 2>&1 &
+SPI_ADDR=":$SPI_PORT" SPI_POLL_WAIT=1s SPI_TIMEOUT="$TIMEOUT" SPI_DICT_URL="http://localhost:$DICT_PORT" "$WORK/spi" >"$WORK/spi.log" 2>&1 &
 pids+=("$!")
 wait_healthy "http://localhost:$DICT_PORT" dict
 wait_healthy "http://localhost:$SPI_PORT" spi

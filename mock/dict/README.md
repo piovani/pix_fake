@@ -123,8 +123,9 @@ Everything else (claims, policies) returns `404`.
 
 ### MED: infraction reports, fraud markers, refunds, funds recovery
 
-The real DICT knows every transaction settled in the SPI. The mock only knows the ones it is told about through
-`POST /mock/transactions` (below): a report or refund on any other `TransactionId` is `400`.
+The real DICT knows every transaction settled in the SPI. The mock knows the ones it is told about through
+`POST /mock/transactions` (below), which the SPI mock calls for every payment it settles when `SPI_DICT_URL` points
+here (as in `make up`); a report or refund on any other `TransactionId` is `400`.
 
 - **Infraction reports.** `REFUND_REQUEST` is opened by the payer's participant, `REFUND_CANCELLED` by the payee's
   (with `SituationType` `OTHER`); the other one is the counterparty. One report per transaction and reason can be
