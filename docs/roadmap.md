@@ -110,7 +110,11 @@ It extends `mock/dict`, since the DICT API is where the spec puts it.
 - [x] The DICT learns the transactions from the SPI mock (an outbox of the settled payments, sent to
   `POST /mock/transactions`); MED returns (`pacs.004` `BE08` and `FR01`) in the SPI mock. Closing test:
   [`e2e/med_test.go`](../e2e/med_test.go)
-- [ ] Wallet side: blocks, refund requests, notifications
+- Wallet side:
+  - [x] As the payee's participant: acknowledge the reports against its customers and block the money, analyse
+    them (`cmd/med`), answer the refunds with a return `FR01`/`BE08` from the block (`internal/med`)
+  - [ ] As the payer's participant: a customer contests a payment, the wallet reports it and asks for the refund
+  - [ ] Funds recovery and its event notifications from the wallet
 - [x] Decide whether it extends `mock/dict` or becomes `mock/med`: `mock/dict`
 
 ## Left out on purpose

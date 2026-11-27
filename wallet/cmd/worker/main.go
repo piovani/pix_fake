@@ -1,7 +1,8 @@
 // Command worker is the wallet's second process. It applies what the SPI stream says about the payments the wallet sent,
 // and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them, and
 // reconcile the wallet's keys with the DICT every 6 hours. It also answers the payments and returns other banks send to
-// the wallet and credits them when the SPI settles.
+// the wallet and credits them when the SPI settles. For the MED, it follows the infraction reports and refunds the
+// DICT has against the wallet: blocks the money reported, and returns it when a refund asks.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"pixfake/wallet/internal/ledger"
+	"pixfake/wallet/internal/med"
 	"pixfake/wallet/internal/payment"
 	"pixfake/wallet/internal/pix"
 	"pixfake/wallet/internal/pixkey"
@@ -61,6 +63,7 @@ func main() {
 	spi := pix.NewSPIClient(cfg.SPIBaseURL, cfg.ISPB)
 	keys := pixkey.New(accounts, dict, pixkey.NewPostgres(pool), cfg.ISPB)
 	payments := payment.New(accounts, keys, dict, spi, payment.NewPostgres(pool), cfg.ISPB)
+	fraud := med.New(dict, accounts, payments, med.NewPostgres(pool))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -88,6 +91,9 @@ func main() {
 				sweep(ctx, "finish-book", payments.CompleteBookTransfers)
 				sweep(ctx, "report-book", payments.ReportBookTransfers)
 				sweep(ctx, "orphans", payments.ReleaseOrphans)
+				sweep(ctx, "med-reports", fraud.SyncReports)
+				sweep(ctx, "med-refunds", fraud.SyncRefunds)
+				sweep(ctx, "med-returns", fraud.ProcessRefunds)
 			}
 		}
 	}()

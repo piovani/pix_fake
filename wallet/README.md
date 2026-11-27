@@ -18,9 +18,11 @@ cmd/seed               migrations + test accounts and keys
 cmd/accounts           ops: block/close an account, set its receive limit
 cmd/reports            ops: list and resend refused book-transfer reports
 cmd/keys               ops: reconcile the wallet's keys with the DICT (CIDs) and list the ones that disagree
+cmd/med                ops: analyse the infraction reports of the MED against the wallet's customers
 internal/ledger        accounts, balance with reservations, movement log
 internal/pixkey        the wallet's keys, registered in the DICT
 internal/payment       payment flows and their status
+internal/med           the MED as the payee's participant: blocks, analysis, refunds answered with returns
 internal/pix           DICT and SPI clients, ISO 20022 messages
 internal/grpcapi       gRPC adapter, no business rules
 internal/platform      config, db, telemetry (OTLP traces, metrics, logs)
@@ -75,7 +77,7 @@ money moves in one DB transaction and the call returns `SETTLED`. The worker rep
 in flight and rejected included.
 
 **Worker jobs**, every 5 s: resend what the SPI didn't take, finish interrupted book transfers, send reports, release
-reservations no payment points to (after 10 min, longer than a resolution lives). Every 6 hours, and when it starts, it
+reservations no payment points to (after 10 min, longer than a resolution lives), and follow the MED (below). Every 6 hours, and when it starts, it
 also reconciles the keys (below): the gauge `wallet.keys.out_of_sync`, by kind, goes to the dashboard, and the log
 carries only the counts, since the keys are CPFs, emails and phones. Not more often: a difference makes it ask for a
 CID file per key type, and the DICT allows 40 a day.
@@ -88,6 +90,25 @@ only the DICT has is looked up with `getEntryByCid` and, unless it is the other 
 `ONLY_IN_DICT`. It prints `kind`, key, type and account, and exits with 1 if anything disagrees. A `MISSING_IN_DICT` key
 would be paid as a book transfer inside the wallet while other banks are told it doesn't exist (`RemoveKey` clears
 it); an `ONLY_IN_DICT` key receives payments the wallet can't place.
+
+**MED, as the payee's participant.** When another bank reports, in the DICT, a payment the wallet received as a fraud
+(`REFUND_REQUEST`), the worker acknowledges the report and blocks the money in the payee's account: what the report
+asks (`InfractionAmount`), or what is available when less; it holds even on a blocked account and shows as reserved in
+`GetBalance`. The DICT calls no one, so the worker reads the changes of its reports every 5 s (from a watermark kept in
+`med_watermarks`). An operator analyses the report:
+
+```sh
+go run ./cmd/med list                                         # id, transaction, situation, asked, blocked, details
+go run ./cmd/med agree <report-id> SCAMMER_ACCOUNT "detalhes"   # or APPLICATION_FRAUD, MULE_ACCOUNT, OTHER
+go run ./cmd/med disagree <report-id> "pagamento legítimo"      # gives the block back
+```
+
+A report the other bank cancels gives the block back too. Agreeing keeps it for the refund: when the DICT has an open
+refund asked of the wallet (`FRAUD` or `OPERATIONAL_FLAW`), the worker returns the money with a `pacs.004` (`FR01` or
+`BE08`), taking the block and, if the refund asks for more, what else is available, even from a blocked account. Once
+the return settles it closes the refund with its `RtrId`: `TOTALLY_ACCEPTED`, or `PARTIALLY_ACCEPTED` when less went
+back; with nothing to return it is `REJECTED` with `NO_BALANCE`. Metrics: `wallet.med.blocked`, `wallet.med.refunds`.
+The wallet as the payer's participant (contesting a payment it made) and funds recovery are not built yet.
 
 ## Test accounts
 
