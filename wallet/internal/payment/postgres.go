@@ -129,13 +129,13 @@ func (p *Postgres) Insert(ctx context.Context, in Payment) (Payment, bool, error
 	}
 	stored, err := scan(p.pool.QueryRow(ctx, `
 		INSERT INTO payments (account_id, direction, type, status, amount_cents, end_to_end_id, resolution_id, reservation_id,
-			counterparty, message, created_at, finished_at, original_payment_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			counterparty, message, created_at, finished_at, original_payment_id, return_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT DO NOTHING
 		RETURNING `+columns,
 		in.AccountID, string(in.Direction), string(in.Type), string(in.Status), in.AmountCents, in.EndToEndID,
 		nullable(in.ResolutionID), nullable(in.ReservationID), cp, in.Message, in.CreatedAt, nullTime(in.FinishedAt),
-		nullable(in.OriginalPaymentID)))
+		nullable(in.OriginalPaymentID), in.ReturnReason))
 	if errors.Is(err, pgx.ErrNoRows) { // the resolution already made a payment, or the EndToEndId already has one in this direction
 		existing, found, err := p.existingOf(ctx, in)
 		if err == nil && !found {

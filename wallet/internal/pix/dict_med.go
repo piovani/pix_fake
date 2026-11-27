@@ -29,7 +29,9 @@ type InfractionReport struct {
 }
 
 type ListReportsParams struct {
-	AsCounterparty bool      // only the reports against the wallet
+	AsCounterparty bool // only the reports against the wallet
+	AsReporter     bool // only the reports the wallet made
+	Statuses       []string
 	ModifiedAfter  time.Time // zero for no bound; inclusive
 	Limit          int       // 1..200, 0 for the DICT's default
 }
@@ -45,7 +47,11 @@ type Refund struct {
 	Contested       string // ISPB
 	ReportID        string
 	FundsRecoveryID string
-	Modified        time.Time
+	// Once closed: TOTALLY_ACCEPTED, PARTIALLY_ACCEPTED or REJECTED, with the rejection reason or the RtrId of the return.
+	AnalysisResult      string
+	RejectionReason     string
+	RefundTransactionID string
+	Modified            time.Time
 }
 
 type ListRefundsParams struct {
@@ -81,6 +87,12 @@ func (c *DictClient) ListInfractionReports(ctx context.Context, p ListReportsPar
 	if p.AsCounterparty {
 		q.Set("IsCounterparty", "true")
 	}
+	if p.AsReporter {
+		q.Set("IsReporter", "true")
+	}
+	if len(p.Statuses) > 0 {
+		q.Set("Status", strings.Join(p.Statuses, ","))
+	}
 	if !p.ModifiedAfter.IsZero() {
 		q.Set("ModifiedAfter", p.ModifiedAfter.UTC().Format(timeLayout))
 	}
@@ -100,6 +112,48 @@ func (c *DictClient) ListInfractionReports(ctx context.Context, p ListReportsPar
 		reports = append(reports, rep)
 	}
 	return reports, out.HasMore, nil
+}
+
+type NewReport struct {
+	TransactionID string // EndToEndId of a payment the wallet made
+	SituationType string // SCAM, ACCOUNT_TAKEOVER, COERCION, FRAUDULENT_ACCESS, OTHER
+	Details       string
+}
+
+// CreateInfractionReport reports a payment the wallet made as a fraud (REFUND_REQUEST), so that the participant that
+// received it analyses it. One report per transaction can be in progress: another is ErrConflict.
+func (c *DictClient) CreateInfractionReport(ctx context.Context, r NewReport) (InfractionReport, error) {
+	body := createReportXML{Participant: c.ispb}
+	body.Report.TransactionID, body.Report.Reason = r.TransactionID, "REFUND_REQUEST"
+	body.Report.SituationType, body.Report.ReportDetails = r.SituationType, r.Details
+	var out reportResponseXML
+	if err := c.do(ctx, http.MethodPost, "/infraction-reports", c.medHeader(), body, http.StatusCreated, &out); err != nil {
+		return InfractionReport{}, err
+	}
+	return out.Report.report()
+}
+
+// CancelInfractionReport withdraws a report the wallet made.
+func (c *DictClient) CancelInfractionReport(ctx context.Context, id string) (InfractionReport, error) {
+	body := reportActionXML{XMLName: xmlName("CancelInfractionReportRequest"), ID: id, Participant: c.ispb}
+	var out reportResponseXML
+	if err := c.do(ctx, http.MethodPost, "/infraction-reports/"+url.PathEscape(id)+"/cancel", c.medHeader(), body, http.StatusOK, &out); err != nil {
+		return InfractionReport{}, err
+	}
+	return out.Report.report()
+}
+
+// CreateRefund asks the participant that received a payment of the wallet for the money back. FRAUD needs a report of
+// the wallet on the transaction closed AGREED. One refund per transaction can be open: another is ErrConflict.
+func (c *DictClient) CreateRefund(ctx context.Context, transactionID, reason string, cents int64, details string) (Refund, error) {
+	body := createRefundXML{Participant: c.ispb}
+	body.Refund.TransactionID, body.Refund.RefundReason = transactionID, reason
+	body.Refund.RefundAmount, body.Refund.RefundDetails = formatAmount(cents), details
+	var out refundResponseXML
+	if err := c.do(ctx, http.MethodPost, "/refunds", c.medHeader(), body, http.StatusCreated, &out); err != nil {
+		return Refund{}, err
+	}
+	return out.Refund.refund()
 }
 
 // AcknowledgeInfractionReport tells the DICT the wallet received the report. Repeating it is harmless.

@@ -2,7 +2,8 @@
 // and runs the periodic jobs: resend what the SPI did not take, finish interrupted book transfers, report them, and
 // reconcile the wallet's keys with the DICT every 6 hours. It also answers the payments and returns other banks send to
 // the wallet and credits them when the SPI settles. For the MED, it follows the infraction reports and refunds the
-// DICT has against the wallet: blocks the money reported, and returns it when a refund asks.
+// DICT has against the wallet: blocks the money reported, and returns it when a refund asks; and the contests of its
+// customers: reports them, asks for the refund when the other bank agrees, and records what came back.
 package main
 
 import (
@@ -94,6 +95,7 @@ func main() {
 				sweep(ctx, "med-reports", fraud.SyncReports)
 				sweep(ctx, "med-refunds", fraud.SyncRefunds)
 				sweep(ctx, "med-returns", fraud.ProcessRefunds)
+				sweep(ctx, "med-contests", fraud.SyncContests)
 			}
 		}
 	}()

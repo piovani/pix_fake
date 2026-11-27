@@ -70,6 +70,9 @@ type refundXML struct {
 	ContestedParticipant  string `xml:"ContestedParticipant"`
 	InfractionReportID    string `xml:"InfractionReportId"`
 	FundsRecoveryID       string `xml:"FundsRecoveryId"`
+	AnalysisResult        string `xml:"AnalysisResult"`
+	RefundRejectionReason string `xml:"RefundRejectionReason"`
+	RefundTransactionID   string `xml:"RefundTransactionId"`
 	LastModified          string `xml:"LastModified"`
 }
 
@@ -85,7 +88,8 @@ func (r refundXML) refund() (Refund, error) {
 	return Refund{
 		ID: r.ID, TransactionID: r.TransactionID, Reason: r.RefundReason, AmountCents: amount, Details: r.RefundDetails,
 		Status: r.Status, Requesting: r.RequestingParticipant, Contested: r.ContestedParticipant, ReportID: r.InfractionReportID,
-		FundsRecoveryID: r.FundsRecoveryID, Modified: modified,
+		FundsRecoveryID: r.FundsRecoveryID, AnalysisResult: r.AnalysisResult, RejectionReason: r.RefundRejectionReason,
+		RefundTransactionID: r.RefundTransactionID, Modified: modified,
 	}, nil
 }
 
@@ -107,4 +111,26 @@ type closeRefundXML struct {
 	Details             string   `xml:"RefundAnalysisDetails,omitempty"`
 	RejectionReason     string   `xml:"RefundRejectionReason,omitempty"`
 	RefundTransactionID string   `xml:"RefundTransactionId,omitempty"`
+}
+
+type createReportXML struct {
+	XMLName     xml.Name `xml:"CreateInfractionReportRequest"`
+	Participant string   `xml:"Participant"`
+	Report      struct {
+		TransactionID string `xml:"TransactionId"`
+		Reason        string `xml:"Reason"`
+		SituationType string `xml:"SituationType"`
+		ReportDetails string `xml:"ReportDetails,omitempty"`
+	} `xml:"InfractionReport"`
+}
+
+type createRefundXML struct {
+	XMLName     xml.Name `xml:"CreateRefundRequest"`
+	Participant string   `xml:"Participant"`
+	Refund      struct {
+		TransactionID string `xml:"TransactionId"`
+		RefundReason  string `xml:"RefundReason"`
+		RefundAmount  string `xml:"RefundAmount"`
+		RefundDetails string `xml:"RefundDetails,omitempty"`
+	} `xml:"Refund"`
 }

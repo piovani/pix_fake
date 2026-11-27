@@ -41,6 +41,7 @@ type env struct {
 	keys     walletv1.KeyServiceClient
 	payments walletv1.PaymentServiceClient
 	accounts walletv1.AccountServiceClient
+	contests walletv1.ContestServiceClient
 	spi      string          // the SPI mock's control API, empty when not given
 	bank     *pix.DictClient // Banco Alfa looking keys up, the way a payer's bank does
 	wallet   *pix.DictClient // the wallet's own participant, to change the DICT behind the wallet's back
@@ -63,6 +64,7 @@ func setup(t *testing.T) env {
 		keys:     walletv1.NewKeyServiceClient(conn),
 		payments: walletv1.NewPaymentServiceClient(conn),
 		accounts: walletv1.NewAccountServiceClient(conn),
+		contests: walletv1.NewContestServiceClient(conn),
 		bank:     pix.NewDictClient(dictURL, bankAlfa),
 		wallet:   pix.NewDictClient(dictURL, walletISPB),
 		control:  strings.TrimSuffix(dictURL, "/api/v2"),
