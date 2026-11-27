@@ -76,7 +76,7 @@ func (p *Postgres) Resolution(ctx context.Context, id string) (Resolution, bool,
 
 const columns = `id, account_id, direction, type, status, amount_cents, end_to_end_id, resolution_id, reservation_id,
 	counterparty, message, reject_code, reject_reason, resource_id, submitted_at, created_at, finished_at,
-	report_status, report_sent_at, report_reason, original_payment_id, request_id,
+	report_status, report_sent_at, report_reason, original_payment_id, request_id, return_reason,
 	(SELECT COALESCE(SUM(r.amount_cents), 0)::bigint FROM payments r
 	 WHERE r.original_payment_id = payments.id AND r.status <> 'REJECTED')`
 
@@ -88,7 +88,7 @@ func scan(row pgx.Row) (Payment, error) {
 	var submitted, finished, reportSent *time.Time
 	err := row.Scan(&p.ID, &p.AccountID, &direction, &typ, &status, &p.AmountCents, &p.EndToEndID, &resolution, &reservation,
 		&counterparty, &p.Message, &p.RejectCode, &p.RejectReason, &resource, &submitted, &p.CreatedAt, &finished,
-		&p.ReportStatus, &reportSent, &p.ReportReason, &original, &request, &p.ReturnedCents)
+		&p.ReportStatus, &reportSent, &p.ReportReason, &original, &request, &p.ReturnReason, &p.ReturnedCents)
 	if err != nil {
 		return Payment{}, err
 	}
@@ -239,11 +239,11 @@ func (p *Postgres) InsertReturn(ctx context.Context, in Payment) (Payment, bool,
 		}
 		stored, err = scan(tx.QueryRow(ctx, `
 			INSERT INTO payments (account_id, direction, type, status, amount_cents, end_to_end_id, reservation_id, counterparty,
-				original_payment_id, request_id, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+				original_payment_id, request_id, return_reason, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING `+columns,
 			in.AccountID, string(in.Direction), string(in.Type), string(in.Status), in.AmountCents, in.EndToEndID,
-			nullable(in.ReservationID), cp, in.OriginalPaymentID, in.RequestID, in.CreatedAt))
+			nullable(in.ReservationID), cp, in.OriginalPaymentID, in.RequestID, in.ReturnReason, in.CreatedAt))
 		created = err == nil
 		return err
 	})

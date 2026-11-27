@@ -350,10 +350,140 @@ func (l *Ledger) Release(ctx context.Context, reservationID string) error {
 	return l.close(ctx, reservationID, Released, kindRelease)
 }
 
+// Block holds up to upTo of the account's money for the MED (a cautionary block): what is available, when it is less.
+// It holds even on a blocked account, and the sweep of orphan reservations leaves it alone. Release gives it back;
+// ReserveFromBlock turns it into the reservation of a return. With nothing available it is ErrInsufficientFunds.
+// Idempotent by reference.
+func (l *Ledger) Block(ctx context.Context, accountID string, upTo int64, reference string) (Reservation, error) {
+	if upTo <= 0 {
+		return Reservation{}, ErrInvalidAmount
+	}
+	if reference == "" {
+		return Reservation{}, ErrInvalidReference
+	}
+	accountID = strings.ToLower(accountID)
+	var r Reservation
+	err := db.InTx(ctx, l.pool, func(tx pgx.Tx) error {
+		found, err := byReference(ctx, tx, reference, &r)
+		if err != nil || found {
+			if found && r.AccountID != accountID {
+				return ErrReferenceConflict
+			}
+			return err
+		}
+		var available int64
+		if err := tx.QueryRow(ctx, `SELECT available_cents FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&available); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrAccountNotFound
+			}
+			return mapAccountErr(err)
+		}
+		cents := min(upTo, available)
+		if cents == 0 {
+			return ErrInsufficientFunds
+		}
+		return hold(ctx, tx, accountID, cents, reference, "BLOCK", &r)
+	})
+	if err != nil {
+		return Reservation{}, err
+	}
+	return r, nil
+}
+
+// ReserveFromBlock reserves cents for a return of the MED, giving back the block blockID (when not empty) in the same
+// transaction, so the money blocked cannot be spent in between. It takes what is available, the block included, even on
+// a blocked account: the MED returns what it must. Not enough is ErrInsufficientFunds, and the block stays.
+// Idempotent by reference.
+func (l *Ledger) ReserveFromBlock(ctx context.Context, accountID, blockID string, cents int64, reference string) (Reservation, error) {
+	if cents <= 0 {
+		return Reservation{}, ErrInvalidAmount
+	}
+	if reference == "" {
+		return Reservation{}, ErrInvalidReference
+	}
+	accountID = strings.ToLower(accountID)
+	var r Reservation
+	err := db.InTx(ctx, l.pool, func(tx pgx.Tx) error {
+		found, err := byReference(ctx, tx, reference, &r)
+		if err != nil || found {
+			if found && (r.AccountID != accountID || r.AmountCents != cents) {
+				return ErrReferenceConflict
+			}
+			return err
+		}
+		if blockID != "" {
+			var owner string
+			err := tx.QueryRow(ctx, `SELECT account_id FROM reservations WHERE id = $1 AND purpose = 'BLOCK'`, strings.ToLower(blockID)).Scan(&owner)
+			switch {
+			case errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02"):
+				return ErrReservationNotFound
+			case err != nil:
+				return err
+			case owner != accountID:
+				return ErrReferenceConflict
+			}
+			if err := closeIn(ctx, tx, strings.ToLower(blockID), Released, kindRelease); err != nil {
+				return err
+			}
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE accounts SET available_cents = available_cents - $1, reserved_cents = reserved_cents + $1
+			WHERE id = $2 AND available_cents >= $1`, cents, accountID)
+		if err != nil {
+			return mapAccountErr(err)
+		}
+		if tag.RowsAffected() == 0 {
+			var exists bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1)`, accountID).Scan(&exists); err != nil {
+				return mapAccountErr(err)
+			}
+			if !exists {
+				return ErrAccountNotFound
+			}
+			return ErrInsufficientFunds // rolls back the release of the block too
+		}
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO reservations (account_id, amount_cents, reference, status) VALUES ($1, $2, $3, 'HELD')
+			RETURNING id, account_id, amount_cents, reference, status`, accountID, cents, reference).
+			Scan(&r.ID, &r.AccountID, &r.AmountCents, &r.Reference, &r.Status); err != nil {
+			return err
+		}
+		return addEntry(ctx, tx, accountID, kindReserve, cents, reference)
+	})
+	if err != nil {
+		return Reservation{}, err
+	}
+	return r, nil
+}
+
+func byReference(ctx context.Context, tx pgx.Tx, reference string, r *Reservation) (bool, error) {
+	err := tx.QueryRow(ctx, `SELECT id, account_id, amount_cents, reference, status FROM reservations WHERE reference = $1`,
+		reference).Scan(&r.ID, &r.AccountID, &r.AmountCents, &r.Reference, &r.Status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// hold moves cents of an account whose row the transaction has locked from available to reserved.
+func hold(ctx context.Context, tx pgx.Tx, accountID string, cents int64, reference, purpose string, r *Reservation) error {
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO reservations (account_id, amount_cents, reference, status, purpose) VALUES ($1, $2, $3, 'HELD', $4)
+		RETURNING id, account_id, amount_cents, reference, status`, accountID, cents, reference, purpose).
+		Scan(&r.ID, &r.AccountID, &r.AmountCents, &r.Reference, &r.Status); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE accounts SET available_cents = available_cents - $1, reserved_cents = reserved_cents + $1 WHERE id = $2`,
+		cents, accountID); err != nil {
+		return err
+	}
+	return addEntry(ctx, tx, accountID, kindReserve, cents, reference)
+}
+
 func (l *Ledger) HeldBefore(ctx context.Context, before time.Time, limit int) ([]Reservation, error) {
 	rows, err := l.pool.Query(ctx, `
 		SELECT id, account_id, amount_cents, reference, status, created_at FROM reservations
-		WHERE status = 'HELD' AND created_at < $1 ORDER BY created_at LIMIT $2`, before, limit)
+		WHERE status = 'HELD' AND purpose = 'PAYMENT' AND created_at < $1 ORDER BY created_at LIMIT $2`, before, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -370,42 +500,43 @@ func (l *Ledger) HeldBefore(ctx context.Context, before time.Time, limit int) ([
 }
 
 func (l *Ledger) close(ctx context.Context, reservationID string, to ReservationStatus, kind entryKind) error {
-	reservationID = strings.ToLower(reservationID)
-	return db.InTx(ctx, l.pool, func(tx pgx.Tx) error {
-		var accountID, reference string
-		var cents int64
-		err := tx.QueryRow(ctx, `
-			UPDATE reservations SET status = $2, updated_at = now() WHERE id = $1 AND status = 'HELD'
-			RETURNING account_id, amount_cents, reference`, reservationID, to).Scan(&accountID, &cents, &reference)
-		if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
-			var current ReservationStatus
-			err := tx.QueryRow(ctx, `SELECT status FROM reservations WHERE id = $1`, reservationID).Scan(&current)
-			switch {
-			case errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02"):
-				return ErrReservationNotFound
-			case err != nil:
-				return err
-			case current == to:
-				return nil // already done
-			default:
-				return ErrReservationClosed
-			}
-		}
-		if err != nil {
-			return err
-		}
+	return db.InTx(ctx, l.pool, func(tx pgx.Tx) error { return closeIn(ctx, tx, strings.ToLower(reservationID), to, kind) })
+}
 
-		back := int64(0)
-		if to == Released {
-			back = cents
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE accounts SET reserved_cents = reserved_cents - $1, available_cents = available_cents + $2 WHERE id = $3`,
-			cents, back, accountID); err != nil {
+func closeIn(ctx context.Context, tx pgx.Tx, reservationID string, to ReservationStatus, kind entryKind) error {
+	var accountID, reference string
+	var cents int64
+	err := tx.QueryRow(ctx, `
+		UPDATE reservations SET status = $2, updated_at = now() WHERE id = $1 AND status = 'HELD'
+		RETURNING account_id, amount_cents, reference`, reservationID, to).Scan(&accountID, &cents, &reference)
+	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
+		var current ReservationStatus
+		err := tx.QueryRow(ctx, `SELECT status FROM reservations WHERE id = $1`, reservationID).Scan(&current)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02"):
+			return ErrReservationNotFound
+		case err != nil:
 			return err
+		case current == to:
+			return nil // already done
+		default:
+			return ErrReservationClosed
 		}
-		return addEntry(ctx, tx, accountID, kind, cents, reference)
-	})
+	}
+	if err != nil {
+		return err
+	}
+
+	back := int64(0)
+	if to == Released {
+		back = cents
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE accounts SET reserved_cents = reserved_cents - $1, available_cents = available_cents + $2 WHERE id = $3`,
+		cents, back, accountID); err != nil {
+		return err
+	}
+	return addEntry(ctx, tx, accountID, kind, cents, reference)
 }
 
 func addEntry(ctx context.Context, tx pgx.Tx, accountID string, kind entryKind, cents int64, reference string) error {

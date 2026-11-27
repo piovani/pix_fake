@@ -20,7 +20,13 @@ type ReturnInput struct {
 	PaymentID   string
 	AmountCents int64
 	RequestID   string // UUID v4, chosen by the caller
+	// Reason is the return reason: MD06 (the default) when the customer returns it, BE08 or FR01 when the MED does.
+	// A return of the MED takes the money even from a blocked account, the block FromBlock first.
+	Reason    string
+	FromBlock string // a block of the ledger (ledger.Block) to give back into the return
 }
+
+var returnReasons = map[string]bool{pix.ReturnReasonCustomer: true, pix.ReturnReasonOperationalFlaw: true, pix.ReturnReasonFraud: true}
 
 // Repeating a call with the same RequestID returns the same return.
 func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
@@ -31,6 +37,13 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 		return Payment{}, fmt.Errorf("%w: amount must be positive", ErrInvalid)
 	case !uuidV4.MatchString(in.RequestID):
 		return Payment{}, fmt.Errorf("%w: request id must be uuid v4", ErrInvalid)
+	case in.Reason != "" && !returnReasons[in.Reason]:
+		return Payment{}, fmt.Errorf("%w: return reason must be MD06, BE08 or FR01", ErrInvalid)
+	case in.FromBlock != "" && (in.Reason == "" || in.Reason == pix.ReturnReasonCustomer):
+		return Payment{}, fmt.Errorf("%w: only a return of the MED takes a block", ErrInvalid)
+	}
+	if in.Reason == "" {
+		in.Reason = pix.ReturnReasonCustomer
 	}
 	if existing, found, err := s.store.ByRequestID(ctx, in.RequestID); err != nil {
 		return Payment{}, err
@@ -58,7 +71,12 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 		return Payment{}, err
 	}
 	tag(ctx, orig.EndToEndID, rtrID)
-	rsv, err := s.accounts.Reserve(ctx, orig.AccountID, in.AmountCents, in.RequestID)
+	var rsv ledger.Reservation
+	if in.Reason == pix.ReturnReasonCustomer {
+		rsv, err = s.accounts.Reserve(ctx, orig.AccountID, in.AmountCents, in.RequestID)
+	} else {
+		rsv, err = s.accounts.ReserveFromBlock(ctx, orig.AccountID, in.FromBlock, in.AmountCents, in.RequestID)
+	}
 	if errors.Is(err, ledger.ErrReferenceConflict) {
 		return Payment{}, ErrRequestConflict
 	}
@@ -72,7 +90,7 @@ func (s *Service) Return(ctx context.Context, in ReturnInput) (Payment, error) {
 	stored, created, err := s.store.InsertReturn(ctx, Payment{
 		AccountID: orig.AccountID, Direction: Outbound, Type: TypeReturn, Status: Pending, AmountCents: in.AmountCents,
 		EndToEndID: rtrID, ReservationID: rsv.ID, Counterparty: orig.Counterparty, OriginalPaymentID: orig.ID,
-		RequestID: in.RequestID, CreatedAt: at,
+		RequestID: in.RequestID, ReturnReason: in.Reason, CreatedAt: at,
 	})
 	if err != nil {
 		if rerr := s.accounts.Release(context.WithoutCancel(ctx), rsv.ID); rerr != nil {
@@ -101,7 +119,7 @@ func (s *Service) checkReturnable(orig Payment, cents int64) error {
 }
 
 func (s *Service) repeatReturn(ctx context.Context, p Payment, in ReturnInput) (Payment, error) {
-	if p.OriginalPaymentID != in.PaymentID || p.AmountCents != in.AmountCents {
+	if p.OriginalPaymentID != in.PaymentID || p.AmountCents != in.AmountCents || p.ReturnReason != in.Reason {
 		return Payment{}, ErrRequestConflict
 	}
 	if p.Status == Pending && !p.Submitted() {
@@ -120,6 +138,12 @@ func (s *Service) returnOrderOf(ctx context.Context, p Payment) ([]byte, error) 
 	}
 	_, body, err := pix.NewPacs004(s.ispb, pix.PaymentReturn{
 		ReturnID: p.EndToEndID, EndToEndID: orig.EndToEndID, AmountCents: p.AmountCents, To: orig.Counterparty.Participant,
+		ReasonCode: p.ReturnReason,
 	}, s.now())
 	return body, err
+}
+
+// Received returns the payment the wallet received with the EndToEndId.
+func (s *Service) Received(ctx context.Context, endToEndID string) (Payment, bool, error) {
+	return s.store.ByEndToEnd(ctx, endToEndID, Inbound)
 }

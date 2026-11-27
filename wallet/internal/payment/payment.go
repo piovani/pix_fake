@@ -85,6 +85,7 @@ type Payment struct {
 	ReservationID     string
 	OriginalPaymentID string
 	RequestID         string
+	ReturnReason      string // of a return: MD06, BE08 or FR01
 	ReturnedCents     int64
 	Counterparty      Payee
 	Message           string
@@ -112,6 +113,7 @@ func (p Payment) Submitted() bool { return !p.SubmittedAt.IsZero() }
 type Accounts interface {
 	Account(ctx context.Context, id string) (ledger.Account, error)
 	Reserve(ctx context.Context, accountID string, cents int64, reference string) (ledger.Reservation, error)
+	ReserveFromBlock(ctx context.Context, accountID, blockID string, cents int64, reference string) (ledger.Reservation, error)
 	Settle(ctx context.Context, reservationID string) error
 	Release(ctx context.Context, reservationID string) error
 	Transfer(ctx context.Context, fromAccountID, toAccountID string, cents int64, reference string) error

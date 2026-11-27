@@ -19,8 +19,12 @@ const (
 	maxReportAge = 30 * 24 * time.Hour
 )
 
-// MD06: the only reason a return on the wallet's own initiative needs.
-const ReturnReasonCustomer = "MD06"
+// The return reasons: MD06 when the customer returns a payment, BE08 and FR01 when the MED does.
+const (
+	ReturnReasonCustomer        = "MD06"
+	ReturnReasonOperationalFlaw = "BE08"
+	ReturnReasonFraud           = "FR01"
+)
 
 const (
 	ReceiptAccepted = "ACPT"
