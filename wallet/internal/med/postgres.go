@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -154,4 +155,94 @@ func nullable(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+const contestColumns = `id::text, account_id::text, payment_id::text, transaction_id, request_id::text, situation, details, amount_cents,
+	status, report_id, refund_id, refunded_cents, return_id, rejection, created_at, updated_at`
+
+func scanContest(row pgx.Row) (Contest, error) {
+	var c Contest
+	err := row.Scan(&c.ID, &c.AccountID, &c.PaymentID, &c.TransactionID, &c.RequestID, &c.Situation, &c.Details, &c.AmountCents,
+		&c.Status, &c.ReportID, &c.RefundID, &c.RefundedCents, &c.ReturnID, &c.Rejection, &c.CreatedAt, &c.UpdatedAt)
+	return c, err
+}
+
+func (p *Postgres) contestWhere(ctx context.Context, where string, arg any) (Contest, bool, error) {
+	c, err := scanContest(p.pool.QueryRow(ctx, `SELECT `+contestColumns+` FROM med_contests WHERE `+where, arg))
+	if errors.Is(err, pgx.ErrNoRows) || isCode(err, "22P02") {
+		return Contest{}, false, nil
+	}
+	return c, err == nil, err
+}
+
+func (p *Postgres) InsertContest(ctx context.Context, c Contest) (Contest, bool, error) {
+	stored, err := scanContest(p.pool.QueryRow(ctx, `
+		INSERT INTO med_contests (account_id, payment_id, transaction_id, request_id, situation, details, amount_cents, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (request_id) DO NOTHING
+		RETURNING `+contestColumns,
+		c.AccountID, c.PaymentID, c.TransactionID, c.RequestID, c.Situation, c.Details, c.AmountCents, c.Status, c.CreatedAt, c.UpdatedAt))
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		existing, _, err := p.contestWhere(ctx, `request_id = $1`, c.RequestID)
+		return existing, false, err
+	case isCode(err, "23505"):
+		return Contest{}, false, ErrAlreadyContested
+	}
+	return stored, err == nil, err
+}
+
+func (p *Postgres) Contest(ctx context.Context, id string) (Contest, bool, error) {
+	return p.contestWhere(ctx, `id = $1`, id)
+}
+
+func (p *Postgres) ContestByReport(ctx context.Context, reportID string) (Contest, bool, error) {
+	return p.contestWhere(ctx, `report_id = $1 AND report_id <> ''`, reportID)
+}
+
+func (p *Postgres) ContestByRefund(ctx context.Context, refundID string) (Contest, bool, error) {
+	return p.contestWhere(ctx, `refund_id = $1 AND refund_id <> ''`, refundID)
+}
+
+func (p *Postgres) contests(ctx context.Context, query string, args ...any) ([]Contest, error) {
+	rows, err := p.pool.Query(ctx, `SELECT `+contestColumns+` FROM med_contests WHERE `+query, args...)
+	if isCode(err, "22P02") {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Contest
+	for rows.Next() {
+		c, err := scanContest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if isCode(rows.Err(), "22P02") {
+		return nil, nil
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) ContestsOf(ctx context.Context, accountID string) ([]Contest, error) {
+	return p.contests(ctx, `account_id = $1 ORDER BY created_at DESC, id LIMIT 100`, accountID)
+}
+
+func (p *Postgres) ContestsToSubmit(ctx context.Context, limit int) ([]Contest, error) {
+	return p.contests(ctx, `status IN ('OPENING', 'AGREED') AND updated_at < now() - interval '10 seconds' ORDER BY updated_at LIMIT $1`, limit)
+}
+
+func (p *Postgres) SaveContest(ctx context.Context, c Contest) error {
+	_, err := p.pool.Exec(ctx, `
+		UPDATE med_contests SET status = $2, report_id = $3, refund_id = $4, refunded_cents = $5, return_id = $6, rejection = $7, updated_at = $8
+		WHERE id = $1`, c.ID, c.Status, c.ReportID, c.RefundID, c.RefundedCents, c.ReturnID, c.Rejection, c.UpdatedAt)
+	return err
+}
+
+func isCode(err error, code string) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == code
 }

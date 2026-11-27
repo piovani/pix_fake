@@ -143,3 +143,58 @@ func TestMEDErrors(t *testing.T) {
 		t.Fatal("a bad time was accepted")
 	}
 }
+
+func TestCreateAndCancelInfractionReportAndCreateRefund(t *testing.T) {
+	c := medServer(t, func(r *http.Request, body string) (int, string) {
+		switch r.URL.Path {
+		case "/api/v2/infraction-reports":
+			if !strings.Contains(body, "<CreateInfractionReportRequest><Participant>99000001</Participant><InfractionReport><TransactionId>E1</TransactionId>"+
+				"<Reason>REFUND_REQUEST</Reason><SituationType>SCAM</SituationType><ReportDetails>golpe</ReportDetails>") {
+				t.Errorf("create body = %s", body)
+			}
+			return 201, `<CreateInfractionReportResponse>` + reportXMLBody + `</CreateInfractionReportResponse>`
+		case "/api/v2/infraction-reports/r1/cancel":
+			if !strings.Contains(body, "<CancelInfractionReportRequest><InfractionReportId>r1</InfractionReportId>") {
+				t.Errorf("cancel body = %s", body)
+			}
+			return 200, `<CancelInfractionReportResponse>` + reportXMLBody + `</CancelInfractionReportResponse>`
+		case "/api/v2/refunds":
+			if !strings.Contains(body, "<TransactionId>E1</TransactionId><RefundReason>FRAUD</RefundReason><RefundAmount>45.00</RefundAmount>") {
+				t.Errorf("refund body = %s", body)
+			}
+			return 201, `<CreateRefundResponse>` + refundXMLBody + `</CreateRefundResponse>`
+		}
+		t.Errorf("path = %s", r.URL.Path)
+		return 404, ""
+	})
+	ctx := context.Background()
+	if r, err := c.CreateInfractionReport(ctx, NewReport{TransactionID: "E1", SituationType: "SCAM", Details: "golpe"}); err != nil || r.ID != "r1" {
+		t.Fatalf("create = %+v, %v", r, err)
+	}
+	if r, err := c.CancelInfractionReport(ctx, "r1"); err != nil || r.ID != "r1" {
+		t.Fatalf("cancel = %+v, %v", r, err)
+	}
+	if f, err := c.CreateRefund(ctx, "E1", "FRAUD", 4500, ""); err != nil || f.ID != "f1" {
+		t.Fatalf("refund = %+v, %v", f, err)
+	}
+}
+
+func TestListMyReportsAndClosedRefund(t *testing.T) {
+	c := medServer(t, func(r *http.Request, _ string) (int, string) {
+		if r.URL.Path == "/api/v2/infraction-reports" {
+			if q := r.URL.Query(); q.Get("IsReporter") != "true" || q.Get("Status") != "OPEN,ACKNOWLEDGED" || q.Has("IsCounterparty") {
+				t.Errorf("list = %s", r.URL)
+			}
+			return 200, `<ListInfractionReportsResponse><HasMoreElements>false</HasMoreElements></ListInfractionReportsResponse>`
+		}
+		return 200, `<GetRefundResponse><Refund><Id>f1</Id><RefundAmount>1.00</RefundAmount><Status>CLOSED</Status>` +
+			`<AnalysisResult>REJECTED</AnalysisResult><RefundRejectionReason>NO_BALANCE</RefundRejectionReason></Refund></GetRefundResponse>`
+	})
+	if _, _, err := c.ListInfractionReports(context.Background(), ListReportsParams{AsReporter: true, Statuses: []string{"OPEN", "ACKNOWLEDGED"}}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := c.GetRefund(context.Background(), "f1")
+	if err != nil || f.AnalysisResult != "REJECTED" || f.RejectionReason != "NO_BALANCE" {
+		t.Fatalf("refund = %+v, %v", f, err)
+	}
+}

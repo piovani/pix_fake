@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package wallet.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "pixfake/wallet/gen/wallet/v1;walletv1";
+
+// A customer contests a Pix they made as a fraud, through the MED (Mecanismo Especial de Devolução): the wallet reports
+// it in the DICT, the bank that received it analyses the report, and when it agrees the wallet asks for the refund. The
+// money comes back as a return (a payment of type RETURN) and the contest says how much came back.
+service ContestService {
+  // ContestPayment opens a contest of a payment the account sent through the SPI and that settled, up to 80 days ago.
+  // Repeating a call with the same request_id returns the same contest. Errors: INVALID_ARGUMENT, NOT_FOUND (no such
+  // payment), FAILED_PRECONDITION (not contestable, or already contested), ALREADY_EXISTS (request_id used with other data).
+  rpc ContestPayment(ContestPaymentRequest) returns (ContestPaymentResponse);
+
+  rpc GetContest(GetContestRequest) returns (GetContestResponse);
+
+  // ListContests lists the contests of an account, newest first.
+  rpc ListContests(ListContestsRequest) returns (ListContestsResponse);
+
+  // CancelContest withdraws a contest while the bank that received the payment has not analysed it.
+  // Errors: NOT_FOUND, FAILED_PRECONDITION (already analysed or finished).
+  rpc CancelContest(CancelContestRequest) returns (CancelContestResponse);
+}
+
+message ContestPaymentRequest {
+  string payment_id = 1;
+  ContestSituation situation = 2;
+  // What happened, up to 2000 characters. Required for CONTEST_SITUATION_OTHER.
+  string details = 3;
+  // A UUID v4.
+  string request_id = 4;
+}
+
+message ContestPaymentResponse {
+  Contest contest = 1;
+}
+
+message GetContestRequest {
+  string contest_id = 1;
+}
+
+message GetContestResponse {
+  Contest contest = 1;
+}
+
+message ListContestsRequest {
+  string account_id = 1;
+}
+
+message ListContestsResponse {
+  repeated Contest contests = 1;
+}
+
+message CancelContestRequest {
+  string contest_id = 1;
+}
+
+message CancelContestResponse {
+  Contest contest = 1;
+}
+
+message Contest {
+  string id = 1;
+  string account_id = 2;
+  string payment_id = 3;
+  ContestSituation situation = 4;
+  string details = 5;
+  ContestStatus status = 6;
+  // The amount of the payment contested.
+  int64 amount_cents = 7;
+  // What came back, once refunded.
+  int64 refunded_cents = 8;
+  // When refunded: the return that brought the money back, a payment of type RETURN.
+  string return_end_to_end_id = 9;
+  // When rejected: why, for the user.
+  string rejection = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+enum ContestSituation {
+  CONTEST_SITUATION_UNSPECIFIED = 0;
+  CONTEST_SITUATION_SCAM = 1;              // the customer was deceived into paying
+  CONTEST_SITUATION_ACCOUNT_TAKEOVER = 2;  // someone else used the customer's account
+  CONTEST_SITUATION_COERCION = 3;          // the customer was forced to pay
+  CONTEST_SITUATION_FRAUDULENT_ACCESS = 4; // someone else got into the customer's device or app
+  CONTEST_SITUATION_OTHER = 5;
+}
+
+enum ContestStatus {
+  CONTEST_STATUS_UNSPECIFIED = 0;
+  CONTEST_STATUS_OPENING = 1;          // the report is not in the DICT yet
+  CONTEST_STATUS_REPORTED = 2;         // the bank that received the payment is analysing it
+  CONTEST_STATUS_REFUND_REQUESTED = 3; // it agreed; the refund is asked
+  CONTEST_STATUS_REFUNDED = 4;         // money came back, all or part (refunded_cents)
+  CONTEST_STATUS_REJECTED = 5;         // the bank disagreed, or had nothing to give back (rejection)
+  CONTEST_STATUS_CANCELLED = 6;
+}

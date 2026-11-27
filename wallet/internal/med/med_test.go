@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pixfake/wallet/internal/ledger"
 	"pixfake/wallet/internal/med"
@@ -29,6 +32,10 @@ type fakeDICT struct {
 	refunds map[string]pix.Refund
 	acks    int
 	fail    error
+	// loseAnswer makes the next report be created but answered as if the DICT were down
+	loseAnswer bool
+	// conflictRefund makes the next refund answer that one is already open
+	conflictRefund bool
 }
 
 func newDICT() *fakeDICT {
@@ -69,7 +76,8 @@ func (d *fakeDICT) ListInfractionReports(_ context.Context, p pix.ListReportsPar
 	}
 	var out []pix.InfractionReport
 	for _, r := range d.reports {
-		if !r.Modified.Before(p.ModifiedAfter) {
+		if !r.Modified.Before(p.ModifiedAfter) && (!p.AsReporter || r.Reporter == "99000001") &&
+			(!p.AsCounterparty || r.Counterparty == "99000001") && (len(p.Statuses) == 0 || slices.Contains(p.Statuses, r.Status)) {
 			out = append(out, r)
 		}
 	}
@@ -105,7 +113,11 @@ func (d *fakeDICT) ListRefunds(_ context.Context, p pix.ListRefundsParams) (pix.
 	defer d.mu.Unlock()
 	var page pix.RefundsPage
 	for _, f := range d.refunds {
-		if f.Status == "OPEN" {
+		mine := f.Requesting == "99000001"
+		if p.AsContested {
+			mine = f.Contested == "99000001"
+		}
+		if mine && !f.Modified.Before(p.ModifiedAfter) && (len(p.Statuses) == 0 || slices.Contains(p.Statuses, f.Status)) {
 			page.Refunds = append(page.Refunds, f)
 		}
 	}
@@ -169,6 +181,7 @@ type fakePayments struct {
 	accounts *fakeAccounts
 	received map[string]payment.Payment
 	returns  map[string]payment.Payment
+	sent     map[string]payment.Payment // by id
 	asked    []payment.ReturnInput
 }
 
@@ -178,11 +191,13 @@ func (p *fakePayments) Received(_ context.Context, e2e string) (payment.Payment,
 }
 
 func (p *fakePayments) Get(_ context.Context, id string) (payment.Payment, error) {
-	r, ok := p.returns[id]
-	if !ok {
-		return payment.Payment{}, payment.ErrPaymentNotFound
+	if r, ok := p.returns[id]; ok {
+		return r, nil
 	}
-	return r, nil
+	if r, ok := p.sent[id]; ok {
+		return r, nil
+	}
+	return payment.Payment{}, payment.ErrPaymentNotFound
 }
 
 func (p *fakePayments) Return(_ context.Context, in payment.ReturnInput) (payment.Payment, error) {
@@ -221,6 +236,7 @@ type env struct {
 	payments *fakePayments
 	svc      *med.Service
 	store    *med.Postgres
+	pool     *pgxpool.Pool
 }
 
 // newEnv has the wallet holding 100.00 in the account that received the payment tx1 of 30.00.
@@ -241,7 +257,7 @@ func newEnv(t *testing.T) *env {
 	}}
 	d := newDICT()
 	store := med.NewPostgres(pool)
-	return &env{dict: d, accounts: accounts, payments: payments, store: store, svc: med.New(d, accounts, payments, store)}
+	return &env{dict: d, accounts: accounts, payments: payments, store: store, pool: pool, svc: med.New(d, accounts, payments, store)}
 }
 
 func (e *env) sync(t *testing.T) int {

@@ -90,6 +90,21 @@ func (e env) reportPayment(t *testing.T, amount string) (string, string) {
 	if got := e.waitReceived(t, e2e); got == nil || got.Status.String() != "PAYMENT_STATUS_SETTLED" {
 		t.Fatalf("received: %v", got)
 	}
+	e.waitDICTKnows(t, e2e)
+	var out struct {
+		Report dictReport `xml:"InfractionReport"`
+	}
+	e.asBank(t, http.MethodPost, "/infraction-reports", `<CreateInfractionReportRequest><Participant>`+bankAlfa+`</Participant>`+
+		`<InfractionReport><TransactionId>`+e2e+`</TransactionId><Reason>REFUND_REQUEST</Reason><SituationType>SCAM</SituationType>`+
+		`<ReportDetails>Golpe do falso parente</ReportDetails></InfractionReport></CreateInfractionReportRequest>`, http.StatusCreated, &out)
+	id := out.Report.ID
+	eventually(t, "the wallet acknowledging report "+id, func() bool { return e.report(t, id).Status == "ACKNOWLEDGED" })
+	return e2e, id
+}
+
+// waitDICTKnows waits until the SPI has told the DICT of the settled payment.
+func (e env) waitDICTKnows(t *testing.T, e2e string) {
+	t.Helper()
 	eventually(t, "the DICT learning of "+e2e, func() bool {
 		resp, err := http.Get(e.control + "/mock/transactions")
 		if err != nil {
@@ -109,15 +124,6 @@ func (e env) reportPayment(t *testing.T, amount string) (string, string) {
 		}
 		return false
 	})
-	var out struct {
-		Report dictReport `xml:"InfractionReport"`
-	}
-	e.asBank(t, http.MethodPost, "/infraction-reports", `<CreateInfractionReportRequest><Participant>`+bankAlfa+`</Participant>`+
-		`<InfractionReport><TransactionId>`+e2e+`</TransactionId><Reason>REFUND_REQUEST</Reason><SituationType>SCAM</SituationType>`+
-		`<ReportDetails>Golpe do falso parente</ReportDetails></InfractionReport></CreateInfractionReportRequest>`, http.StatusCreated, &out)
-	id := out.Report.ID
-	eventually(t, "the wallet acknowledging report "+id, func() bool { return e.report(t, id).Status == "ACKNOWLEDGED" })
-	return e2e, id
 }
 
 func needMED(t *testing.T) env {

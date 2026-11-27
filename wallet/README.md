@@ -52,6 +52,7 @@ direction, type, status, reason) and `wallet.payments.amount`.
 | `AccountService` | `GetBalance`, `GetStatement` |
 | `KeyService` | `RegisterKey`, `ListKeys`, `RemoveKey` |
 | `PaymentService` | `ResolveKey`, `CreatePayment`, `GetPayment`, `ListPayments`, `ReturnPayment` |
+| `ContestService` | `ContestPayment`, `GetContest`, `ListContests`, `CancelContest` (the MED, below) |
 
 Paying is two calls: `ResolveKey` shows who owns the key, `CreatePayment` pays the `resolution_id`. Money is in centavos.
 Idempotency keys come from the client (`resolution_id`, `request_id`).
@@ -108,7 +109,18 @@ refund asked of the wallet (`FRAUD` or `OPERATIONAL_FLAW`), the worker returns t
 `BE08`), taking the block and, if the refund asks for more, what else is available, even from a blocked account. Once
 the return settles it closes the refund with its `RtrId`: `TOTALLY_ACCEPTED`, or `PARTIALLY_ACCEPTED` when less went
 back; with nothing to return it is `REJECTED` with `NO_BALANCE`. Metrics: `wallet.med.blocked`, `wallet.med.refunds`.
-The wallet as the payer's participant (contesting a payment it made) and funds recovery are not built yet.
+
+**MED, as the payer's participant.** A customer contests a Pix they sent to another bank, settled up to 80 days ago,
+with `ContestPayment` (the situation: scam, account takeover, coercion, fraudulent access or other, with details).
+The wallet reports it in the DICT at once (`REFUND_REQUEST`); when the DICT can't be reached the contest stays
+`OPENING` and the worker reports it. One contest per payment can be in progress, and `CancelContest` withdraws it while
+the other bank has not analysed it. The worker follows the wallet's reports (every 5 s, from a watermark): when the
+other bank agrees it asks for the refund (`FRAUD`, of what was not returned yet) and the contest is `REFUND_REQUESTED`;
+when it disagrees the contest is `REJECTED`. The money comes back as a `pacs.004` (`FR01`), which the wallet credits like
+any return; when the other bank closes the refund the contest is `REFUNDED`, with `refunded_cents` and the return's
+`RtrId`, or `REJECTED` with the reason for the user (no balance left, account closed...). A report or refund made but
+whose answer was lost is found in the DICT's lists and taken. Metric: `wallet.med.contests`. Funds recovery from the
+wallet (MED 2.0) is not built yet.
 
 ## Test accounts
 

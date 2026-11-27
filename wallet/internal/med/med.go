@@ -80,6 +80,7 @@ type Directory interface {
 	ListRefunds(ctx context.Context, p pix.ListRefundsParams) (pix.RefundsPage, error)
 	GetRefund(ctx context.Context, id string) (pix.Refund, error)
 	CloseRefund(ctx context.Context, p pix.CloseRefundParams) (pix.Refund, error)
+	ContestDirectory
 }
 
 type Accounts interface {
@@ -109,6 +110,8 @@ type Store interface {
 
 	Watermark(ctx context.Context, name string) (time.Time, error)
 	SetWatermark(ctx context.Context, name string, at time.Time) error
+
+	ContestStore
 }
 
 type Service struct {

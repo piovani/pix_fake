@@ -31,7 +31,7 @@ func (s *Service) OnReturnOrder(ctx context.Context, r pix.PaymentReturn) error 
 
 	if _, _, err := s.store.Insert(ctx, Payment{
 		AccountID: orig.AccountID, Direction: Inbound, Type: TypeReturn, Status: Pending, AmountCents: r.AmountCents,
-		EndToEndID: r.ReturnID, Counterparty: orig.Counterparty, OriginalPaymentID: orig.ID, Message: r.Message, CreatedAt: s.now(),
+		EndToEndID: r.ReturnID, Counterparty: orig.Counterparty, OriginalPaymentID: orig.ID, Message: r.Message, ReturnReason: r.ReasonCode, CreatedAt: s.now(),
 	}); err != nil {
 		return err
 	}

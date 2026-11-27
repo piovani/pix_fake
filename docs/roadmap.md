@@ -113,7 +113,8 @@ It extends `mock/dict`, since the DICT API is where the spec puts it.
 - Wallet side:
   - [x] As the payee's participant: acknowledge the reports against its customers and block the money, analyse
     them (`cmd/med`), answer the refunds with a return `FR01`/`BE08` from the block (`internal/med`)
-  - [ ] As the payer's participant: a customer contests a payment, the wallet reports it and asks for the refund
+  - [x] As the payer's participant: a customer contests a payment (`ContestService`), the wallet reports it, asks for
+    the refund when the other bank agrees, and follows it to the money coming back
   - [ ] Funds recovery and its event notifications from the wallet
 - [x] Decide whether it extends `mock/dict` or becomes `mock/med`: `mock/dict`
 
