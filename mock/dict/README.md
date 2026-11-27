@@ -107,10 +107,21 @@ curl -s -H "X-Participant-ISPB: 99000001" -H "PI-RequestingParticipant: 99000001
 | `closeRefund` | `POST /refunds/{RefundId}/close` | 200 |
 | `getPersonStatistics` | `GET /persons/{TaxIdNumber}/statistics` | 200 |
 | `getEntryStatistics` | `GET /entries/{Key}/statistics` | 200 |
+| `createFundsRecovery` | `POST /funds-recoveries` | 201 |
+| `getFundsRecovery` | `GET /funds-recoveries/{FundsRecoveryId}` | 200 |
+| `updateFundsRecovery` | `PUT /funds-recoveries/{FundsRecoveryId}` | 200 |
+| `createTrackingGraph` | `POST /funds-recoveries/{FundsRecoveryId}/tracking-graph` | 410 (deprecated) |
+| `getTrackingGraph` | `GET /funds-recoveries/{FundsRecoveryId}/tracking-graph` | 200 |
+| `blockFundsRecovery` | `POST /funds-recoveries/{FundsRecoveryId}/block` | 410 (deprecated) |
+| `listFundsRecoveryInfractionReports` | `GET /funds-recoveries/{FundsRecoveryId}/infraction-reports` | 200 |
+| `refundFundsRecovery` | `POST /funds-recoveries/{FundsRecoveryId}/refund` | 200 |
+| `listFundsRecoveryRefunds` | `GET /funds-recoveries/{FundsRecoveryId}/refunds` | 200 |
+| `cancelFundsRecovery` | `POST /funds-recoveries/{FundsRecoveryId}/cancel` | 200 |
+| `listEventNotifications` | `GET /event-notifications` | 200 |
 
-Everything else (claims, funds recovery, event notifications, policies) returns `404`.
+Everything else (claims, policies) returns `404`.
 
-### MED: infraction reports, fraud markers, refunds
+### MED: infraction reports, fraud markers, refunds, funds recovery
 
 The real DICT knows every transaction settled in the SPI. The mock only knows the ones it is told about through
 `POST /mock/transactions` (below): a report or refund on any other `TransactionId` is `400`.
@@ -123,7 +134,8 @@ The real DICT knows every transaction settled in the SPI. The mock only knows th
   payee; the payer for `REFUND_CANCELLED`), with the paid key, registered by the counterparty. The reporter updates
   while `OPEN`/`ACKNOWLEDGED` and cancels at any moment; cancelling a report closed with `AGREED` cancels its marker.
   A participant that is not part of a report gets `404`, one that is but has the wrong role `403`.
-  `InfractionAmount` is the amount of the transaction. `UNKNOWN` (API v1) is never accepted.
+  `InfractionAmount` is the amount of the transaction. `UNKNOWN` (API v1) is never accepted. A report opened by a
+  funds recovery is updated and cancelled through it (`400 InfractionReportOperationInvalid` otherwise).
 - **Fraud markers.** Created by a participant on its own user, idempotent per `RequestId`; a `Key` registered to
   someone else is `400`. Visible to the registrant and to the reporter of the report it came from; only the
   registrant cancels. `listFraudMarkers` lists the caller's own markers: `Limit` cuts the set, `page.*` pages it.
@@ -132,7 +144,36 @@ The real DICT knows every transaction settled in the SPI. The mock only knows th
   per transaction (`409`), and the open and accepted ones never ask for more than its amount. The contested
   participant closes: accepted with the `RefundTransactionId` of the return it made in the SPI (`pacs.004`),
   rejected with a `RefundRejectionReason` (`INVALID_REQUEST` only for `OPERATIONAL_FLAW`). The requesting one
-  cancels while open. `listRefund` pages with an opaque `Cursor`.
+  cancels while open, unless a funds recovery asked for it (`400 RefundOperationInvalid`). `listRefund` pages with an
+  opaque `Cursor`. A report of a funds recovery does not open the way to a `FRAUD` refund of its own: the funds
+  recovery asks for it.
+- **Funds recovery.** Only the `AUTOMATED` flow, the one the spec keeps. The payer's participant of the root
+  transaction creates it, once per root ever (`FundsRecoveryForTransactionAlreadyExists`, cancelled or not), and in
+  the same request the DICT draws the tracking graph and opens a `REFUND_REQUEST` report on each transaction of it, so
+  the answer is already `AWAITING_ANALYSIS`, with the graph. The graph follows the money breadth first: out of the
+  account that received it, the transactions made within `HopWindow` after it came in, from `MinTransactionAmount`
+  up, until `MaxHops` deep or `MaxTransactions` in all. An account is a user at a participant (the DICT only knows
+  those of a transaction); users get pseudo ids, natural or legal by the length of the tax id. What is blocked
+  (`InfractionAmount`) on each transaction is no more than what came into the account, shared among the transactions
+  out of it in the order they were made; a transaction with nothing to block, or with a report already in progress,
+  gets no report. When the last report is closed it is `ANALYSED`; `refund` then asks for a `FRAUD` refund on each
+  transaction agreed, of what was blocked and is still refundable (`REFUNDING`, or `COMPLETED` at once with none), and
+  it is `COMPLETED` when the last refund is closed. The creator updates it until analysed (its open reports too) and
+  cancels it until completed, which cancels every report (with their markers) and every open refund. The creator and
+  the counterparties of its reports see it and its graph (`404` otherwise); its lists are the creator's (`403`).
+  `createTrackingGraph` and `blockFundsRecovery`, of the deprecated `INTERACTIVE` flow, are `410 DeprecatedResource`.
+- **Graph parameters.** The spec gives no bounds; the mock's are below. A value out of them is `400
+  FundsRecoveryTrackingGraphParameterInvalid` with `minParameterValue` and `maxParameterValue`.
+
+  | Parameter | Default | Range |
+  |-----------|---------|-------|
+  | `MinTransactionAmount` | `0.00` | `0.00`–`1000000.00` |
+  | `MaxTransactions` | `500` | 1–1000 |
+  | `HopWindow` | `PT24H` | `PT1H`–`PT168H` |
+  | `MaxHops` | `5` | 1–10 |
+- **Event notifications.** `FUNDS_RECOVERY_ANALYSED` and `FUNDS_RECOVERY_COMPLETED` go to the creator;
+  `FUNDS_RECOVERY_INFORMATION_UPDATED` and `FUNDS_RECOVERY_CANCELLED` to the counterparties of its reports.
+  `listEventNotifications` gives the caller's events of the last 7 days, 200 a page, with an opaque `Cursor`.
 - **Statistics** are counted from what the mock knows, in the windows of the spec (`d90`, `m12`, `m60`, in BRT):
   settlements as payee, fraud markers while `REGISTERED` by type, their transactions' total and distinct
   registrants, open and rejected (`DISAGREED`) reports, and the accounts of the user's keys. `getEntry` with
@@ -140,9 +181,12 @@ The real DICT knows every transaction settled in the SPI. The mock only knows th
 
 The file documents no `400` for `updateInfractionReport`, `closeInfractionReport` and `closeRefund`, though their
 bodies can be invalid, and no `403` for the reads, though they need `PI-RequestingParticipant`: the mock answers
-both, and the contract tests list them as known gaps. Two slips of the file are tolerated there too: the `Total` of
-`ListFraudMarkersResponse` is required but not declared, and the refund examples write `<TaxId>` for
-`<TaxIdNumber>`.
+both, and the contract tests list them as known gaps. So are the `400` of `updateFundsRecovery` and
+`refundFundsRecovery` (their errors are 400s), the `404` of `cancelFundsRecovery`, the `403` of its reads and the
+`410` of its deprecated operations. Slips of the file are tolerated there too: the `Total` of
+`ListFraudMarkersResponse` is required but not declared, the refund examples write `<TaxId>` for `<TaxIdNumber>`, the
+funds recovery examples leave out the required `ContactInformation`, and the block example has a status (`BLOCKING`)
+the enumeration no longer has.
 
 ## Control API
 
@@ -179,8 +223,10 @@ Known gap: the spec documents no `400` for `checkKeys`, which the mock returns f
 
 - No mTLS or XML signatures (`<Signature>` is empty).
 - No rate limiting of its own; no claims. Statistics count only what the mock knows (see MED).
-- MED without funds recovery yet: no reports or refunds linked to one, no `EffectiveRefundedAmount`, `RefundAccount` or
-  `MonitorAccount`. A refund closed as accepted is not checked against the SPI.
+- MED: no `EffectiveRefundedAmount`, `RefundAccount` or `MonitorAccount`; a refund closed as accepted is not checked
+  against the SPI. A funds recovery is tracked and blocked synchronously, never times out
+  (`FundsRecoveryTrackingTimeout`), and does not check the root's age or purpose (`IPRT`). The graph has no account
+  opening or company creation dates. No indirect participants: `IncludeIndirectParticipants` is accepted and ignored.
 - A key already registered is `409 ResourceConflict`; an unexpected error is `503` with `Retry-After` (the spec has no `500`).
 - Deleting removes the row, so its `RequestId` can be reused. Check digits are not verified.
 - The wallet's seed keys are created with the `RequestId`s the wallet's own seed uses (`dict.SeedRequestID`), and the

@@ -51,6 +51,17 @@ var operations = []struct{ method, path string }{
 	{"POST", "/refunds/{RefundId}/close"},
 	{"GET", "/persons/{TaxIdNumber}/statistics"},
 	{"GET", "/entries/{Key}/statistics"},
+	{"POST", "/funds-recoveries"},
+	{"GET", "/funds-recoveries/{FundsRecoveryId}"},
+	{"PUT", "/funds-recoveries/{FundsRecoveryId}"},
+	{"POST", "/funds-recoveries/{FundsRecoveryId}/tracking-graph"},
+	{"GET", "/funds-recoveries/{FundsRecoveryId}/tracking-graph"},
+	{"POST", "/funds-recoveries/{FundsRecoveryId}/block"},
+	{"GET", "/funds-recoveries/{FundsRecoveryId}/infraction-reports"},
+	{"POST", "/funds-recoveries/{FundsRecoveryId}/refund"},
+	{"GET", "/funds-recoveries/{FundsRecoveryId}/refunds"},
+	{"POST", "/funds-recoveries/{FundsRecoveryId}/cancel"},
+	{"GET", "/event-notifications"},
 }
 
 type server struct {
@@ -187,6 +198,11 @@ func TestSpecExamples(t *testing.T) {
 var exampleSlips = []string{
 	// the examples of the refunds write the RefundAccount's tax id as <TaxId>; the schema calls it TaxIdNumber
 	"/RefundAccount: unexpected element <TaxId>", "/RefundAccount: missing element <TaxIdNumber>",
+	// the examples of the funds recoveries, but the one of getFundsRecovery, leave out the ContactInformation the
+	// schema requires
+	"/FundsRecovery: missing element <ContactInformation>",
+	// the example of the deprecated block gives a status the enumeration no longer has
+	`/BlockFundsRecoveryResponse/FundsRecovery/Status: "BLOCKING" is not one of [CREATED TRACKED AWAITING_ANALYSIS ANALYSED REFUNDING COMPLETED CANCELLED]`,
 }
 
 func withoutExampleSlips(errs []string) []string {
@@ -478,7 +494,8 @@ func TestSpecFaults(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := strings.NewReplacer("{Key}", "+5521988887777", "{Id}", "1", "{Cid}", dict.ZeroVSync,
-			"{InfractionReportId}", unknownID, "{FraudMarkerId}", unknownID, "{RefundId}", unknownID).Replace(o.path)
+			"{InfractionReportId}", unknownID, "{FraudMarkerId}", unknownID, "{RefundId}", unknownID,
+			"{FundsRecoveryId}", unknownID).Replace(o.path)
 		r := s.do(o.method, path, "<x/>", map[string]string{httpapi.ParticipantHeader: holder})
 		if r.status != 503 {
 			t.Fatalf("%s %s = %d", o.method, o.path, r.status)

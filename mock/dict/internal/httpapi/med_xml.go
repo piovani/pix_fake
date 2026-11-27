@@ -15,6 +15,8 @@ type infractionReportXML struct {
 	Reason                  string      `xml:"Reason"`
 	SituationType           string      `xml:"SituationType"`
 	ReportDetails           string      `xml:"ReportDetails,omitempty"`
+	FundsRecoveryID         string      `xml:"FundsRecoveryId,omitempty"`
+	TransactionDepth        int         `xml:"TransactionDepth,omitempty"`
 	ID                      string      `xml:"Id,omitempty"`
 	Status                  string      `xml:"Status,omitempty"`
 	ReporterParticipant     string      `xml:"ReporterParticipant,omitempty"`
@@ -121,6 +123,7 @@ type refundXML struct {
 	RefundReason          string   `xml:"RefundReason"`
 	RefundAmount          string   `xml:"RefundAmount"`
 	RefundDetails         string   `xml:"RefundDetails,omitempty"`
+	FundsRecoveryID       string   `xml:"FundsRecoveryId,omitempty"`
 	ID                    string   `xml:"Id,omitempty"`
 	Status                string   `xml:"Status,omitempty"`
 	ContestedParticipant  string   `xml:"ContestedParticipant,omitempty"`

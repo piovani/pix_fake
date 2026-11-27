@@ -28,6 +28,15 @@ var problems = map[dict.Kind]struct {
 	dict.KindNotFound:             {http.StatusNotFound, "Not found"},
 	dict.KindConflict:             {http.StatusConflict, "Conflict"},
 	dict.KindReportInvalid:        {http.StatusBadRequest, "InfractionReport is invalid"},
+	dict.KindReportOperation:      {http.StatusBadRequest, "InfractionReport operation is invalid"},
+	dict.KindRefundOperation:      {http.StatusBadRequest, "Refund operation is invalid"},
+	dict.KindDeprecated:           {http.StatusGone, "Deprecated resource"},
+	dict.KindRecoveryInvalid:      {http.StatusBadRequest, "FundsRecovery is invalid"},
+	dict.KindRecoveryOperation:    {http.StatusBadRequest, "FundsRecovery operation is invalid"},
+	dict.KindRecoveryExists:       {http.StatusBadRequest, "FundsRecovery for transaction already exists"},
+	dict.KindRecoveryNotEligible:  {http.StatusBadRequest, "FundsRecovery transaction is not eligible"},
+	dict.KindRecoveryNotIndexed:   {http.StatusBadRequest, "FundsRecovery transaction is not indexed"},
+	dict.KindRecoveryGraphInvalid: {http.StatusBadRequest, "FundsRecovery tracking graph parameter is invalid"},
 	kindServiceUnavailable:        {http.StatusServiceUnavailable, "Service Unavailable"},
 	kindTooManyRequests:           {http.StatusTooManyRequests, "Too Many Requests"},
 }
@@ -51,6 +60,8 @@ type violationXML struct {
 	Reason   string `xml:"reason"`
 	Value    string `xml:"value,omitempty"`
 	Property string `xml:"property,omitempty"`
+	Min      string `xml:"minParameterValue,omitempty"`
+	Max      string `xml:"maxParameterValue,omitempty"`
 }
 
 func newProblem(e *dict.Error, correlationID string) (int, problemXML) {
@@ -66,7 +77,7 @@ func newProblem(e *dict.Error, correlationID string) (int, problemXML) {
 		p.Violations = &violationsXML{}
 		for _, v := range e.Violations {
 			p.Violations.Violation = append(p.Violations.Violation,
-				violationXML{Reason: v.Reason, Value: v.Value, Property: v.Property})
+				violationXML{Reason: v.Reason, Value: v.Value, Property: v.Property, Min: v.Min, Max: v.Max})
 		}
 	}
 	return info.status, p

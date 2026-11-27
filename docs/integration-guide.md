@@ -324,8 +324,9 @@ account outside the seed, `to_tax_id`, `to_branch`, `to_type`; if the SPI refuse
   NFC initiation are not supported (such payments get `CH16`).
 - The mock settles for every participant on its own: no Conta PI balance (`AM04` never happens) and no rate limits of its
   own.
-- The DICT has no claims and no funds recovery yet. Its MED (infraction reports, fraud markers, refunds) and statistics
-  only know the transactions given to `POST /mock/transactions`, not the ones settled in the SPI mock. It is stricter than the specification in one place: the
+- The DICT has no claims. Its MED (infraction reports, fraud markers, refunds, funds recoveries and their event
+  notifications) and statistics only know the transactions given to `POST /mock/transactions`, not the ones settled in
+  the SPI mock. It is stricter than the specification in one place: the
   `PI-EndToEndId` header must have the shape of an `EndToEndId`.
 - The SPI processes an order inside the request that sent it.
 

@@ -67,7 +67,7 @@ func (r *Repository) ListTransactions(ctx context.Context, q dict.TransactionQue
 
 const reportColumns = `id::text, transaction_id, reason, situation_type, report_details, contact_email, contact_phone, status,
 	reporter, counterparty, COALESCE(fraud_marker_id::text, ''), analysis_result, analysis_details, fraud_type,
-	amount_cents, creditor_tax_id, creditor_key, created, modified`
+	amount_cents, creditor_tax_id, creditor_key, COALESCE(funds_recovery_id::text, ''), transaction_depth, created, modified`
 
 func scanReport(row pgx.Row) (dict.InfractionReport, error) {
 	var (
@@ -78,7 +78,7 @@ func scanReport(row pgx.Row) (dict.InfractionReport, error) {
 	)
 	err := row.Scan(&r.ID, &r.TransactionID, &reason, &situation, &r.ReportDetails, &email, &phone, &status,
 		&r.Reporter, &r.Counterparty, &r.FraudMarkerID, &result, &r.AnalysisDetails, &fraudType,
-		&r.Amount, &r.CreditorTaxID, &r.CreditorKey, &r.Created, &r.Modified)
+		&r.Amount, &r.CreditorTaxID, &r.CreditorKey, &r.FundsRecoveryID, &r.Depth, &r.Created, &r.Modified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return dict.InfractionReport{}, dict.ErrNotFound
 	}
@@ -132,12 +132,13 @@ func (m medTx) SaveReport(ctx context.Context, r dict.InfractionReport) error {
 	_, err := m.tx.Exec(ctx, `
 		INSERT INTO infraction_reports (id, transaction_id, reason, situation_type, report_details, contact_email, contact_phone,
 			status, reporter, counterparty, fraud_marker_id, analysis_result, analysis_details, fraud_type, amount_cents,
-			creditor_tax_id, creditor_key, created, modified)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			creditor_tax_id, creditor_key, created, modified, funds_recovery_id, transaction_depth)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		ON CONFLICT (id) DO UPDATE SET situation_type = $4, report_details = $5, contact_email = $6, contact_phone = $7,
 			status = $8, fraud_marker_id = $11, analysis_result = $12, analysis_details = $13, fraud_type = $14, modified = $19`,
 		r.ID, r.TransactionID, r.Reason, r.Situation, r.ReportDetails, email, phone, r.Status, r.Reporter, r.Counterparty,
-		marker, r.AnalysisResult, r.AnalysisDetails, r.FraudType, r.Amount, r.CreditorTaxID, r.CreditorKey, r.Created, r.Modified)
+		marker, r.AnalysisResult, r.AnalysisDetails, r.FraudType, r.Amount, r.CreditorTaxID, r.CreditorKey, r.Created, r.Modified,
+		nullIfEmpty(r.FundsRecoveryID), r.Depth)
 	return err
 }
 
@@ -211,13 +212,13 @@ func (r *Repository) ListMarkers(ctx context.Context, q dict.MarkerQuery) ([]dic
 
 const refundColumns = `id::text, transaction_id, reason, amount_cents, details, status, requesting, contested,
 	COALESCE(infraction_report_id::text, ''), analysis_result, analysis_details, rejection_reason, refund_transaction_id,
-	created, modified`
+	COALESCE(funds_recovery_id::text, ''), created, modified`
 
 func scanRefund(row pgx.Row) (dict.Refund, error) {
 	var f dict.Refund
 	var reason, status, result, rejection string
 	err := row.Scan(&f.ID, &f.TransactionID, &reason, &f.Amount, &f.Details, &status, &f.Requesting, &f.Contested,
-		&f.InfractionReportID, &result, &f.AnalysisDetails, &rejection, &f.RefundTransactionID, &f.Created, &f.Modified)
+		&f.InfractionReportID, &result, &f.AnalysisDetails, &rejection, &f.RefundTransactionID, &f.FundsRecoveryID, &f.Created, &f.Modified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return dict.Refund{}, dict.ErrNotFound
 	}
@@ -249,12 +250,13 @@ func (m medTx) RefundsOf(ctx context.Context, transactionID string) ([]dict.Refu
 func (m medTx) SaveRefund(ctx context.Context, f dict.Refund) error {
 	_, err := m.tx.Exec(ctx, `
 		INSERT INTO refunds (id, transaction_id, reason, amount_cents, details, status, requesting, contested,
-			infraction_report_id, analysis_result, analysis_details, rejection_reason, refund_transaction_id, created, modified)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			infraction_report_id, analysis_result, analysis_details, rejection_reason, refund_transaction_id, created, modified,
+			funds_recovery_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (id) DO UPDATE SET status = $6, analysis_result = $10, analysis_details = $11, rejection_reason = $12,
 			refund_transaction_id = $13, modified = $15`,
 		f.ID, f.TransactionID, f.Reason, f.Amount, f.Details, f.Status, f.Requesting, f.Contested, nullIfEmpty(f.InfractionReportID),
-		f.AnalysisResult, f.AnalysisDetails, f.RejectionReason, f.RefundTransactionID, f.Created, f.Modified)
+		f.AnalysisResult, f.AnalysisDetails, f.RejectionReason, f.RefundTransactionID, f.Created, f.Modified, nullIfEmpty(f.FundsRecoveryID))
 	return err
 }
 

@@ -87,6 +87,18 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST "+BasePath+"/refunds/{RefundId}/close", s.api(s.closeRefund))
 	mux.Handle("GET "+BasePath+"/persons/{TaxIdNumber}/statistics", s.api(s.getPersonStatistics))
 	mux.Handle("GET "+BasePath+"/entries/{Key}/statistics", s.api(s.getEntryStatistics))
+	const recovery = BasePath + "/funds-recoveries/{FundsRecoveryId}"
+	mux.Handle("POST "+BasePath+"/funds-recoveries", s.api(s.createFundsRecovery))
+	mux.Handle("GET "+recovery, s.api(s.getFundsRecovery))
+	mux.Handle("PUT "+recovery, s.api(s.updateFundsRecovery))
+	mux.Handle("POST "+recovery+"/tracking-graph", s.api(s.deprecatedRecoveryOperation))
+	mux.Handle("GET "+recovery+"/tracking-graph", s.api(s.getTrackingGraph))
+	mux.Handle("POST "+recovery+"/block", s.api(s.deprecatedRecoveryOperation))
+	mux.Handle("GET "+recovery+"/infraction-reports", s.api(s.listFundsRecoveryReports))
+	mux.Handle("POST "+recovery+"/refund", s.api(s.refundFundsRecovery))
+	mux.Handle("GET "+recovery+"/refunds", s.api(s.listFundsRecoveryRefunds))
+	mux.Handle("POST "+recovery+"/cancel", s.api(s.cancelFundsRecovery))
+	mux.Handle("GET "+BasePath+"/event-notifications", s.api(s.listEventNotifications))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, &dict.Error{Kind: dict.KindNotFound, Detail: "Resource does not exist"})
 	})

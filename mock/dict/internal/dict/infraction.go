@@ -193,6 +193,9 @@ func (s *Service) UpdateInfractionReport(ctx context.Context, caller, id string,
 		if caller != r.Reporter {
 			return false, newError(KindForbidden, "Only the participant that created the infraction report can update it")
 		}
+		if r.FundsRecoveryID != "" {
+			return false, newError(KindReportOperation, "The infraction report belongs to a funds recovery: update the funds recovery instead")
+		}
 		if r.Status != ReportOpen && r.Status != ReportAcknowledged {
 			return false, newError(KindConflict, "An infraction report can only be updated while OPEN or ACKNOWLEDGED")
 		}
@@ -252,21 +255,29 @@ func (s *Service) CancelInfractionReport(ctx context.Context, caller, participan
 		if r.Status == ReportCancelled {
 			return false, nil
 		}
-		if r.FraudMarkerID != "" {
-			m, err := tx.Marker(ctx, r.FraudMarkerID)
-			if err != nil {
-				return false, err
-			}
-			if m.Status != MarkerCancelled {
-				m.Status, m.Modified = MarkerCancelled, s.stamp()
-				if err := tx.SaveMarker(ctx, m); err != nil {
-					return false, err
-				}
+		if r.FundsRecoveryID != "" {
+			return false, newError(KindReportOperation, "The infraction report belongs to a funds recovery: cancel the funds recovery instead")
+		}
+		return true, s.cancelReport(ctx, tx, r)
+	})
+}
+
+// cancelReport cancels a report, and the fraud marker it created if any.
+func (s *Service) cancelReport(ctx context.Context, tx MEDTx, r *InfractionReport) error {
+	if r.FraudMarkerID != "" {
+		m, err := tx.Marker(ctx, r.FraudMarkerID)
+		if err != nil {
+			return err
+		}
+		if m.Status != MarkerCancelled {
+			m.Status, m.Modified = MarkerCancelled, s.stamp()
+			if err := tx.SaveMarker(ctx, m); err != nil {
+				return err
 			}
 		}
-		r.Status = ReportCancelled
-		return true, nil
-	})
+	}
+	r.Status = ReportCancelled
+	return nil
 }
 
 type CloseReportInput struct {
@@ -335,6 +346,9 @@ func (s *Service) CloseInfractionReport(ctx context.Context, caller, id string, 
 				return false, err
 			}
 			r.FraudMarkerID = m.ID
+		}
+		if r.FundsRecoveryID != "" {
+			return true, s.reportAnalysed(ctx, tx, *r)
 		}
 		return true, nil
 	})
