@@ -17,6 +17,16 @@ const (
 	KindNotFound             Kind = "NotFound"
 	KindConflict             Kind = "ResourceConflict"
 	KindReportInvalid        Kind = "InfractionReportInvalid"
+	KindReportOperation      Kind = "InfractionReportOperationInvalid"
+	KindRefundOperation      Kind = "RefundOperationInvalid"
+	KindDeprecated           Kind = "DeprecatedResource"
+
+	KindRecoveryInvalid      Kind = "FundsRecoveryInvalid"
+	KindRecoveryOperation    Kind = "FundsRecoveryOperationInvalid"
+	KindRecoveryExists       Kind = "FundsRecoveryForTransactionAlreadyExists"
+	KindRecoveryNotEligible  Kind = "FundsRecoveryTransactionNotEligible"
+	KindRecoveryNotIndexed   Kind = "FundsRecoveryTransactionNotIndexed"
+	KindRecoveryGraphInvalid Kind = "FundsRecoveryTrackingGraphParameterInvalid"
 )
 
 // Violation describes an invalid field (the <violation> element of the problem+xml).
@@ -24,6 +34,7 @@ type Violation struct {
 	Reason   string
 	Value    string
 	Property string
+	Min, Max string // minParameterValue and maxParameterValue, for a parameter out of its range
 }
 
 // Error is a business error that the HTTP layer translates into problem+xml.

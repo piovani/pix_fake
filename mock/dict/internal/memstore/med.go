@@ -13,28 +13,35 @@ type med struct {
 	reports      map[string]dict.InfractionReport
 	markers      map[string]dict.FraudMarker
 	refunds      map[string]dict.Refund
+	recoveries   map[string]dict.FundsRecovery
+	events       []dict.Event
 }
 
 func newMED() med {
 	return med{
 		transactions: map[string]dict.Transaction{}, reports: map[string]dict.InfractionReport{},
-		markers: map[string]dict.FraudMarker{}, refunds: map[string]dict.Refund{},
+		markers: map[string]dict.FraudMarker{}, refunds: map[string]dict.Refund{}, recoveries: map[string]dict.FundsRecovery{},
 	}
 }
 
 // tx keeps its writes apart until the function of InTx returns nil. The store's lock is held all along, which is
 // what serializes transactions here.
 type tx struct {
-	s       *Store
-	reports map[string]dict.InfractionReport
-	markers map[string]dict.FraudMarker
-	refunds map[string]dict.Refund
+	s          *Store
+	reports    map[string]dict.InfractionReport
+	markers    map[string]dict.FraudMarker
+	refunds    map[string]dict.Refund
+	recoveries map[string]dict.FundsRecovery
+	events     []dict.Event
 }
 
 func (s *Store) InTx(_ context.Context, fn func(dict.MEDTx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	t := &tx{s: s, reports: map[string]dict.InfractionReport{}, markers: map[string]dict.FraudMarker{}, refunds: map[string]dict.Refund{}}
+	t := &tx{
+		s: s, reports: map[string]dict.InfractionReport{}, markers: map[string]dict.FraudMarker{}, refunds: map[string]dict.Refund{},
+		recoveries: map[string]dict.FundsRecovery{},
+	}
 	if err := fn(t); err != nil {
 		return err
 	}
@@ -46,6 +53,13 @@ func (s *Store) InTx(_ context.Context, fn func(dict.MEDTx) error) error {
 	}
 	for k, v := range t.refunds {
 		s.med.refunds[k] = v
+	}
+	for k, v := range t.recoveries {
+		s.med.recoveries[k] = v
+	}
+	for _, e := range t.events {
+		e.ID = int64(len(s.med.events)) + 1
+		s.med.events = append(s.med.events, e)
 	}
 	return nil
 }
@@ -137,6 +151,79 @@ func (t *tx) RefundsOf(_ context.Context, transactionID string) ([]dict.Refund, 
 func (t *tx) SaveRefund(_ context.Context, r dict.Refund) error {
 	t.refunds[r.ID] = r
 	return nil
+}
+
+func (t *tx) TransactionsFrom(_ context.Context, participant, taxID string) ([]dict.Transaction, error) {
+	var out []dict.Transaction
+	for _, tr := range t.s.med.transactions {
+		if tr.DebtorParticipant == participant && tr.DebtorTaxID == taxID {
+			out = append(out, tr)
+		}
+	}
+	sortByModified(out, func(tr dict.Transaction) (time.Time, string) { return tr.SettlementTime, tr.ID })
+	return out, nil
+}
+
+func (t *tx) FundsRecovery(_ context.Context, id string) (dict.FundsRecovery, error) {
+	return lookup(t.recoveries, t.s.med.recoveries, id)
+}
+
+func (t *tx) FundsRecoveryOf(_ context.Context, rootTransactionID string) (dict.FundsRecovery, error) {
+	for _, f := range merged(t.recoveries, t.s.med.recoveries) {
+		if f.RootTransactionID == rootTransactionID {
+			return f, nil
+		}
+	}
+	return dict.FundsRecovery{}, dict.ErrNotFound
+}
+
+func (t *tx) SaveFundsRecovery(_ context.Context, f dict.FundsRecovery) error {
+	t.recoveries[f.ID] = f
+	return nil
+}
+
+// The store's lock serializes every transaction, so lock changes nothing here.
+
+func (t *tx) ReportsOfRecovery(_ context.Context, recoveryID string, _ bool) ([]dict.InfractionReport, error) {
+	var out []dict.InfractionReport
+	for _, r := range merged(t.reports, t.s.med.reports) {
+		if r.FundsRecoveryID == recoveryID {
+			out = append(out, r)
+		}
+	}
+	sortByModified(out, func(r dict.InfractionReport) (time.Time, string) { return r.Created, r.ID })
+	return out, nil
+}
+
+func (t *tx) RefundsOfRecovery(_ context.Context, recoveryID string, _ bool) ([]dict.Refund, error) {
+	var out []dict.Refund
+	for _, r := range merged(t.refunds, t.s.med.refunds) {
+		if r.FundsRecoveryID == recoveryID {
+			out = append(out, r)
+		}
+	}
+	sortByModified(out, func(r dict.Refund) (time.Time, string) { return r.Created, r.ID })
+	return out, nil
+}
+
+func (t *tx) AddEvent(_ context.Context, e dict.Event) error {
+	t.events = append(t.events, e)
+	return nil
+}
+
+func (s *Store) ListEvents(_ context.Context, participant string, afterID int64, since time.Time, limit int) ([]dict.Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []dict.Event
+	for _, e := range s.med.events {
+		if e.ID > afterID && e.Participant == participant && !e.Time.Before(since) {
+			if len(out) == limit {
+				break
+			}
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 func sortByModified[T any](list []T, key func(T) (time.Time, string)) {

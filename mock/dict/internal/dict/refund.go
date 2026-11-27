@@ -89,7 +89,8 @@ func (s *Service) CreateRefund(ctx context.Context, caller string, in CreateRefu
 				return err
 			}
 			for _, r := range reports {
-				if r.Reason == ReasonRefundRequest && r.Reporter == caller && r.Status == ReportClosed && r.AnalysisResult == AnalysisAgreed {
+				if r.Reason == ReasonRefundRequest && r.Reporter == caller && r.Status == ReportClosed && r.AnalysisResult == AnalysisAgreed &&
+					r.FundsRecoveryID == "" { // a funds recovery asks for the refunds of its own reports
 					reportID = r.ID
 				}
 			}
@@ -132,14 +133,14 @@ func (s *Service) GetRefund(ctx context.Context, caller, id string) (Refund, err
 	return out, err
 }
 
-func (s *Service) mutateRefund(ctx context.Context, caller, id string, fn func(r *Refund) (changed bool, err error)) (Refund, error) {
+func (s *Service) mutateRefund(ctx context.Context, caller, id string, fn func(tx MEDTx, r *Refund) (changed bool, err error)) (Refund, error) {
 	var out Refund
 	err := s.repo.InTx(ctx, func(tx MEDTx) error {
 		r, err := tx.Refund(ctx, id)
 		if r, err = partyOfRefund(r, err, caller); err != nil {
 			return err
 		}
-		changed, err := fn(&r)
+		changed, err := fn(tx, &r)
 		if err != nil {
 			return err
 		}
@@ -160,7 +161,7 @@ func (s *Service) CancelRefund(ctx context.Context, caller, participant, id stri
 	if participant != caller {
 		return Refund{}, newError(KindForbidden, "Participant must be the participant making the request")
 	}
-	return s.mutateRefund(ctx, caller, id, func(r *Refund) (bool, error) {
+	return s.mutateRefund(ctx, caller, id, func(_ MEDTx, r *Refund) (bool, error) {
 		if caller != r.Requesting {
 			return false, newError(KindForbidden, "Only the participant that asked for the refund can cancel it")
 		}
@@ -169,6 +170,9 @@ func (s *Service) CancelRefund(ctx context.Context, caller, participant, id stri
 			return false, nil
 		case RefundClosed:
 			return false, newError(KindConflict, "A refund cannot be cancelled after it was closed")
+		}
+		if r.FundsRecoveryID != "" {
+			return false, newError(KindRefundOperation, "The refund belongs to a funds recovery: cancel the funds recovery instead")
 		}
 		r.Status = RefundCancelled
 		return true, nil
@@ -213,7 +217,7 @@ func (s *Service) CloseRefund(ctx context.Context, caller, id string, in CloseRe
 	if in.Participant != caller {
 		return Refund{}, newError(KindForbidden, "Participant must be the participant making the request")
 	}
-	return s.mutateRefund(ctx, caller, id, func(r *Refund) (bool, error) {
+	return s.mutateRefund(ctx, caller, id, func(tx MEDTx, r *Refund) (bool, error) {
 		if caller != r.Contested {
 			return false, newError(KindForbidden, "Only the contested participant can close the refund")
 		}
@@ -235,6 +239,9 @@ func (s *Service) CloseRefund(ctx context.Context, caller, id string, in CloseRe
 		}
 		r.Status, r.AnalysisResult, r.AnalysisDetails = RefundClosed, in.Result, in.AnalysisDetails
 		r.RejectionReason, r.RefundTransactionID = in.RejectionReason, in.RefundTransactionID
+		if r.FundsRecoveryID != "" {
+			return true, s.refundClosed(ctx, tx, *r)
+		}
 		return true, nil
 	})
 }

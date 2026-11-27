@@ -91,6 +91,8 @@ type InfractionReport struct {
 	Amount          int64     // InfractionAmount, centavos: the amount of the transaction
 	CreditorTaxID   string    // of the transaction, for the statistics
 	CreditorKey     string
+	FundsRecoveryID string // the funds recovery that created it, if any
+	Depth           int    // TransactionDepth of the transaction in that funds recovery's tracking graph, 1 for the root
 	Created         time.Time
 	Modified        time.Time
 }
@@ -169,6 +171,7 @@ type Refund struct {
 	AnalysisDetails     string
 	RejectionReason     RejectionReason
 	RefundTransactionID string
+	FundsRecoveryID     string // the funds recovery that created it, if any
 	Created             time.Time
 	Modified            time.Time
 }
@@ -186,6 +189,20 @@ type MEDTx interface {
 	Refund(ctx context.Context, id string) (Refund, error)
 	RefundsOf(ctx context.Context, transactionID string) ([]Refund, error)
 	SaveRefund(ctx context.Context, r Refund) error
+
+	// TransactionsFrom returns the transactions paid by a user at a participant, oldest settlement first.
+	TransactionsFrom(ctx context.Context, participant, taxID string) ([]Transaction, error)
+	FundsRecovery(ctx context.Context, id string) (FundsRecovery, error)
+	// FundsRecoveryOf returns the funds recovery whose root is the transaction, cancelled or not.
+	FundsRecoveryOf(ctx context.Context, rootTransactionID string) (FundsRecovery, error)
+	SaveFundsRecovery(ctx context.Context, f FundsRecovery) error
+	// ReportsOfRecovery and RefundsOfRecovery return the records a funds recovery created, oldest first. With lock
+	// they are locked like any other read; without, they are only read, for a function that already holds the funds
+	// recovery: whatever changes their status in a way it cares about holds it too.
+	ReportsOfRecovery(ctx context.Context, recoveryID string, lock bool) ([]InfractionReport, error)
+	RefundsOfRecovery(ctx context.Context, recoveryID string, lock bool) ([]Refund, error)
+	// AddEvent stores an event notification, numbered after every one before it.
+	AddEvent(ctx context.Context, e Event) error
 }
 
 // ReportQuery selects infraction reports: each field that is not empty must match.
@@ -219,4 +236,6 @@ type MEDStore interface {
 	ListRefunds(ctx context.Context, participant string) ([]Refund, error)
 	// EntriesOf returns the entries whose owner has the tax id.
 	EntriesOf(ctx context.Context, taxID string) ([]Entry, error)
+	// ListEvents returns the event notifications of a participant numbered after afterID, in order, at most limit.
+	ListEvents(ctx context.Context, participant string, afterID int64, since time.Time, limit int) ([]Event, error)
 }
