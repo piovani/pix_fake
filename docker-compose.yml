@@ -57,6 +57,8 @@ services:
       SPI_ADDR: ":8081"
       SPI_DATABASE_URL: postgres://spi:spi@postgres-spi:5432/spi?sslmode=disable
       SPI_CONTROL: ${SPI_CONTROL:-on}
+      # The DICT is told of every settled payment, so the MED can take reports and refunds on it. Empty tells no one.
+      SPI_DICT_URL: ${SPI_DICT_URL-http://dict:8080}
       # How long a payment waits for the receiving participant (the Pix limit is 40 seconds), and how long a read
       # waits for a message before answering that there is none.
       SPI_TIMEOUT: ${SPI_TIMEOUT:-40s}

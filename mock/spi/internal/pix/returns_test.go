@@ -252,6 +252,29 @@ func TestReturnTimeout(t *testing.T) {
 	}
 }
 
+func TestMEDReturn(t *testing.T) {
+	for _, reason := range []string{"BE08", "FR01"} {
+		t.Run(reason, func(t *testing.T) {
+			e := paidByWallet(t)
+			e.sendReturn(returnReq{amount: "4.00", mutate: func(r *iso.Return) { r.RtrRsnInf.Rsn.Cd = reason }})
+			if r := e.payment(rtr1); r.Status != pix.StatusPending || r.ReturnReason != reason {
+				t.Fatalf("return = %+v", r)
+			}
+			in := e.read(wallet)
+			if len(in) != 1 {
+				t.Fatalf("wallet received %d messages, want the forwarded pacs.004", len(in))
+			}
+			if fwd, err := iso.ParsePacs004(in[0].Body); err != nil || fwd.Returns()[0].Reason() != reason {
+				t.Fatalf("forwarded return: %v, %+v", err, fwd)
+			}
+			e.send(wallet, returnAnswer(t, wallet, rtr1, e2eA, iso.StatusAcceptedByReceiver, ""))
+			if r := e.payment(rtr1); r.Status != pix.StatusSettled {
+				t.Fatalf("return status = %s, want SETTLED", r.Status)
+			}
+		})
+	}
+}
+
 // --- Rejection by the SPI ---
 
 func TestReturnRejected(t *testing.T) {
@@ -263,7 +286,6 @@ func TestReturnRejected(t *testing.T) {
 		{"zero amount", returnReq{amount: "0.00"}, "AM01"},
 		{"invalid amount", returnReq{amount: "1.234"}, "CH16"},
 		{"normal priority", returnReq{mutate: func(r *iso.Return) { r.Priority = "NORM" }}, "CH16"},
-		{"reason BE08 (MED)", returnReq{mutate: func(r *iso.Return) { r.RtrRsnInf.Rsn.Cd = "BE08" }}, "CH16"},
 		{"reason SL02 (Pix Saque)", returnReq{mutate: func(r *iso.Return) { r.RtrRsnInf.Rsn.Cd = "SL02" }}, "CH16"},
 		{"charge bearer", returnReq{mutate: func(r *iso.Return) { r.ChrgBr = "DEBT" }}, "CH16"},
 		{"RtrId 13 hours old", returnReq{id: "D99000002202611132300CCCCCCCCCCC"}, "FF08"},

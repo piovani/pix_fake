@@ -14,6 +14,7 @@ type Config struct {
 	Timeout     time.Duration // SPI_TIMEOUT: how long a payment waits for the receiving participant
 	Retention   time.Duration // SPI_RETENTION: how long read messages are kept before they are deleted
 	Control     bool          // SPI_CONTROL: serve the control API under /mock (on unless set to "off")
+	DICTURL     string        // SPI_DICT_URL: the DICT mock told of every settled payment (MED); empty tells no one
 }
 
 func Load() Config {
@@ -23,6 +24,7 @@ func Load() Config {
 		Timeout:     duration("SPI_TIMEOUT", 40*time.Second),
 		Retention:   duration("SPI_RETENTION", 7*24*time.Hour),
 		Control:     os.Getenv("SPI_CONTROL") != "off",
+		DICTURL:     os.Getenv("SPI_DICT_URL"),
 		Addr:        getenv("SPI_ADDR", ":8081"),
 		DatabaseURL: getenv("SPI_DATABASE_URL", "postgres://spi:spi@localhost:5433/spi?sslmode=disable"),
 	}

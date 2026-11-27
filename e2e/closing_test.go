@@ -189,15 +189,16 @@ func pacs002(from, instr, e2e, status string) string {
 		`</FIToFIPmtStsRpt></Document></Envelope>`
 }
 
-// pacs004 returns a payment: from is the participant that received it, to the one that paid it.
-func pacs004(from, to, rtr, e2e, amount string) string {
+// pacs004 returns a payment: from is the participant that received it, to the one that paid it. The reason is MD06,
+// or BE08 and FR01 for the MED.
+func pacs004(from, to, rtr, e2e, amount, reason string) string {
 	m := msgID(from)
 	return `<?xml version="1.0" encoding="UTF-8"?><Envelope xmlns="https://www.bcb.gov.br/pi/pacs.004/1.5">` +
 		header(from, "00038166", m, "pacs.004.spi.1.5") +
 		`<Document><PmtRtr><GrpHdr><MsgId>` + m + `</MsgId><CreDtTm>` + stamp(time.Now()) + `</CreDtTm><NbOfTxs>1</NbOfTxs>` +
 		`<SttlmInf><SttlmMtd>CLRG</SttlmMtd></SttlmInf></GrpHdr>` +
 		`<TxInf><RtrId>` + rtr + `</RtrId><OrgnlEndToEndId>` + e2e + `</OrgnlEndToEndId><RtrdIntrBkSttlmAmt Ccy="BRL">` + amount + `</RtrdIntrBkSttlmAmt>` +
-		`<SttlmPrty>HIGH</SttlmPrty><ChrgBr>SLEV</ChrgBr><RtrRsnInf><Rsn><Cd>MD06</Cd></Rsn></RtrRsnInf>` +
+		`<SttlmPrty>HIGH</SttlmPrty><ChrgBr>SLEV</ChrgBr><RtrRsnInf><Rsn><Cd>` + reason + `</Cd></Rsn></RtrRsnInf>` +
 		`<OrgnlTxRef>` + agent("DbtrAgt", from) + agent("CdtrAgt", to) + `</OrgnlTxRef></TxInf></PmtRtr></Document></Envelope>`
 }
 
@@ -397,7 +398,7 @@ func TestPixEndToEnd(t *testing.T) {
 		}
 		// Banco Alfa received the payment from the wallet and sends the money back. The wallet gets the return and accepts it.
 		rtr := id("D", alfa)
-		e.send(alfa, pacs004(alfa, wallet, rtr, paid, amount))
+		e.send(alfa, pacs004(alfa, wallet, rtr, paid, amount, "MD06"))
 		e.waitForOrder(wallet, "pacs.004", rtr)
 		e.send(wallet, pacs002(wallet, rtr, paid, "ACSP"))
 		e.expect(e.waitForStatus(wallet, rtr), rtr, "ACCC", "")

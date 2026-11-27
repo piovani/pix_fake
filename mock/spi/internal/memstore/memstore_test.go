@@ -29,3 +29,7 @@ func TestReportStore(t *testing.T) {
 func TestInspector(t *testing.T) {
 	pixtest.RunInspector(t, func(*testing.T) pixtest.Backend { return memstore.New() })
 }
+
+func TestNotificationStore(t *testing.T) {
+	pixtest.RunNotifications(t, func(*testing.T) pixtest.NotificationBackend { return memstore.New() })
+}

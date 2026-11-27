@@ -165,7 +165,7 @@ the money: respectively the receiving and the paying participant of the original
 | `valor` (`RtrdIntrBkSttlmAmt`) | `Ccy="BRL"`, up to 18 digits, 2 decimals. Zero: `AM01` |
 | `prioridadePagamento` (`SttlmPrty`) | `HIGH` (the mock does not support `NORM`) |
 | `participanteTarifado` (`ChrgBr`) | `SLEV` |
-| `codigoDevolucao` (`RtrRsnInf/Rsn/Cd`) | `MD06` in the mock. `BE08`, `FR01` (MED) and `SL02` (Pix Saque/Troco) are out of scope |
+| `codigoDevolucao` (`RtrRsnInf/Rsn/Cd`) | `MD06`, `BE08` and `FR01` (MED). `SL02` (Pix Saque/Troco) is out of scope |
 | `motivoDevolucao` (`RtrRsnInf/AddtlInf`) | Optional, up to 105 characters |
 | `informacoesEntreUsuarios` (`OrgnlTxRef/RmtInf/Ustrd`) | Optional, up to 140 characters |
 

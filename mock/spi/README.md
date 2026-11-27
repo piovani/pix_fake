@@ -21,7 +21,8 @@ make test-integration  # everything, on Postgres
 | `SPI_TIMEOUT` | `40s` | how long a payment waits for the receiver; shorten it to test `AB03` |
 | `SPI_RETENTION` | `168h` | read messages are deleted after this; unread ones stay |
 | `SPI_CONTROL` | on | `off` removes `/mock` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | | traces, metrics and logs; empty sends nothing. Metrics of its own: `spi.payments.finalized`, `spi.orders.refused` |
+| `SPI_DICT_URL` | | the DICT mock (`http://localhost:8080`) told of every settled payment, for the MED; empty tells no one |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | | traces, metrics and logs; empty sends nothing. Metrics of its own: `spi.payments.finalized`, `spi.orders.refused`, `spi.dict.notifications` |
 
 ## Messages
 
@@ -29,12 +30,12 @@ make test-integration  # everything, on Postgres
 |---------|--------|
 | `pacs.008` credit transfer | `IPAY`, `MANU` and `DICT`, `HIGH` priority |
 | `pacs.002` status | `ACSP`, `ACSC`, `ACCC`, `RJCT` |
-| `pacs.004` return | `MD06`, partial returns |
+| `pacs.004` return | `MD06`, `BE08` and `FR01` (MED), partial returns |
 | `trck.002` report / `camt.025` receipt | yes |
 | `admi.002` error notification | invalid XML, unsupported message, bad identifier |
 | `pibr.*`, `camt.0xx` queries, `reda.*`, cancellation, Pix Automático | not built (`admi.002`) |
 
-Pix Saque/Troco, Split Payment, scheduled payments, MED return reasons, QR/NFC initiation and `PAGFRD` get `CH16`.
+Pix Saque/Troco (`SL02`), Split Payment, scheduled payments, QR/NFC initiation and `PAGFRD` get `CH16`.
 
 ## Endpoints
 
@@ -76,7 +77,15 @@ Rules per field: [`docs/catalog/data-contract.md`](docs/catalog/data-contract.md
 **Returns (`pacs.004`)** go through the same cycle in the other direction; the `pacs.002` carries the `RtrId` as
 `OrgnlInstrId`. The SPI rejects `DT05` (over 90 days), `AG13` (return of a return), `CH16` (original missing, not
 settled, or not received by the sender). The receiver can reject `AM09` (returns above the original; rejected returns
-don't count) and the account rules below. Only `MD06`.
+don't count) and the account rules below. Reasons `MD06` (the receiver asked), and for the MED `BE08` (operational
+flaw) and `FR01` (fraud), with the same rules.
+
+**The DICT learns the settled payments.** With `SPI_DICT_URL` set, every `pacs.008` that settles is sent to the DICT
+mock's `POST /mock/transactions` (participants, tax ids, the key paid, amount and settlement time), so the MED can take
+a report or refund on it. The settled payments not sent yet are an outbox in the `payments` table: settling and queueing
+are the same update, and a worker sends them every second, the oldest first, waiting longer while the DICT is down (up to
+a minute). One the DICT refuses as invalid is logged and dropped. Payments settled more than 90 days ago are not sent.
+Returns and `trck.002` reports are not sent.
 
 **Reports (`trck.002`)** record transactions settled outside the SPI (book transfers). One `camt.025` receipt per
 transaction: `ACPT`, or `RJCT` with `FF08` (over 30 days or in the future), `AM01`, `RC09`/`RC10`, `AG01` (`BOK2`: every
@@ -132,7 +141,7 @@ JSON under `/mock`, not part of Bacen's contract. Examples in the [integration g
 | `GET /mock/reports/{id}` | a reported transaction |
 | `GET /mock/messages[?participant=&direction=in\|out&limit=]` | messages with their XML |
 | `POST /mock/inbound/payments` | a simulated bank pays someone (the wallet, usually) |
-| `POST /mock/inbound/returns` | a simulated bank returns a payment it received |
+| `POST /mock/inbound/returns` | a simulated bank returns a payment it received (`reason` `MD06`, or `BE08`/`FR01` of the MED) |
 | `POST /mock/reset` | clears messages, payments, reports and faults |
 | `POST /mock/faults`, `GET`, `DELETE /mock/faults[/{id}]` | `429`/`503` with `Retry-After`, or slow answers |
 

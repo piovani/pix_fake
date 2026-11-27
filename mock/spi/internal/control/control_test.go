@@ -275,7 +275,7 @@ func TestInboundReturn(t *testing.T) {
 	if len(in) != 1 {
 		t.Fatalf("wallet received %d messages, want the pacs.004", len(in))
 	}
-	if m, err := iso.ParsePacs004(in[0].Body); err != nil || m.Returns()[0].RtrID != rtr {
+	if m, err := iso.ParsePacs004(in[0].Body); err != nil || m.Returns()[0].RtrID != rtr || m.Returns()[0].Reason() != "MD06" {
 		t.Fatalf("forwarded return: %v", err)
 	}
 
@@ -284,6 +284,18 @@ func TestInboundReturn(t *testing.T) {
 	_, again, _ := e.call("POST", "/mock/inbound/returns", map[string]any{"end_to_end_id": order})
 	if str(again, "amount") != "12.00" {
 		t.Fatalf("default amount = %v", again["amount"])
+	}
+	e.read(wallet)
+
+	// A return of the MED, as a refund of the DICT asks for.
+	status, med, _ := e.call("POST", "/mock/inbound/returns", map[string]any{"end_to_end_id": order, "amount": "1.00", "reason": "FR01"})
+	if status != http.StatusCreated || str(med, "return_reason") != "FR01" {
+		t.Fatalf("MED return = %d %v", status, med)
+	}
+	if in := e.read(wallet); len(in) != 1 {
+		t.Fatalf("wallet received %d messages, want the pacs.004", len(in))
+	} else if m, err := iso.ParsePacs004(in[0].Body); err != nil || m.Returns()[0].Reason() != "FR01" {
+		t.Fatalf("forwarded MED return: %v", err)
 	}
 }
 
@@ -314,6 +326,9 @@ func TestInboundReturnValidation(t *testing.T) {
 	order := walletPays(t, e, "E99000001"+time.Now().UTC().Format("200601021504")+"WALLETPAY02", "1.00")
 	if s, _ := post(map[string]any{"end_to_end_id": order, "amount": "0.00"}); s != 422 {
 		t.Fatalf("zero amount = %d", s)
+	}
+	if s, _ := post(map[string]any{"end_to_end_id": order, "reason": "SL02"}); s != 422 {
+		t.Fatalf("reason SL02 = %d, want 422", s)
 	}
 	if s, _ := post(map[string]any{"end_to_end_id": order, "return_id": "D1"}); s != 422 {
 		t.Fatalf("bad return id = %d", s)

@@ -20,6 +20,7 @@ type Store struct {
 	payments map[string]pix.Payment
 	accounts map[string]pix.Account
 	reported map[string]pix.ReportedTransaction
+	notified map[string]bool
 }
 
 func New() *Store {
@@ -177,6 +178,41 @@ func (s *Store) FinalizePayment(_ context.Context, id, status, reasonCode, reaso
 	return p, true, nil
 }
 
+// --- DICT feed ---
+
+var _ pix.NotificationStore = (*Store)(nil)
+
+func (s *Store) PendingNotifications(_ context.Context, since time.Time, limit int) ([]pix.Payment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []pix.Payment
+	for _, p := range s.payments {
+		if p.Kind == pix.KindPayment && p.Status == pix.StatusSettled && !s.notified[p.ID] && !p.SettledAt.Before(since) {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].SettledAt.Equal(out[j].SettledAt) {
+			return out[i].SettledAt.Before(out[j].SettledAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *Store) MarkNotified(_ context.Context, id string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.notified == nil {
+		s.notified = map[string]bool{}
+	}
+	s.notified[id] = true
+	return nil
+}
+
 // --- Accounts ---
 
 var _ pix.AccountStore = (*Store)(nil)
@@ -303,5 +339,6 @@ func (s *Store) Reset(_ context.Context) error {
 	s.acked = map[string]int64{}
 	s.payments = nil
 	s.reported = nil
+	s.notified = nil
 	return nil
 }

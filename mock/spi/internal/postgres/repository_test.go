@@ -56,3 +56,9 @@ func TestInspector(t *testing.T) {
 		return postgres.NewRepository(pgtest.NewPool(t))
 	})
 }
+
+func TestNotificationStore(t *testing.T) {
+	pixtest.RunNotifications(t, func(t *testing.T) pixtest.NotificationBackend {
+		return postgres.NewRepository(pgtest.NewPool(t))
+	})
+}

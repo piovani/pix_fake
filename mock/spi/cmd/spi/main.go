@@ -15,6 +15,7 @@ import (
 
 	"pixfake/mock/spi/internal/config"
 	"pixfake/mock/spi/internal/control"
+	"pixfake/mock/spi/internal/dictfeed"
 	"pixfake/mock/spi/internal/fault"
 	"pixfake/mock/spi/internal/httpapi"
 	"pixfake/mock/spi/internal/pix"
@@ -63,6 +64,10 @@ func run(cfg config.Config, log *slog.Logger) error {
 	proc.Timeout = cfg.Timeout
 	svc.SetHandler(proc)
 	go proc.RunExpiry(ctx, min(time.Second, cfg.Timeout/2))
+	if cfg.DICTURL != "" {
+		go dictfeed.New(cfg.DICTURL, repo, log).Run(ctx, time.Second)
+		log.Info("telling the DICT of settled payments", "url", cfg.DICTURL)
+	}
 	go svc.RunRetention(ctx, time.Hour, cfg.Retention, func(deleted int64, err error) {
 		if err != nil {
 			log.Error("delete old messages", "error", err)

@@ -165,8 +165,9 @@ not the holder's), `AM02` (above the limit), `AG03` (the account does not take t
 A return is a `pacs.004` that goes through the same cycle as a payment, the other way.
 
 **Returning one you received:** new `RtrId`, the payment's `OrgnlEndToEndId`, any amount up to what's left, reason
-`MD06`. The result is a `pacs.002` with your `RtrId` as `OrgnlInstrId`. The SPI rejects after 90 days (`DT05`), a payment
-that didn't settle (`CH16`) and a return of a return (`AG13`).
+`MD06`, or for the MED `FR01` (fraud) or `BE08` (operational flaw), the return a refund of the DICT asks for; its `RtrId`
+is the `RefundTransactionId` you close the refund with. The result is a `pacs.002` with your `RtrId` as `OrgnlInstrId`.
+The SPI rejects after 90 days (`DT05`), a payment that didn't settle (`CH16`) and a return of a return (`AG13`).
 
 **Receiving a return of one you made:** a `pacs.004` arrives on your stream. Check the amount (returns can't add up to
 more than the payment, `AM09`) and answer with a `pacs.002` whose `OrgnlInstrId` is the `RtrId`. Make a bank return one:
@@ -174,6 +175,8 @@ more than the payment, `AM09`) and answer with a `pacs.002` whose `OrgnlInstrId`
 ```sh
 curl -s -X POST localhost:8081/mock/inbound/returns -d '{ "end_to_end_id": "E99000001202611141530a1B2c3D4e5F", "amount": "5.00" }'
 ```
+
+Add `"reason": "FR01"` (or `"BE08"`) for a return of the MED, the default being `MD06`.
 
 ## 4. A payment between two customers of the wallet
 
@@ -325,8 +328,9 @@ account outside the seed, `to_tax_id`, `to_branch`, `to_type`; if the SPI refuse
 - The mock settles for every participant on its own: no Conta PI balance (`AM04` never happens) and no rate limits of its
   own.
 - The DICT has no claims. Its MED (infraction reports, fraud markers, refunds, funds recoveries and their event
-  notifications) and statistics only know the transactions given to `POST /mock/transactions`, not the ones settled in
-  the SPI mock. It is stricter than the specification in one place: the
+  notifications) and statistics only know the transactions given to `POST /mock/transactions`. The SPI mock gives it
+  every payment it settles when `SPI_DICT_URL` is set (it is in `make up`), within a second or so; returns and
+  internal transactions it does not. It is stricter than the specification in one place: the
   `PI-EndToEndId` header must have the shape of an `EndToEndId`.
 - The SPI processes an order inside the request that sent it.
 
